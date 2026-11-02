@@ -380,3 +380,7 @@ td, th { overflow-wrap: break-word; }
   .card { padding: 16px; }
   .rec { grid-template-columns: 1fr; }
 }
+@media (max-width: 600px) {
+  .card-head > form.row { width: 100%; }
+  .card-head > form.row input[type=file] { flex: 1 1 100%; max-width: none !important; }
+}

@@ -37,7 +37,7 @@
         format: function (v) { return v + (v === 1 ? " pedido" : " pedidos"); },
         tickFormat: function (v) { return String(v); },
         height: 240,
-        annotations: notes.slice(0, 12),
+        annotations: notes.slice(0, el.clientWidth < 600 ? 3 : 12),
         xAt: data.labels.map(function (_, i) { return i; }).filter(function (i) { return i % 15 === 0; })
       });
     },

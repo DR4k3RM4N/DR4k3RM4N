@@ -395,3 +395,4 @@
 }
 .curve .mark { width: max-content; }
 @media (max-width: 420px) { .curve .mark { font-size: 12px; } }
+.tile-link { white-space: nowrap; }
