@@ -68,7 +68,11 @@ Todo va en variables de entorno (ver `.env.example`):
 
 ## Desplegar
 
-Hay `Dockerfile` y `render.yaml` (Render.com). En Railway, Fly.io o cualquier servicio con Docker funciona igual: define las variables, una base Postgres y listo. El contenedor corre migraciones al arrancar.
+**Render.com (lo más fácil, gratis para pruebas):** el `render.yaml` está en la raíz del repositorio. En Render: *New → Blueprint*, elige este repositorio y la rama, y da *Apply*. Crea la app y una base Postgres gratis, y carga la cuenta demo (`SEED_DEMO=true`; pon `false` cuando ya no la quieras).
+
+**Namecheap / cPanel:** ver [DEPLOY_NAMECHEAP.md](DEPLOY_NAMECHEAP.md).
+
+En Railway, Fly.io o cualquier servicio con Docker funciona igual: define las variables, una base Postgres y listo. El contenedor corre migraciones al arrancar.
 
 ## Arquitectura
 

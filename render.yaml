@@ -1,9 +1,12 @@
-# Despliegue en Render.com (Blueprint). Ajusta nombres y región a tu gusto.
+# Render.com Blueprint para PulsoLive (planes gratis, para pruebas).
+# Render → New → Blueprint → elige este repositorio y la rama → Apply.
 services:
   - type: web
     name: pulsolive
     runtime: docker
-    rootDir: pulsolive
+    plan: free
+    dockerContext: ./pulsolive
+    dockerfilePath: ./pulsolive/Dockerfile
     envVars:
       - key: DEBUG
         value: "false"
@@ -13,16 +16,14 @@ services:
         value: ".onrender.com"
       - key: CSRF_TRUSTED_ORIGINS
         value: "https://*.onrender.com"
+      - key: SEED_DEMO
+        value: "true"
       - key: DATABASE_URL
         fromDatabase:
           name: pulsolive-db
           property: connectionString
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
 databases:
   - name: pulsolive-db
-    plan: basic-256mb
+    plan: free
