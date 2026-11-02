@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="landing">
+  <header>
+    <a class="logo" href="{% url 'accounts:landing' %}" style="margin:0"><span class="logo-mark">∿</span> PulsoLive</a>
+    <div class="row">
+      <a href="{% url 'accounts:pricing' %}" class="btn btn-ghost">Precios</a>
+      {% if user.is_authenticated %}
+        <a href="{% url 'insights:dashboard' %}" class="btn btn-primary">Ir a mi panel</a>
+      {% else %}
+        <a href="{% url 'accounts:login' %}" class="btn btn-ghost">Entrar</a>
+        <a href="{% url 'accounts:signup' %}" class="btn btn-primary">Prueba gratis</a>
+      {% endif %}
+    </div>
+  </header>
+  {% if messages %}<div class="section-l" style="padding-top:0;padding-bottom:0"><ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul></div>{% endif %}
+  {% block public %}{% endblock %}
+  <footer class="site">© PulsoLive · Analítica para lives de TikTok Shop · Hecho en México<br><small>PulsoLive no está afiliado a TikTok.</small></footer>
+</div>
+{% endblock %}

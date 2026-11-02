@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% load pulso %}
+{% block title %}Marcas{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Marcas</h1><span class="muted">{{ brands|length }} de {% if org_plan.max_brands > 100000 %}∞{% else %}{{ org_plan.max_brands }}{% endif %} en tu plan</span></div>
+<div class="grid grid-2">
+  <div class="card">
+    {% if brands %}
+    <table>
+      <tr><th>Marca</th><th class="num">Lives</th><th class="num">Ventas</th><th></th></tr>
+      {% for b in brands %}
+      <tr><td><strong>{{ b.name }}</strong><br><small class="muted">{{ b.category }} {{ b.tiktok_handle }}</small></td>
+        <td class="num">{{ b.n_lives }}</td><td class="num">{{ b.total_gmv|money }}</td>
+        <td class="num"><a href="{% url 'insights:dashboard' %}?marca={{ b.pk }}">Panel</a> · <a href="{% url 'lives:import' %}?marca={{ b.pk }}">Importar</a> · <a href="{% url 'lives:brand_edit' b.pk %}">Editar</a></td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+      <div class="empty">Aún no tienes marcas. Crea la primera →</div>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h2>Nueva marca</h2>
+    <p class="muted">Cada marca (o cuenta de TikTok) tiene su propio análisis y playbook.</p>
+    <form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Crear marca</button></form>
+    {% if not has_hosts %}<p class="muted" style="margin-top:12px">Tip: registra también a tus <a href="{% url 'lives:host_list' %}">hosts</a> para comparar su desempeño.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

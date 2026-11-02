@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Configuración{% endblock %}
+{% block content %}
+<h1>Configuración</h1>
+<div class="card" style="max-width:640px">
+  <form method="post" enctype="multipart/form-data">{% csrf_token %}
+    {{ form.as_p }}
+    {% if 'white_label' not in org_plan.features %}<p class="muted"><small>El logo, color y pie de página aparecen en los reportes con el plan Agencia.</small></p>{% endif %}
+    <button class="btn btn-primary">Guardar</button>
+  </form>
+</div>
+{% endblock %}

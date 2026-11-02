@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% load pulso %}
+{% block title %}Lives{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Lives</h1>
+  <div class="row">{% if untagged %}<a class="btn" href="{% url 'lives:quick_tag' %}">🏷️ Etiquetar {{ untagged }} pendientes</a>{% endif %}
+  <a class="btn" href="{% url 'lives:import' %}">Importar archivo</a><a class="btn btn-primary" href="{% url 'lives:live_create' %}">+ Registrar live</a></div>
+</div>
+<form class="card filters" method="get" style="margin-bottom:16px">
+  <div><label>Marca</label><select name="marca"><option value="">Todas</option>{% for b in brands %}<option value="{{ b.pk }}" {% if request.GET.marca == b.pk|stringformat:'s' %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+  <div><label>Host</label><select name="host"><option value="">Todos</option>{% for h in hosts %}<option value="{{ h.pk }}" {% if request.GET.host == h.pk|stringformat:'s' %}selected{% endif %}>{{ h.name }}</option>{% endfor %}</select></div>
+  <div><label>Orden</label><select name="orden">
+    <option value="-started_at">Más recientes</option><option value="-gmv" {% if request.GET.orden == '-gmv' %}selected{% endif %}>Más ventas</option><option value="gmv" {% if request.GET.orden == 'gmv' %}selected{% endif %}>Menos ventas</option></select></div>
+  <div><label>Buscar</label><input type="text" name="q" value="{{ request.GET.q }}" placeholder="producto, título…"></div>
+  <div><button class="btn">Filtrar</button></div>
+</form>
+<div class="card table-wrap">
+  {% if page.object_list %}
+  <table>
+    <tr><th>Fecha</th><th>Marca · Host</th><th>Qué se hizo</th><th class="num">Duración</th><th class="num">Ventas</th><th class="num">Ventas/h</th><th class="num">Pedidos</th><th class="num">Conversión</th></tr>
+    {% for l in page.object_list %}
+    <tr onclick="location.href='{% url 'lives:live_detail' l.pk %}'" style="cursor:pointer">
+      <td>{{ l.started_at|date:"D d M, H:i" }}</td>
+      <td><strong>{{ l.brand.name }}</strong><br><small class="muted">{{ l.host.name|default:"— sin host —" }}</small></td>
+      <td><small>{{ l.get_promo_type_display }}{% if l.script_type %} · {{ l.get_script_type_display }}{% else %} · <span class="badge corregir">sin guion</span>{% endif %}</small></td>
+      <td class="num">{{ l.duration_minutes }} min</td>
+      <td class="num"><strong>{{ l.gmv|money }}</strong></td>
+      <td class="num">{{ l.gmv_per_hour|money }}</td>
+      <td class="num">{{ l.orders }}</td>
+      <td class="num">{{ l.conversion_rate|pct:2 }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="row" style="margin-top:12px">
+    {% if page.has_previous %}<a class="btn btn-sm" href="?{% for k, v in request.GET.items %}{% if k != 'p' %}{{ k }}={{ v }}&{% endif %}{% endfor %}p={{ page.previous_page_number }}">← Anterior</a>{% endif %}
+    <span class="muted">Página {{ page.number }} de {{ page.paginator.num_pages }} · {{ page.paginator.count }} lives</span>
+    {% if page.has_next %}<a class="btn btn-sm" href="?{% for k, v in request.GET.items %}{% if k != 'p' %}{{ k }}={{ v }}&{% endif %}{% endfor %}p={{ page.next_page_number }}">Siguiente →</a>{% endif %}
+  </div>
+  {% else %}
+  <div class="empty">No hay lives todavía. <a href="{% url 'lives:import' %}">Importa tu archivo de TikTok Shop</a>.</div>
+  {% endif %}
+</div>
+{% endblock %}

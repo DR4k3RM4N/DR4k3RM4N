@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Plan y pagos{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Plan y pagos</h1>
+  {% if org.stripe_customer_id %}<form method="post" action="{% url 'accounts:billing_portal' %}">{% csrf_token %}<button class="btn">Facturas y método de pago</button></form>{% endif %}
+</div>
+<div class="grid grid-4" style="margin-bottom:16px">
+  <div class="card kpi"><div class="label">Plan actual</div><div class="value">{{ org_plan.name }}</div><small class="muted">{{ org.get_subscription_status_display }}{% if org.subscription_status == 'trialing' %} · {{ org.trial_days_left }} días restantes{% endif %}</small></div>
+  <div class="card kpi"><div class="label">Marcas</div><div class="value">{{ brands_used }} / {% if org_plan.max_brands > 100000 %}∞{% else %}{{ org_plan.max_brands }}{% endif %}</div></div>
+  <div class="card kpi"><div class="label">Usuarios</div><div class="value">{{ users_used }} / {% if org_plan.max_users > 100000 %}∞{% else %}{{ org_plan.max_users }}{% endif %}</div></div>
+  <div class="card kpi"><div class="label">Análisis con IA este mes</div><div class="value">{{ ai_used }} / {% if org_plan.ai_runs_per_month > 100000 %}∞{% else %}{{ org_plan.ai_runs_per_month }}{% endif %}</div></div>
+</div>
+{% if not stripe_enabled %}<ul class="messages"><li class="warning">Modo demo: Stripe no está configurado, así que elegir un plan lo activa sin cobro. Configura <code>STRIPE_SECRET_KEY</code> para cobrar de verdad.</li></ul>{% endif %}
+{% with select_mode=True %}{% include "accounts/_pricing_cards.html" %}{% endwith %}
+{% endblock %}

@@ -1,0 +1,62 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}PulsoLive{% endblock %} · PulsoLive</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23e11d74'/><path d='M6 17h5l3-7 4 13 3-6h5' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  {% block head %}{% endblock %}
+</head>
+<body>
+{% block body %}
+{% with u=request.resolver_match.url_name %}
+<div class="mobile-bar">
+  <a class="logo" href="{% url 'insights:dashboard' %}" style="margin:0"><span class="logo-mark">∿</span> PulsoLive</a>
+  <button class="btn btn-sm" onclick="document.querySelector('.sidebar').classList.toggle('open')">Menú</button>
+</div>
+<div class="app">
+  <aside class="sidebar">
+    <a class="logo" href="{% url 'insights:dashboard' %}"><span class="logo-mark">∿</span> PulsoLive</a>
+    {% if user_orgs|length > 1 %}
+    <select onchange="location.href='/cuenta/cambiar/'+this.value+'/'" style="margin:0 0 10px">
+      {% for o in user_orgs %}<option value="{{ o.pk }}" {% if o.pk == org.pk %}selected{% endif %}>{{ o.name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <nav class="nav">
+      <a href="{% url 'insights:dashboard' %}" class="{% if u == 'dashboard' %}active{% endif %}">📊 Panel</a>
+      <a href="{% url 'insights:analysis' %}" class="{% if u == 'analysis' %}active{% endif %}">🔍 ¿Qué vende más?</a>
+      <a href="{% url 'insights:playbook' %}" class="{% if u == 'playbook' %}active{% endif %}">📘 Playbook {% if 'playbooks' not in org_plan.features %}<span class="lock">🔒</span>{% endif %}</a>
+      <a href="{% url 'insights:hosts' %}" class="{% if u == 'hosts' %}active{% endif %}">🎤 Ranking de hosts {% if 'host_scorecards' not in org_plan.features %}<span class="lock">Pro</span>{% endif %}</a>
+      <a href="{% url 'insights:report_list' %}" class="{% if 'report' in u %}active{% endif %}">📄 Reportes</a>
+      <a href="{% url 'insights:experiment_list' %}" class="{% if 'experiment' in u %}active{% endif %}">🧪 Pruebas A/B {% if 'experiments' not in org_plan.features %}<span class="lock">Pro</span>{% endif %}</a>
+      <div class="section">Datos</div>
+      <a href="{% url 'lives:live_list' %}" class="{% if u == 'live_list' or u == 'live_detail' or u == 'live_edit' %}active{% endif %}">🎥 Lives</a>
+      <a href="{% url 'lives:import' %}" class="{% if u == 'import' %}active{% endif %}">⬆️ Importar</a>
+      <a href="{% url 'lives:quick_tag' %}" class="{% if u == 'quick_tag' %}active{% endif %}">🏷️ Etiquetar</a>
+      <a href="{% url 'lives:brand_list' %}" class="{% if 'brand' in u %}active{% endif %}">🏷 Marcas</a>
+      <a href="{% url 'lives:host_list' %}" class="{% if u == 'host_list' or u == 'host_edit' %}active{% endif %}">👤 Hosts</a>
+      <div class="section">Cuenta</div>
+      <a href="{% url 'accounts:billing' %}" class="{% if u == 'billing' %}active{% endif %}">💳 Plan: {{ org_plan.name }}</a>
+      <a href="{% url 'accounts:team' %}" class="{% if u == 'team' %}active{% endif %}">👥 Equipo</a>
+      <a href="{% url 'accounts:settings' %}" class="{% if u == 'settings' %}active{% endif %}">⚙️ Configuración</a>
+      <form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button class="btn btn-ghost btn-sm" style="margin-top:8px">Salir ({{ user.first_name|default:user.username }})</button></form>
+    </nav>
+  </aside>
+  <main class="main">
+    {% if org.subscription_status == 'trialing' %}
+      <div class="trial-banner">Estás en tu prueba gratis: te quedan <strong>{{ org.trial_days_left }} días</strong>. <a href="{% url 'accounts:billing' %}">Elegir plan →</a></div>
+    {% endif %}
+    {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% endwith %}
+{% endblock %}
+<script src="{% static 'vendor/chart.umd.js' %}"></script>
+<script src="{% static 'js/app.js' %}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% load pulso %}
+{% block title %}{{ exp.name }}{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>🧪 {{ exp.name }}</h1><span class="muted">{{ exp.brand.name }} · midiendo {{ metric_label|lower }}</span></div>
+  {% if membership.can_edit %}<form method="post">{% csrf_token %}<button class="btn" name="finish" value="1">{% if exp.status == 'running' %}Terminar prueba{% else %}Reabrir prueba{% endif %}</button></form>{% endif %}
+</div>
+{% if exp.hypothesis %}<p><strong>Hipótesis:</strong> {{ exp.hypothesis }}</p>{% endif %}
+<div class="grid grid-3">
+  <div class="card kpi"><div class="label">A · {{ exp.variant_a }}</div><div class="value">{% if exp.metric == 'conversion_rate' %}{{ ev.mean_a|pct:2 }}{% elif exp.metric == 'avg_watch_seconds' %}{{ ev.mean_a|mmss }}{% elif exp.metric == 'orders' %}{{ ev.mean_a|floatformat:0 }}{% else %}{{ ev.mean_a|money }}{% endif %}</div><small class="muted">{{ ev.n_a }} lives</small></div>
+  <div class="card kpi"><div class="label">B · {{ exp.variant_b }}</div><div class="value">{% if exp.metric == 'conversion_rate' %}{{ ev.mean_b|pct:2 }}{% elif exp.metric == 'avg_watch_seconds' %}{{ ev.mean_b|mmss }}{% elif exp.metric == 'orders' %}{{ ev.mean_b|floatformat:0 }}{% else %}{{ ev.mean_b|money }}{% endif %}</div><small class="muted">{{ ev.n_b }} lives</small></div>
+  <div class="card kpi"><div class="label">Resultado</div><div class="value">{% if ev.winner %}Ganó {{ ev.winner }}{% elif ev.lift_b_vs_a is not None %}B {{ ev.lift_b_vs_a|signed_pct }}{% else %}—{% endif %}</div><small class="muted">{{ ev.status }}</small></div>
+</div>
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <h2>Lives en la prueba</h2>
+    <table><tr><th>Fecha</th><th>Variante</th><th>Host</th><th class="num">Ventas/h</th><th></th></tr>
+    {% for l in lives %}<tr><td><a href="{% url 'lives:live_detail' l.pk %}">{{ l.started_at|date:"D d M H:i" }}</a></td><td><span class="badge accent">{{ l.experiment_variant }}</span></td><td>{{ l.host.name|default:"—" }}</td><td class="num">{{ l.gmv_per_hour|money }}</td>
+      <td>{% if membership.can_edit %}<form method="post">{% csrf_token %}<input type="hidden" name="live" value="{{ l.pk }}"><button class="btn btn-sm btn-ghost" name="assign" value="1">Quitar</button></form>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="5" class="muted">Agrega lives desde la lista de la derecha.</td></tr>{% endfor %}</table>
+  </div>
+  {% if membership.can_edit %}
+  <div class="card">
+    <h2>Agregar lives recientes</h2>
+    <table>{% for l in candidates %}<tr><td>{{ l.started_at|date:"D d M H:i" }}<br><small class="muted">{{ l.get_promo_type_display }}</small></td><td class="num">{{ l.gmv|money }}</td>
+      <td><form method="post" class="row">{% csrf_token %}<input type="hidden" name="live" value="{{ l.pk }}"><input type="hidden" name="assign" value="1"><button class="btn btn-sm" name="variant" value="A">A</button><button class="btn btn-sm" name="variant" value="B">B</button></form></td></tr>
+    {% empty %}<tr><td class="muted">No hay lives recientes de esta marca sin asignar.</td></tr>{% endfor %}</table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

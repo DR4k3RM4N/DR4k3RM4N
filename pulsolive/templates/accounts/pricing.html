@@ -1,0 +1,15 @@
+{% extends "base_public.html" %}
+{% block title %}Precios{% endblock %}
+{% block public %}
+<section class="section-l">
+  <h1 style="text-align:center">Precios</h1>
+  <p class="muted" style="text-align:center;margin-bottom:28px">Todos los planes incluyen {{ trial_days }} días de prueba con funciones Pro. Precios en MXN con IVA incluido. Cancela cuando quieras.</p>
+  {% include "accounts/_pricing_cards.html" %}
+  <div class="card" style="margin-top:24px">
+    <h3>Preguntas frecuentes</h3>
+    <p><strong>¿De dónde salen los datos?</strong> Del archivo que exportas de TikTok Shop Seller Center o LIVE Center (CSV o Excel). Para el análisis minuto a minuto puedes subir la serie de pedidos y espectadores, y la transcripción del live. En el plan Enterprise nos conectamos directo a la API de TikTok Shop.</p>
+    <p><strong>¿Qué es un "análisis con IA"?</strong> Cada resumen ejecutivo de reporte o análisis de transcripción hecho con IA. El análisis estadístico y las recomendaciones automáticas son ilimitados en todos los planes.</p>
+    <p><strong>¿Puedo cambiar de plan?</strong> Sí, cuando quieras. El cambio se prorratea.</p>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,4 @@
+{% extends public|yesno:"base_public.html,base.html" %}{% load pulso %}
+{% block title %}{{ report }}{% endblock %}
+{% block public %}<div class="section-l">{% include "insights/_report_body.html" %}</div>{% endblock %}
+{% block content %}{% include "insights/_report_body.html" %}{% endblock %}

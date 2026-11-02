@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Reportes{% endblock %}
+{% block content %}
+<h1>Reportes</h1>
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Generar reporte</h2>
+    <p class="muted">Diario, semanal o mensual. Compara contra el periodo anterior e incluye aprendizajes y próximas acciones.</p>
+    {% if membership.can_edit %}<form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Generar</button></form>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Generados</h2>
+    {% if reports %}
+    <table>{% for r in reports %}
+      <tr><td><a href="{% url 'insights:report_detail' r.pk %}">{{ r.get_period_display }} · {{ r.start|date:"d M" }}{% if r.end != r.start %}–{{ r.end|date:"d M Y" }}{% else %} {{ r.start|date:"Y" }}{% endif %}</a></td>
+      <td>{{ r.brand.name|default:"Todas las marcas" }}</td><td>{% if r.ai_summary %}<span class="badge accent">IA</span>{% endif %} {% if r.shared %}<span class="badge">compartido</span>{% endif %}</td></tr>
+    {% endfor %}</table>
+    {% else %}<p class="muted">Aún no hay reportes.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Importar lives{% endblock %}
+{% block content %}
+<h1>Importar lives</h1>
+<div class="grid grid-2">
+  <div class="card">
+    <form method="post" enctype="multipart/form-data">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Importar</button></form>
+  </div>
+  <div class="card">
+    <h2>¿De dónde saco el archivo?</h2>
+    <ol class="steps">
+      <li>Entra a <strong>TikTok Shop Seller Center</strong> → Análisis → LIVE (o a LIVE Center si eres creador).</li>
+      <li>Elige el rango de fechas y da clic en <strong>Exportar</strong> (CSV o Excel).</li>
+      <li>Súbelo aquí. Reconocemos las columnas en español o inglés: fecha de inicio, duración, GMV, pedidos, espectadores, tiempo de visualización, etc.</li>
+      <li>Si un live ya existe (mismo ID o misma hora de inicio) se actualiza, no se duplica.</li>
+    </ol>
+    <p>¿Llevas tus lives en Excel propio? Usa la <a href="{% url 'lives:import_template' %}">plantilla CSV</a>. Puedes agregar columnas de Host, Promoción y Guion para no etiquetar después.</p>
+  </div>
+</div>
+{% if history %}
+<div class="card" style="margin-top:16px">
+  <h2>Importaciones recientes</h2>
+  <table><tr><th>Fecha</th><th>Marca</th><th>Archivo</th><th class="num">Nuevos</th><th class="num">Actualizados</th><th class="num">Con error</th></tr>
+  {% for b in history %}<tr><td>{{ b.created_at|date:"d/m/Y H:i" }}</td><td>{{ b.brand.name }}</td><td>{{ b.filename }} <small class="muted">({{ b.get_kind_display }})</small></td><td class="num">{{ b.created }}</td><td class="num">{{ b.updated }}</td><td class="num">{{ b.skipped }}</td></tr>{% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}

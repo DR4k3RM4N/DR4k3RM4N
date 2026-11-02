@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Equipo{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Equipo</h1><span class="muted">{{ org.memberships.count }} de {{ org_plan.max_users }} usuarios en tu plan</span></div>
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Usuarios</h2>
+    <table>
+      <tr><th>Nombre</th><th>Rol</th><th></th></tr>
+      {% for m in members %}
+      <tr><td>{{ m.user.first_name|default:m.user.username }}<br><small class="muted">{{ m.user.email }}</small></td><td>{{ m.get_role_display }}</td>
+      <td>{% if membership.can_manage and m.role != 'owner' %}<form method="post" action="{% url 'accounts:remove_member' m.pk %}" onsubmit="return confirm('¿Quitar a este usuario?')">{% csrf_token %}<button class="btn btn-sm btn-danger">Quitar</button></form>{% endif %}</td></tr>
+      {% endfor %}
+      {% for i in invitations %}
+      <tr><td>{{ i.email }}<br><small class="muted">Invitación pendiente · <a href="{% url 'accounts:accept_invitation' i.token %}">link</a></small></td><td>{{ i.get_role_display }}</td><td></td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% if membership.can_manage %}
+  <div class="card">
+    <h2>Invitar</h2>
+    <p class="muted">Usa "Solo lectura" para que tus clientes (marcas) vean sus resultados sin poder editar.</p>
+    <form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Crear invitación</button></form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base_public.html" %}
+{% block title %}Crear cuenta{% endblock %}
+{% block public %}
+<div class="auth-wrap">
+  <div class="card">
+    <h1>Crea tu cuenta</h1>
+    <p class="muted">{{ trial_days }} días gratis con todas las funciones Pro. Sin tarjeta.</p>
+    <form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary btn-lg" style="width:100%;justify-content:center">Crear cuenta</button></form>
+    <p class="muted" style="margin-top:12px">¿Ya tienes cuenta? <a href="{% url 'accounts:login' %}">Entra</a></p>
+  </div>
+</div>
+{% endblock %}

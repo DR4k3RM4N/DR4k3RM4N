@@ -1,0 +1,72 @@
+{% extends "base.html" %}{% load pulso %}
+{% block title %}¿Qué vende más?{% endblock %}
+{% block content %}
+<div class="topbar"><h1>¿Qué vende más?{% if brand %} · {{ brand.name }}{% endif %}</h1></div>
+<div class="card" style="margin-bottom:16px">{% include "insights/_filters.html" %}</div>
+
+{% if result.kpis.lives < 2 %}
+  <div class="card empty">Necesitamos al menos 2 lives en el periodo. <a href="{% url 'lives:import' %}">Importa más lives</a> o amplía las fechas.</div>
+{% else %}
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Recomendaciones</h2>
+    <p class="muted"><small>Basadas en {{ result.kpis.lives }} lives. Medido por {{ result.metric_label }}.</small></p>
+    {% include "insights/_recs.html" with recs=result.recommendations %}
+  </div>
+  <div class="card">
+    <h2>¿Qué pesa más?</h2>
+    <p class="muted"><small>Qué tanto de la diferencia entre un live bueno y uno malo explica cada factor.</small></p>
+    {% for f in factors|slice:":10" %}
+      <div style="margin:10px 0">
+        <div class="row" style="justify-content:space-between"><strong>{{ f.label }}</strong><small class="muted">{{ f.importance|pct:0 }}</small></div>
+        <div class="bar"><span style="width:{{ f.importance|bar_width:0.35 }}%"></span></div>
+      </div>
+    {% endfor %}
+    <p class="muted"><small>El resto de la variación se debe a factores no registrados (producto, tendencia, suerte). Mientras más etiquetes, más explicamos.</small></p>
+  </div>
+</div>
+
+{% if heat_json %}
+<div class="card" style="margin-top:16px">
+  <h2>Mapa de calor: día y hora</h2>
+  <p class="muted"><small>Color más intenso = más {{ result.metric_label }}. Pasa el mouse para ver detalle.</small></p>
+  <div class="table-wrap"><div id="heat" class="heat"></div></div>
+</div>
+{% endif %}
+
+<h2 style="margin-top:24px">Detalle por factor</h2>
+<p class="muted">"Efecto simple" compara contra el promedio. "Controlando lo demás" aísla el factor (por ejemplo, separa el efecto del host del efecto del horario en que le toca transmitir).</p>
+<div class="grid">
+{% for f in factors %}
+  <div class="card table-wrap">
+    <div class="card-head"><h3 style="margin:0">{{ f.label }}</h3><small class="muted">explica {{ f.importance|pct:0 }}</small></div>
+    <table>
+      <tr><th>Opción</th><th class="num">Lives</th><th class="num">{{ result.metric_label|capfirst }}</th><th class="num">Efecto simple</th><th class="num">Controlando lo demás</th><th>Confianza</th></tr>
+      {% for lv in f.levels %}
+      <tr><td>{{ lv.level }}</td><td class="num">{{ lv.n }}</td>
+        <td class="num">{% if metric == 'conversion_rate' %}{{ lv.mean|pct:2 }}{% elif metric == 'avg_watch_seconds' %}{{ lv.mean|mmss }}{% elif metric == 'orders' %}{{ lv.mean|floatformat:0 }}{% else %}{{ lv.mean|money }}{% endif %}</td>
+        <td class="num {{ lv.lift|lift_class }}">{{ lv.lift|signed_pct }}</td>
+        <td class="num {{ lv.adjusted_lift|lift_class }}">{{ lv.adjusted_lift|signed_pct }}</td>
+        <td><span class="badge {{ lv.confidence }}">{{ lv.confidence }}</span></td></tr>
+      {% endfor %}
+    </table>
+  </div>
+{% endfor %}
+</div>
+
+{% if result.events %}
+<div class="card" style="margin-top:16px">
+  <h2>Momentos dentro del live</h2>
+  <p class="muted"><small>Cambio en pedidos por minuto en los 5 minutos después del momento vs. los 5 minutos anteriores.</small></p>
+  <table>
+    <tr><th>Momento</th><th class="num">Veces</th><th class="num">Cambio típico (mediana)</th><th class="num">% de veces que subió</th><th>Confianza</th></tr>
+    {% for e in result.events %}
+    <tr><td>{{ e.label }}</td><td class="num">{{ e.n }}</td><td class="num {{ e.median_uplift|lift_class }}">{{ e.median_uplift|signed_pct }}</td><td class="num">{{ e.positive_share|pct:0 }}</td><td><span class="badge {{ e.confidence }}">{{ e.confidence }}</span></td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+<p class="muted" style="margin-top:16px"><small>Nota: esto muestra asociaciones en tus datos, no garantiza causa y efecto. Para confirmar una hipótesis, usa una <a href="{% url 'insights:experiment_list' %}">prueba A/B</a>.</small></p>
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if heat_json %}<script>PulsoCharts.heatmap("heat", {{ heat_json|safe }});</script>{% endif %}{% endblock %}

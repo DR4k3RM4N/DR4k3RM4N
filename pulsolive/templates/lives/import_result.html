@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Resultado de importación{% endblock %}
+{% block content %}
+<h1>Resultado de la importación</h1>
+<div class="grid grid-3" style="margin-bottom:16px">
+  <div class="card kpi"><div class="label">Lives nuevos</div><div class="value">{{ batch.created }}</div></div>
+  <div class="card kpi"><div class="label">Actualizados</div><div class="value">{{ batch.updated }}</div></div>
+  <div class="card kpi"><div class="label">Filas con error</div><div class="value">{{ batch.skipped }}</div></div>
+</div>
+<div class="card">
+  <h2>Columnas reconocidas</h2>
+  {% if parsed.mapping %}
+  <table><tr><th>Dato</th><th>Columna en tu archivo</th></tr>
+  {% for k, v in parsed.mapping.items %}<tr><td><code>{{ k }}</code></td><td>{{ v }}</td></tr>{% endfor %}</table>
+  {% endif %}
+  {% if batch.errors %}<h3 style="margin-top:16px">Avisos</h3><ul>{% for e in batch.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+  <div class="row" style="margin-top:16px">
+    <a class="btn btn-primary" href="{% url 'lives:quick_tag' %}">Etiquetar lives →</a>
+    <a class="btn" href="{% url 'insights:analysis' %}?marca={{ batch.brand_id }}">Ver análisis</a>
+    <a class="btn" href="{% url 'lives:import' %}">Importar otro</a>
+  </div>
+</div>
+{% endblock %}

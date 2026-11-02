@@ -1,0 +1,1 @@
+{% load pulso %}{% if d is not None %}<span class="delta {% if d >= 0 %}up{% else %}down{% endif %}">{{ d|signed_pct }}</span> <small class="muted">vs. periodo anterior</small>{% else %}<small class="muted">sin periodo anterior</small>{% endif %}

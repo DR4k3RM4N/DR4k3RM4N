@@ -1,0 +1,17 @@
+{% extends "base_public.html" %}
+{% block title %}Entrar{% endblock %}
+{% block public %}
+<div class="auth-wrap">
+  <div class="card">
+    <h1>Entrar</h1>
+    <form method="post">{% csrf_token %}
+      {% if form.non_field_errors %}<ul class="errorlist"><li>Correo o contraseña incorrectos.</li></ul>{% endif %}
+      <p><label for="id_username">Correo</label><input type="email" name="username" id="id_username" required autofocus value="{{ form.username.value|default:'' }}"></p>
+      <p><label for="id_password">Contraseña</label><input type="password" name="password" id="id_password" required></p>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="btn btn-primary btn-lg" style="width:100%;justify-content:center">Entrar</button>
+    </form>
+    <p class="muted" style="margin-top:12px"><a href="{% url 'accounts:password_reset' %}">¿Olvidaste tu contraseña?</a> · <a href="{% url 'accounts:signup' %}">Crear cuenta</a></p>
+  </div>
+</div>
+{% endblock %}

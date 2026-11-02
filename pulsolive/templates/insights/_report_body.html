@@ -1,0 +1,84 @@
+{% load pulso %}
+<div class="topbar">
+  <div class="report-brand">
+    {% if white_label and report_org.logo %}<img src="{{ report_org.logo.url }}" alt="{{ report_org.name }}">{% endif %}
+    <div>
+      <h1 style="margin:0{% if white_label %};color:{{ report_org.brand_color }}{% endif %}">Reporte {{ report.get_period_display|lower }} · {{ report.brand.name|default:"Todas las marcas" }}</h1>
+      <span class="muted">{{ report.start|date:"d \d\e F Y" }}{% if report.end != report.start %} al {{ report.end|date:"d \d\e F Y" }}{% endif %} · comparado con {{ d.previous.start }} a {{ d.previous.end }}</span>
+    </div>
+  </div>
+  {% if not public %}
+  <div class="row no-print">
+    {% if membership.can_edit %}<form method="post" action="{% url 'insights:report_regenerate' report.pk %}">{% csrf_token %}<button class="btn btn-sm">Actualizar datos</button></form>{% endif %}
+    {% if can_ai and membership.can_edit %}<form method="post" action="{% url 'insights:report_ai' report.pk %}">{% csrf_token %}<button class="btn btn-sm btn-primary">✨ {% if report.ai_summary %}Rehacer{% else %}Generar{% endif %} resumen con IA</button></form>{% endif %}
+    {% if can_share and membership.can_edit %}<form method="post" action="{% url 'insights:report_share' report.pk %}">{% csrf_token %}<button class="btn btn-sm">{% if report.shared %}Desactivar link{% else %}Compartir con link{% endif %}</button></form>{% endif %}
+    <button class="btn btn-sm" onclick="window.print()">Imprimir / PDF</button>
+  </div>
+  {% endif %}
+</div>
+{% if report.shared and not public %}<ul class="messages no-print"><li>Link público: <a href="{{ share_url }}">{{ share_url }}</a></li></ul>{% endif %}
+
+{% with a=report.ai_summary %}{% if a %}
+<div class="card" style="border-left:4px solid var(--accent)">
+  <h2>{{ a.headline }}</h2>
+  <p>{{ a.summary }}</p>
+  <div class="grid grid-2">
+    <div><h3>Lo que funcionó</h3><ul>{% for x in a.what_worked %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    <div><h3>Lo que hay que corregir</h3><ul>{% for x in a.what_to_fix %}<li>{{ x }}</li>{% endfor %}</ul></div>
+  </div>
+  <h3>Próximas acciones</h3>
+  <table><tr><th>Acción</th><th>Por qué</th><th>Cómo medir</th></tr>{% for x in a.next_actions %}<tr><td><strong>{{ x.action }}</strong></td><td>{{ x.why }}</td><td>{{ x.how_to_measure }}</td></tr>{% endfor %}</table>
+  {% if a.experiment_idea %}<p style="margin-top:12px"><span class="badge probar">prueba A/B sugerida</span> <strong>{{ a.experiment_idea.name }}</strong>: {{ a.experiment_idea.variant_a }} vs. {{ a.experiment_idea.variant_b }}. <span class="muted">{{ a.experiment_idea.hypothesis }}</span>
+    {% if not public %}<a class="no-print" href="{% url 'insights:experiment_list' %}?nombre={{ a.experiment_idea.name|urlencode }}&a={{ a.experiment_idea.variant_a|urlencode }}&b={{ a.experiment_idea.variant_b|urlencode }}&hipotesis={{ a.experiment_idea.hypothesis|urlencode }}">Crear prueba →</a>{% endif %}</p>{% endif %}
+  {% if a.data_caveats %}<p class="muted"><small>{{ a.data_caveats }}</small></p>{% endif %}
+</div>
+{% endif %}{% endwith %}
+
+<div class="grid grid-4" style="margin-top:16px">
+  <div class="card kpi"><div class="label">Ventas</div><div class="value">{{ d.kpis.gmv.value|money }}</div>{% include "insights/_delta.html" with d=d.kpis.gmv.delta %}</div>
+  <div class="card kpi"><div class="label">Ventas por hora</div><div class="value">{{ d.kpis.gmv_per_hour.value|money }}</div>{% include "insights/_delta.html" with d=d.kpis.gmv_per_hour.delta %}</div>
+  <div class="card kpi"><div class="label">Pedidos</div><div class="value">{{ d.kpis.orders.value|num }}</div>{% include "insights/_delta.html" with d=d.kpis.orders.delta %}</div>
+  <div class="card kpi"><div class="label">Conversión</div><div class="value">{{ d.kpis.conversion_rate.value|pct:2 }}</div>{% include "insights/_delta.html" with d=d.kpis.conversion_rate.delta %}</div>
+  <div class="card kpi"><div class="label">Lives / horas</div><div class="value">{{ d.kpis.lives.value }} / {{ d.kpis.hours.value }}</div>{% include "insights/_delta.html" with d=d.kpis.lives.delta %}</div>
+  <div class="card kpi"><div class="label">Ticket promedio</div><div class="value">{{ d.kpis.aov.value|money }}</div>{% include "insights/_delta.html" with d=d.kpis.aov.delta %}</div>
+  <div class="card kpi"><div class="label">Visualización</div><div class="value">{{ d.kpis.avg_watch_seconds.value|mmss }}</div>{% include "insights/_delta.html" with d=d.kpis.avg_watch_seconds.delta %}</div>
+  <div class="card kpi"><div class="label">Nuevos seguidores</div><div class="value">{{ d.kpis.new_followers.value|num }}</div>{% include "insights/_delta.html" with d=d.kpis.new_followers.delta %}</div>
+</div>
+{% if d.goal %}<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><strong>Meta del mes: {{ d.goal.target|money }}</strong><span>{{ d.goal.progress|pct:0 }}</span></div><div class="bar {% if d.goal.progress >= 1 %}good{% endif %}" style="margin-top:8px"><span style="width:{{ d.goal.progress|bar_width:1 }}%"></span></div></div>{% endif %}
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card"><h2>Recomendaciones</h2><p class="muted"><small>Patrones de los últimos 90 días ({{ d.history_lives }} lives).</small></p>{% include "insights/_recs.html" with recs=d.recommendations %}</div>
+  <div class="card">
+    <h2>Top lives del periodo</h2>
+    <table><tr><th>Fecha</th><th>Host</th><th class="num">Ventas</th><th class="num">Ventas/h</th></tr>
+    {% for l in d.top_lives %}<tr><td>{% if public %}{{ l.started_at|slice:":10" }} {{ l.started_at|slice:"11:16" }}{% else %}<a href="{% url 'lives:live_detail' l.id %}">{{ l.started_at|slice:":10" }} {{ l.started_at|slice:"11:16" }}</a>{% endif %}<br><small class="muted">{{ l.brand }}</small></td><td>{{ l.host|default:"—" }}</td><td class="num">{{ l.gmv|money }}</td><td class="num">{{ l.gmv_per_hour|money }}</td></tr>
+    {% empty %}<tr><td colspan="4" class="muted">No hubo lives en este periodo.</td></tr>{% endfor %}</table>
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <h2>Patrones principales</h2>
+    {% for f in d.history_factors|slice:":5" %}
+      <h3 style="margin-top:12px">{{ f.label }}</h3>
+      <table>{% for lv in f.levels|slice:":4" %}<tr><td>{{ lv.level }}</td><td class="num">{{ lv.n }} lives</td><td class="num {{ lv.lift|lift_class }}">{{ lv.lift|signed_pct }}</td><td><span class="badge {{ lv.confidence }}">{{ lv.confidence }}</span></td></tr>{% endfor %}</table>
+    {% endfor %}
+  </div>
+  <div class="card">
+    {% if d.hosts %}
+    <h2>Hosts en el periodo</h2>
+    <table><tr><th>Host</th><th class="num">Lives</th><th class="num">Ventas/h</th><th class="num">vs. equipo</th></tr>
+      {% for h in d.hosts %}<tr><td>{{ h.host }}</td><td class="num">{{ h.lives }}</td><td class="num">{{ h.gmv_per_hour|money }}</td><td class="num {{ h.relative.gmv_per_hour|lift_class }}">{{ h.relative.gmv_per_hour|signed_pct }}</td></tr>{% endfor %}
+    </table>
+    {% endif %}
+    {% if d.events %}
+    <h2 style="margin-top:16px">Momentos que movieron ventas</h2>
+    <table>{% for e in d.events|slice:":6" %}<tr><td>{{ e.label }}</td><td class="num">{{ e.n }}×</td><td class="num {{ e.median_uplift|lift_class }}">{{ e.median_uplift|signed_pct }}</td></tr>{% endfor %}</table>
+    {% endif %}
+    {% if d.calendar %}
+    <h2 style="margin-top:16px">Calendario sugerido</h2>
+    <table>{% for c in d.calendar %}<tr><td>{{ c.weekday }} <small class="muted">{{ c.date }}</small></td><td>{{ c.daypart }}</td></tr>{% endfor %}</table>
+    {% endif %}
+  </div>
+</div>
+<p class="muted" style="margin-top:16px;text-align:center"><small>{% if white_label and report_org.report_footer %}{{ report_org.report_footer }} · {% endif %}Generado con PulsoLive el {{ report.created_at|date:"d/m/Y H:i" }}</small></p>

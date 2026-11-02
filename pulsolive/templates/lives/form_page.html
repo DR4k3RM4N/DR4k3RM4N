@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<div class="card">
+  <form method="post" enctype="multipart/form-data">{% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="form-grid">
+      {% for field in form %}
+        <p {% if field.name == 'notes' or field.name == 'hypothesis' %}style="grid-column:1/-1"{% endif %}>{{ field.label_tag }}{{ field }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}{{ field.errors }}</p>
+      {% endfor %}
+    </div>
+    <div class="row"><button class="btn btn-primary">Guardar</button>
+      {% if archive %}<button class="btn btn-danger" name="archive" value="1" onclick="return confirm('¿Archivar esta marca?')">Archivar</button>{% endif %}
+      {% if delete %}<button class="btn btn-danger" name="delete" value="1" formnovalidate onclick="return confirm('¿Eliminar este live?')">Eliminar</button>{% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

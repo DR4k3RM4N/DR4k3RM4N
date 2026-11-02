@@ -1,0 +1,49 @@
+{% extends "base_public.html" %}
+{% block title %}Analítica de lives de TikTok que te dice qué hacer{% endblock %}
+{% block public %}
+<section class="hero">
+  <div>
+    <span class="badge accent">Para agencias, marcas y creadores de TikTok Shop</span>
+    <h1 style="margin-top:14px">Deja de vender <span class="grad">al azar</span> en tus lives.</h1>
+    <p class="lead">PulsoLive analiza cada transmisión y te dice qué hizo que se vendiera más: la hora, el host, la promoción, el guion o el momento exacto. Luego te da sugerencias concretas para repetirlo.</p>
+    <div class="row">
+      <a href="{% url 'accounts:signup' %}" class="btn btn-primary btn-lg">Empieza gratis {{ trial_days }} días</a>
+      <a href="{% url 'accounts:pricing' %}" class="btn btn-lg">Ver precios</a>
+    </div>
+    <p class="muted" style="margin-top:10px"><small>Sin tarjeta para la prueba. Importa el archivo de TikTok Shop y ve resultados en minutos.</small></p>
+  </div>
+  <div class="mock">
+    <div class="row" style="justify-content:space-between"><strong>¿Qué vende más?</strong><span class="badge alta">confianza alta</span></div>
+    <div class="rec"><span class="badge repetir">repetir</span><div><div class="title">Programa más lives de 19 a 22 h</div><div class="detail">+28% de ventas por hora vs. el promedio (150 lives)</div></div></div>
+    <div class="rec"><span class="badge repetir">repetir</span><div><div class="title">Repite: «quedan pocas piezas»</div><div class="detail">Los pedidos se duplican en los 5 minutos siguientes</div></div></div>
+    <div class="rec"><span class="badge corregir">corregir</span><div><div class="title">Coaching para Sofi</div><div class="detail">La gente se va rápido: trabaja el gancho de los primeros 30 s</div></div></div>
+    <div class="rec"><span class="badge probar">probar</span><div><div class="title">Prueba A/B: flash sale vs. 2x1</div><div class="detail">4 lives de cada uno y te decimos cuál ganó</div></div></div>
+  </div>
+</section>
+
+<section class="section-l">
+  <h2 style="text-align:center;font-size:1.6rem">De "a veces se vende" a un método que se repite</h2>
+  <p class="muted" style="text-align:center;max-width:640px;margin:8px auto 28px">Tus lives generan datos todos los días. PulsoLive los ordena, encuentra los patrones y los convierte en acciones para el siguiente live.</p>
+  <div class="grid grid-3">
+    <div class="card feature"><div style="font-size:1.6rem">🔍</div><h3>Qué factores venden</h3><p class="muted">Horario, día, host, género y estilo del host, promoción, guion, duración, escenario, producto. Cada uno con su impacto real y su nivel de confianza.</p></div>
+    <div class="card feature"><div style="font-size:1.6rem">⏱️</div><h3>El momento exacto</h3><p class="muted">Cruza la curva de pedidos minuto a minuto con lo que dijo el host. Sube la transcripción y la IA detecta las frases que disparan ventas.</p></div>
+    <div class="card feature"><div style="font-size:1.6rem">📘</div><h3>Playbook por marca</h3><p class="muted">La receta del live ideal de cada marca: cuándo transmitir, con qué promoción, qué guion y qué momentos meter y cada cuánto.</p></div>
+    <div class="card feature"><div style="font-size:1.6rem">📄</div><h3>Reportes diario, semanal y mensual</h3><p class="muted">Comparativo contra el periodo anterior, top lives, aprendizajes y próximas acciones. Con tu logo, listos para mandar a tus clientes.</p></div>
+    <div class="card feature"><div style="font-size:1.6rem">🎤</div><h3>Ranking y coaching de hosts</h3><p class="muted">Quién vende más por hora, quién retiene y quién cierra. Con sugerencias de mejora para cada host.</p></div>
+    <div class="card feature"><div style="font-size:1.6rem">🧪</div><h3>Pruebas A/B guiadas</h3><p class="muted">¿Flash sale o 2x1? ¿Uno o dos hosts? Define la prueba, marca los lives y PulsoLive te dice cuál ganó.</p></div>
+  </div>
+</section>
+
+<section class="section-l">
+  <div class="card" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px">
+    <div><h3>1. Importa</h3><p class="muted">Sube el CSV o Excel que exportas del Seller Center o LIVE Center. Reconocemos columnas en español e inglés.</p></div>
+    <div><h3>2. Etiqueta en 30 segundos</h3><p class="muted">Host, promoción y tipo de guion de cada live. Lo demás lo calculamos nosotros.</p></div>
+    <div><h3>3. Recibe qué hacer</h3><p class="muted">Recomendaciones priorizadas, playbook y calendario sugerido para la próxima semana.</p></div>
+  </div>
+</section>
+
+<section class="section-l" id="precios">
+  <h2 style="text-align:center;font-size:1.6rem;margin-bottom:24px">Precios simples, en pesos</h2>
+  {% include "accounts/_pricing_cards.html" %}
+</section>
+{% endblock %}

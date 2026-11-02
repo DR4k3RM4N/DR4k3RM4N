@@ -1,0 +1,59 @@
+{% extends "base.html" %}{% load pulso %}
+{% block title %}Panel{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Panel{% if brand %} · {{ brand.name }}{% endif %}</h1>{% include "insights/_filters.html" %}</div>
+
+{% if not has_lives %}
+<div class="card">
+  <h2>¡Bienvenido a PulsoLive! Empecemos 🚀</h2>
+  <ol class="steps">
+    <li class="{% if has_brands %}done{% endif %}"><a href="{% url 'lives:brand_list' %}">Crea tu primera marca</a> (o cuenta de TikTok).</li>
+    <li class="{% if has_hosts %}done{% endif %}"><a href="{% url 'lives:host_list' %}">Registra a tus hosts</a> para comparar su desempeño.</li>
+    <li><a href="{% url 'lives:import' %}">Importa el archivo de lives</a> que exportas de TikTok Shop / LIVE Center.</li>
+    <li><a href="{% url 'lives:quick_tag' %}">Etiqueta cada live</a>: host, promoción y tipo de guion (30 segundos cada uno).</li>
+    <li>Revisa <a href="{% url 'insights:analysis' %}">qué vende más</a> y genera tu primer <a href="{% url 'insights:report_list' %}">reporte</a>.</li>
+  </ol>
+</div>
+{% else %}
+
+<div class="grid grid-4">
+  <div class="card kpi"><div class="label">Ventas (GMV)</div><div class="value">{{ kpis.gmv.value|money }}</div>{% include "insights/_delta.html" with d=kpis.gmv.delta %}</div>
+  <div class="card kpi"><div class="label">Ventas por hora de live</div><div class="value">{{ kpis.gmv_per_hour.value|money }}</div>{% include "insights/_delta.html" with d=kpis.gmv_per_hour.delta %}</div>
+  <div class="card kpi"><div class="label">Pedidos</div><div class="value">{{ kpis.orders.value|num }}</div>{% include "insights/_delta.html" with d=kpis.orders.delta %}</div>
+  <div class="card kpi"><div class="label">Conversión</div><div class="value">{{ kpis.conversion_rate.value|pct:2 }}</div>{% include "insights/_delta.html" with d=kpis.conversion_rate.delta %}</div>
+  <div class="card kpi"><div class="label">Lives</div><div class="value">{{ kpis.lives.value }}</div><small class="muted">{{ kpis.hours.value }} horas al aire</small></div>
+  <div class="card kpi"><div class="label">Ticket promedio</div><div class="value">{{ kpis.aov.value|money }}</div>{% include "insights/_delta.html" with d=kpis.aov.delta %}</div>
+  <div class="card kpi"><div class="label">Tiempo de visualización</div><div class="value">{{ kpis.avg_watch_seconds.value|mmss }}</div>{% include "insights/_delta.html" with d=kpis.avg_watch_seconds.delta %}</div>
+  <div class="card kpi"><div class="label">Nuevos seguidores</div><div class="value">{{ kpis.new_followers.value|num }}</div>{% include "insights/_delta.html" with d=kpis.new_followers.delta %}</div>
+</div>
+<p class="muted" style="margin-top:6px"><small>Del {{ start|date:"d/m/Y" }} al {{ end|date:"d/m/Y" }}, comparado con el periodo anterior de la misma duración.</small></p>
+
+<div class="grid grid-2" style="margin-top:8px">
+  <div class="card"><h2>Ventas por día</h2><div style="height:260px"><canvas id="dailyChart"></canvas></div></div>
+  <div class="card">
+    <div class="card-head"><h2 style="margin:0">Qué hacer ahora</h2><a href="{% url 'insights:analysis' %}{% if brand %}?marca={{ brand.pk }}{% endif %}" class="btn btn-sm">Ver análisis completo →</a></div>
+    {% include "insights/_recs.html" with recs=recommendations %}
+  </div>
+</div>
+
+<div class="grid grid-3" style="margin-top:16px">
+  <div class="card">
+    <h2>⏰ Mejores horarios</h2>
+    {% for s in best_slots %}<div class="rec"><div><div class="title">{{ s.weekday }} · {{ s.daypart }}</div><div class="detail"><span class="{{ s.lift|lift_class }}">{{ s.lift|signed_pct }}</span> ventas/h · {{ s.n }} lives</div></div></div>
+    {% empty %}<p class="muted">Necesitamos más lives para recomendar horarios.</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h2>⚡ Momentos que venden</h2>
+    {% for e in events %}<div class="rec"><div><div class="title">{{ e.label }}</div><div class="detail">Pedidos <span class="{{ e.median_uplift|lift_class }}">{{ e.median_uplift|signed_pct }}</span> en 5 min · {{ e.n }} veces</div></div></div>
+    {% empty %}<p class="muted">Sube datos minuto a minuto o transcripciones para descubrir qué momentos venden.</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h2>🏆 Top lives</h2>
+    {% for l in top_lives %}<div class="rec"><div><div class="title"><a href="{% url 'lives:live_detail' l.id %}">{{ l.gmv|money }}</a> · {{ l.brand }}</div><div class="detail">{{ l.started_at|date:"D d M H:i" }} · {{ l.host|default:"sin host" }} · {{ l.promo_type }}</div></div></div>
+    {% empty %}<p class="muted">Sin lives en este periodo.</p>{% endfor %}
+  </div>
+</div>
+{% if untagged %}<p class="muted" style="margin-top:12px">Tienes {{ untagged }} lives sin tipo de guion. <a href="{% url 'lives:quick_tag' %}">Etiquétalos</a> para un análisis más preciso.</p>{% endif %}
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if has_lives %}<script>PulsoCharts.daily("dailyChart", {{ chart_json|safe }});</script>{% endif %}{% endblock %}

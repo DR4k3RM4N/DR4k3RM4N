@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Pruebas A/B{% endblock %}
+{% block content %}
+<h1>Pruebas A/B</h1>
+<p class="muted">Para salir de la duda: compara dos formas de hacer el live con varios lives de cada una y te decimos cuál ganó.</p>
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Pruebas</h2>
+    {% for e in experiments %}
+      <div class="rec"><span class="badge {% if e.status == 'running' %}probar{% else %}repetir{% endif %}">{{ e.get_status_display }}</span><div><div class="title"><a href="{% url 'insights:experiment_detail' e.pk %}">{{ e.name }}</a></div><div class="detail">{{ e.brand.name }} · A: {{ e.variant_a }} vs. B: {{ e.variant_b }}</div></div></div>
+    {% empty %}<p class="muted">Aún no hay pruebas. Ideas: flash sale vs. 2x1, 1 host vs. 2 hosts, live de 1 h vs. 2 h, demo vs. storytelling.</p>{% endfor %}
+  </div>
+  {% if membership.can_edit %}
+  <div class="card"><h2>Nueva prueba</h2><form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Crear prueba</button></form></div>
+  {% endif %}
+</div>
+{% endblock %}

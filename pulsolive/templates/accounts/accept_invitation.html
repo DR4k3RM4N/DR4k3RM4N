@@ -1,0 +1,2 @@
+{% extends "base_public.html" %}
+{% block public %}<div class="auth-wrap"><div class="card"><h1>Únete a {{ invitation.organization.name }}</h1><p class="muted">Crea tu acceso para <strong>{{ invitation.email }}</strong>.</p><form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Crear acceso</button></form><p class="muted" style="margin-top:12px">¿Ya tienes cuenta? <a href="{% url 'accounts:login' %}?next={{ request.path }}">Entra</a> y abre otra vez este link.</p></div></div>{% endblock %}

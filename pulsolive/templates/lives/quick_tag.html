@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load pulso %}
+{% block title %}Etiquetar lives{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Etiquetado rápido</h1><span class="muted">Faltan {{ remaining }}</span></div>
+<div class="card" style="max-width:720px">
+  <div class="row" style="justify-content:space-between">
+    <div><h2 style="margin:0">{{ live.brand.name }} · {{ live.started_at|date:"l d \d\e F, H:i" }}</h2>
+    <small class="muted">{{ live.title }} · {{ live.duration_minutes }} min · {{ live.gmv|money }} · {{ live.orders }} pedidos</small></div>
+    <a href="{% url 'lives:live_detail' live.pk %}" class="btn btn-sm">Ver detalle</a>
+  </div>
+  <p class="muted" style="margin-top:12px">Con estos datos sabremos qué hizo la diferencia. Toma 30 segundos.</p>
+  <form method="post">{% csrf_token %}
+    <div class="form-grid">{% for field in form %}<p>{{ field.label_tag }}{{ field }}{{ field.errors }}</p>{% endfor %}</div>
+    <button class="btn btn-primary">Guardar y siguiente →</button>
+  </form>
+</div>
+{% endblock %}

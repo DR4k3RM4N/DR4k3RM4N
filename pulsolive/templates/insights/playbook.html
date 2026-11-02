@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% load pulso %}
+{% block title %}Playbook {{ brand.name }}{% endblock %}
+{% block content %}
+<div class="topbar"><h1>📘 Playbook · {{ brand.name }}</h1>
+  <div class="row no-print">{% with hide_all=True %}{% include "insights/_filters.html" %}{% endwith %}<button class="btn" onclick="window.print()">Imprimir / PDF</button></div>
+</div>
+<p class="muted">La receta del live que mejor le funciona a {{ brand.name }}, según {{ result.kpis.lives }} lives de los últimos 6 meses.</p>
+
+{% if result.kpis.lives < 5 %}
+<div class="card empty">Con menos de 5 lives aún no hay receta confiable. Sigue importando y etiquetando.</div>
+{% else %}
+<div class="grid grid-3">
+  <div class="card kpi"><div class="label">Ventas/h de tus mejores lives</div><div class="value">{{ pb.benchmarks.top_gmv_per_hour|money }}</div><small class="muted">promedio general: {{ pb.benchmarks.avg_gmv_per_hour|money }}</small></div>
+  <div class="card kpi"><div class="label">Conversión de tus mejores lives</div><div class="value">{{ pb.benchmarks.top_conversion|pct:2 }}</div></div>
+  <div class="card kpi"><div class="label">Visualización de tus mejores lives</div><div class="value">{{ pb.benchmarks.top_watch|mmss }}</div></div>
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <h2>✅ La receta</h2>
+    <table>
+      <tr><th>Elemento</th><th>Lo que mejor funciona</th><th class="num">Efecto</th><th>Confianza</th></tr>
+      {% for r in pb.recipe %}
+      <tr><td>{{ r.factor }}</td><td><strong>{{ r.choice }}</strong></td><td class="num lift-pos">{{ r.lift|signed_pct }}</td><td><span class="badge {{ r.confidence }}">{{ r.confidence }}</span></td></tr>
+      {% empty %}<tr><td colspan="4" class="muted">Aún no hay elementos claros.</td></tr>{% endfor %}
+    </table>
+  </div>
+  <div class="card">
+    <h2>⚡ Momentos que hay que meter en el guion</h2>
+    {% for e in pb.moments %}
+      <div class="rec"><span class="badge repetir">{{ e.median_uplift|signed_pct }}</span><div><div class="title">{{ e.label }}</div><div class="detail">Visto {{ e.n }} veces; sube pedidos {{ e.positive_share|pct:0 }} de las veces. Repetir cada 15–20 min.</div></div></div>
+    {% empty %}<p class="muted">Registra momentos o sube transcripciones para completar esta parte.</p>{% endfor %}
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card">
+    <h2>📅 Calendario sugerido (próximos 7 días)</h2>
+    <table>
+      {% for d in calendar %}<tr><td><strong>{{ d.weekday }}</strong> <small class="muted">{{ d.date }}</small></td><td>{{ d.daypart }}</td><td><span class="badge {% if d.kind == 'probado' %}repetir{% else %}probar{% endif %}">{{ d.kind }}</span><br><small class="muted">{{ d.reason }}</small></td></tr>{% endfor %}
+    </table>
+  </div>
+  <div class="card">
+    <h2>🏆 Lives para estudiar</h2>
+    <p class="muted"><small>Tus mejores lives por ventas/hora. Vuelve a verlos con el equipo.</small></p>
+    {% for l in top_lives %}<div class="rec"><div><div class="title"><a href="{% url 'lives:live_detail' l.pk %}">{{ l.started_at|date:"D d M Y, H:i" }}</a> · {{ l.gmv_per_hour|money }}/h</div><div class="detail">{{ l.host.name|default:"sin host" }} · {{ l.get_promo_type_display }} · {{ l.get_script_type_display|default:"—" }} · {{ l.duration_minutes }} min</div></div></div>{% endfor %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h2>Además, corrige esto</h2>
+  {% for r in result.recommendations %}{% if r.kind == 'corregir' %}<div class="rec"><span class="badge corregir">corregir</span><div><div class="title">{{ r.title }}</div><div class="detail">{{ r.detail }}</div></div></div>{% endif %}{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

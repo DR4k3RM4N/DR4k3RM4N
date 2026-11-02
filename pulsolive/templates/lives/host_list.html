@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% load pulso %}
+{% block title %}Hosts{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Hosts</h1><a class="btn" href="{% url 'insights:hosts' %}">Ver ranking →</a></div>
+<div class="grid grid-2">
+  <div class="card">
+    {% if hosts %}
+    <table>
+      <tr><th>Host</th><th>Perfil</th><th class="num">Lives</th><th class="num">Ventas</th><th></th></tr>
+      {% for h in hosts %}
+      <tr {% if not h.active %}style="opacity:.55"{% endif %}><td><strong>{{ h.name }}</strong><br><small class="muted">{{ h.handle }}</small></td>
+      <td><small>{{ h.get_gender_display }}{% if h.style %} · {{ h.get_style_display }}{% endif %}{% if h.experience %} · {{ h.get_experience_display }}{% endif %}</small></td>
+      <td class="num">{{ h.n_lives }}</td><td class="num">{{ h.total_gmv|money }}</td>
+      <td><a href="{% url 'lives:host_edit' h.pk %}">Editar</a></td></tr>
+      {% endfor %}
+    </table>
+    {% else %}<div class="empty">Agrega a las personas que conducen los lives.</div>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Nuevo host</h2>
+    <p class="muted">El perfil (género, estilo, experiencia) sirve para ver qué tipo de host conecta mejor con cada audiencia. Es opcional.</p>
+    <form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Agregar</button></form>
+  </div>
+</div>
+{% endblock %}
