@@ -345,3 +345,14 @@ details[open] > summary::before { transform: rotate(45deg); }
 .auth-wrap { max-width: 420px; margin: 48px auto; padding: 0 16px; }
 .auth-wrap h1 { margin-bottom: 4px; }
 .auth-wrap .card { padding: 28px; }
+
+/* ---------- Plan y pagos ---------- */
+.plans { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap); align-items: stretch; }
+.plan-card { display: flex; flex-direction: column; }
+.plan-card.current { border-color: var(--text); }
+.plan-card-price { font-size: 26px; margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
+.plan-card-price span { font-size: 13px; color: var(--muted); }
+.plan-card ul { padding-left: 18px; margin: 12px 0 16px; color: var(--muted); font-size: 13px; flex: 1; }
+.plan-card ul li + li { margin-top: 4px; }
+@media (max-width: 1180px) { .plans { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .plans { grid-template-columns: 1fr; } }

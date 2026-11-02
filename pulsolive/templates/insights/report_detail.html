@@ -1,5 +1,5 @@
 {% extends public|yesno:"base_public.html,base.html" %}{% load pulso %}
 {% block title %}{{ report }}{% endblock %}
-{% block public %}<div class="section-l">{% include "insights/_report_body.html" %}</div>{% endblock %}
+{% block public %}<div class="public-report">{% include "insights/_report_body.html" %}</div>{% endblock %}
 {% block crumb %} / <a href="{% url 'insights:report_list' %}">Reportes</a> / {{ report.get_period_display }}{% endblock %}
 {% block content %}{% include "insights/_report_body.html" %}{% endblock %}

@@ -1,29 +1,21 @@
-<div class="pricing">
+<div class="plans">
   {% for code, p in plans.items %}
-  <div class="card price-card {% if code == 'agency' %}featured{% endif %}">
-    <div class="row" style="justify-content:space-between"><h3 style="margin:0">{{ p.name }}</h3>{% if code == 'agency' %}<span class="badge accent">Para agencias</span>{% endif %}</div>
-    <p class="muted" style="min-height:44px">{{ p.tagline }}</p>
+  <div class="card plan-card{% if org.plan_code == code %} current{% endif %}">
+    <div class="card-head"><h2>{{ p.name }}</h2>{% if org.plan_code == code %}<span class="badge accent">Tu plan</span>{% endif %}</div>
+    <p class="muted" style="font-size:13px;min-height:40px">{{ p.tagline }}</p>
     {% if p.price_mxn %}
-      <div class="price">${{ p.price_mxn|floatformat:"0g" }}<small style="font-size:.9rem;font-weight:500" class="muted"> MXN/mes</small></div>
-      <small class="muted">o ${{ p.price_yearly_mxn|floatformat:"0g" }} al año (2 meses gratis) · ≈ US${{ p.price_usd }}</small>
+      <p class="plan-card-price">${{ p.price_mxn|floatformat:"0g" }}<span> al mes</span></p>
+      <p class="muted" style="font-size:12px">${{ p.price_yearly_mxn|floatformat:"0g" }} al año (2 meses gratis)</p>
     {% else %}
-      <div class="price">A la medida</div><small class="muted">Para operaciones grandes</small>
+      <p class="plan-card-price">A la medida</p><p class="muted" style="font-size:12px">Para operaciones grandes</p>
     {% endif %}
     <ul>{% for h in p.highlights %}<li>{{ h }}</li>{% endfor %}</ul>
-    {% if select_mode %}
-      {% if code == 'enterprise' %}
-        <a class="btn" href="mailto:ventas@pulsolive.app?subject=Plan Enterprise">Hablar con ventas</a>
-      {% elif org.plan_code == code and org.subscription_status == 'active' %}
-        <button class="btn" disabled>Tu plan actual</button>
-      {% else %}
-        <form method="post" action="{% url 'accounts:choose_plan' code %}">{% csrf_token %}<button class="btn {% if code == 'agency' %}btn-primary{% endif %}" style="width:100%;justify-content:center">Elegir {{ p.name }}</button></form>
-      {% endif %}
+    {% if code == 'enterprise' %}
+      <a class="btn" href="mailto:ventas@pulsolive.app?subject=Plan%20Enterprise">Hablar con ventas</a>
+    {% elif org.plan_code == code and org.subscription_status == 'active' %}
+      <button class="btn" type="button" disabled>Tu plan actual</button>
     {% else %}
-      {% if code == 'enterprise' %}
-        <a class="btn" href="mailto:ventas@pulsolive.app?subject=Plan Enterprise">Hablar con ventas</a>
-      {% else %}
-        <a class="btn {% if code == 'agency' %}btn-primary{% endif %}" style="justify-content:center" href="{% url 'accounts:signup' %}?plan={{ code }}">Probar {{ trial_days }} días gratis</a>
-      {% endif %}
+      <form method="post" action="{% url 'accounts:choose_plan' code %}">{% csrf_token %}<button class="btn{% if code == 'agency' %} btn-primary{% endif %}" type="submit" style="width:100%">Elegir {{ p.name }}</button></form>
     {% endif %}
   </div>
   {% endfor %}

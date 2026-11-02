@@ -210,10 +210,10 @@
 @media (hover: hover) and (pointer: fine) { .cta-form button:hover { background: #2b2d31; } }
 
 /* ---------- Footer: the mark, built large ---------- */
-.foot { padding: 120px 24px 24px; overflow: hidden; }
+.foot { padding: 96px 24px 24px; overflow: hidden; }
 .blocks { display: flex; gap: 4px; height: 34svh; min-height: 220px; align-items: flex-end; }
-.blocks span { flex: 1; border-radius: 4px; color: var(--page); font-weight: 600; font-size: clamp(56px, 9vw, 150px); line-height: .8; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 12px; letter-spacing: -0.04em; }
-.foot-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--g); margin-top: 56px; font-size: var(--small); }
+.blocks span { flex: 1; border-radius: 4px; color: #fff; font-weight: 600; font-size: clamp(56px, 9vw, 150px); line-height: .8; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 12px; letter-spacing: -0.04em; }
+.foot-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--g); margin-top: 40px; font-size: var(--small); }
 .foot-cols nav { display: flex; flex-direction: column; gap: 6px; }
 .foot-cols strong { font-weight: 600; margin-bottom: 4px; }
 .foot-cols a { text-decoration: none; color: var(--muted) !important; }
@@ -294,3 +294,45 @@
   .blocks span { font-size: 9vw; padding-bottom: 6px; }
   .foot-cols { grid-template-columns: 1fr 1fr; row-gap: 24px; }
 }
+
+/* ---------- Public pages: pricing, sign in, sign up ---------- */
+.public { min-height: 100svh; display: flex; flex-direction: column; }
+.public > main { flex: 1; }
+.public > header.board { grid-template-rows: 60px; }
+.pub-messages { margin: 0 var(--m) var(--g); }
+.pricing-page { padding-top: 64px; }
+.pricing-page .pr-head { font-size: var(--xl); }
+.public .faq { margin-top: 96px; }
+.public .faq .band-head { min-height: 24svh; }
+.auth { grid-template-columns: repeat(12, 1fr); padding-top: 0; min-height: calc(100svh - 60px - 3 * var(--m) - 72px); }
+.auth-form { grid-column: 1 / 7; padding: 48px; display: flex; flex-direction: column; justify-content: center; }
+.auth-form > * { width: 100%; max-width: 460px; }
+.auth-form h1 { font-size: clamp(36px, 3.4vw, 52px); font-weight: 500; line-height: 1.05; letter-spacing: -0.03em; margin-bottom: 8px; }
+.auth-sub { color: var(--muted); margin-bottom: 24px !important; }
+.auth-form form { margin-top: 16px; }
+.auth-form label { font-size: var(--small); }
+.auth-form input:not([type=hidden]), .auth-form select { min-height: 44px; font-size: 16px; }
+.auth-form .form-grid { grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.auth-form .form-grid .wide { grid-column: 1 / -1; }
+.auth-btn { width: 100%; max-width: 460px; height: 48px; font-size: 16px; }
+.auth-alt { margin-top: 20px !important; font-size: var(--small); color: var(--muted); }
+.auth-alt a { color: var(--accent-deep) !important; }
+.auth-side { grid-column: 7 / 13; padding: 48px; display: flex; flex-direction: column; justify-content: space-between; gap: 32px; }
+.auth-side p { font-size: var(--l); font-weight: 500; line-height: 1.2; max-width: 18ch; }
+.auth-moments { display: grid; gap: 4px; }
+.auth-moments span { display: grid; grid-template-columns: 72px 1fr auto; align-items: center; height: 52px; padding: 0 16px; background: #26282c; border-radius: 4px; font-size: var(--small); font-variant-numeric: tabular-nums; }
+.auth-moments b { font-weight: 400; color: #b8bbc1; }
+.auth-moments em { font-style: normal; background: var(--up); padding: 3px 8px; border-radius: 4px; }
+.pub-foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding: 24px; font-size: var(--small); color: var(--muted); }
+.pub-foot nav { display: flex; gap: 20px; }
+.pub-foot a { text-decoration: none; }
+@media (hover: hover) and (pointer: fine) { .pub-foot a:hover { text-decoration: underline; color: var(--ink); } }
+@media (max-width: 860px) {
+  .auth { grid-template-columns: 1fr; }
+  .auth-form, .auth-side { grid-column: 1; padding: 28px 20px; }
+  .auth-side { order: 2; }
+  .auth-form .form-grid { grid-template-columns: 1fr; }
+  .pricing-page { padding-top: 32px; }
+}
+.public-report { max-width: 1240px; margin: 0 auto; padding: 32px 24px 64px; font-size: 14px; line-height: 1.5; }
+.public-report p { margin: 0 0 8px; }

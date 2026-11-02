@@ -1,0 +1,4 @@
+  <div class="band band-head"><h2 id="faq-h">Preguntas</h2></div>
+  {% for q, a in faqs %}
+  <div class="band{% cycle '' ' alt' %}"><h3 class="reveal">{{ q }}</h3><p class="reveal">{{ a }}</p></div>
+  {% endfor %}

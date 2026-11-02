@@ -1,20 +1,15 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% load static %}
+{% block styles %}<link rel="stylesheet" href="{% static 'css/site.css' %}">{% endblock %}
+{% block head %}<script>document.documentElement.classList.add("js")</script>{% endblock %}
 {% block body %}
-<div class="landing">
-  <header>
-    <a class="logo" href="{% url 'accounts:landing' %}" style="margin:0"><span class="logo-mark">∿</span> PulsoLive</a>
-    <div class="row">
-      <a href="{% url 'accounts:pricing' %}" class="btn btn-ghost">Precios</a>
-      {% if user.is_authenticated %}
-        <a href="{% url 'insights:dashboard' %}" class="btn btn-primary">Ir a mi panel</a>
-      {% else %}
-        <a href="{% url 'accounts:login' %}" class="btn btn-ghost">Entrar</a>
-        <a href="{% url 'accounts:signup' %}" class="btn btn-primary">Prueba gratis</a>
-      {% endif %}
-    </div>
-  </header>
-  {% if messages %}<div class="section-l" style="padding-top:0;padding-bottom:0"><ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul></div>{% endif %}
-  {% block public %}{% endblock %}
-  <footer class="site">© PulsoLive · Analítica para lives de TikTok Shop · Hecho en México<br><small>PulsoLive no está afiliado a TikTok.</small></footer>
+<div class="site public">
+  <header class="board">{% include "_site_toprow.html" %}</header>
+  {% if messages %}<ul class="messages pub-messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+  <main>{% block public %}{% endblock %}</main>
+  <footer class="pub-foot">
+    <span>© {% now "Y" %} PulsoLive. Hecho en México. No está afiliado a TikTok.</span>
+    <nav aria-label="Pie"><a href="{% url 'accounts:pricing' %}">Precios</a><a href="{% url 'accounts:landing' %}#preguntas">Preguntas</a><a href="mailto:hola@pulsolive.app">hola@pulsolive.app</a></nav>
+  </footer>
 </div>
 {% endblock %}
+{% block scripts %}<script src="{% static 'js/site.js' %}"></script>{% endblock %}

@@ -1,0 +1,14 @@
+  <div class="steps-row">
+    {% if heading_tag == "h1" %}<h1 id="pr-h" class="pr-head">Precios en pesos</h1>{% else %}<h2 id="pr-h" class="pr-head reveal">Precios en pesos</h2>{% endif %}
+    {% for p in priced %}
+    <div class="plan plan-{{ forloop.counter }} reveal">
+      <div class="plan-body">
+        <h3>{{ p.name }}</h3>
+        <p class="plan-price">${{ p.price_mxn|floatformat:"0g" }}<span> al mes</span></p>
+        <ul>{% for h in p.highlights %}<li>{{ h }}</li>{% endfor %}</ul>
+      </div>
+      <a class="plan-btn" href="{% url 'accounts:signup' %}?plan={{ p.code }}">Probar {{ p.name }} {{ trial_days }} días gratis</a>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="pr-note">IVA incluido. Pago anual: 2 meses gratis. ¿Más de 20 marcas o conexión directa con TikTok Shop? <a href="mailto:ventas@pulsolive.app?subject=Plan%20Enterprise">Plan Enterprise</a>.</p>

@@ -1,12 +1,17 @@
 {% extends "base_public.html" %}
-{% block title %}Crear cuenta{% endblock %}
+{% block title %}Crea tu cuenta{% endblock %}
 {% block public %}
-<div class="auth-wrap">
-  <div class="card">
+<section class="board auth">
+  <div class="t t-paper auth-form">
     <h1>Crea tu cuenta</h1>
-    <p class="muted">{{ trial_days }} días gratis con todas las funciones Pro. Sin tarjeta.</p>
-    <form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary btn-lg" style="width:100%;justify-content:center">Crear cuenta</button></form>
-    <p class="muted" style="margin-top:12px">¿Ya tienes cuenta? <a href="{% url 'accounts:login' %}">Entra</a></p>
+    <p class="auth-sub">{{ trial_days }} días gratis con todo el plan Pro. Sin tarjeta.</p>
+    <form method="post">{% csrf_token %}{{ form.non_field_errors }}
+      <div class="form-grid">{% for f in form %}<p{% if f.name == "org_name" or f.name == "email" %} class="wide"{% endif %}>{{ f.label_tag }}{{ f }}{% if f.help_text and "password" not in f.name %}<span class="helptext">{{ f.help_text|safe }}</span>{% endif %}{{ f.errors }}</p>{% endfor %}</div>
+      <p class="helptext" style="margin:-4px 0 16px">La contraseña necesita al menos 8 caracteres y no puede ser solo números.</p>
+      <button class="btn btn-primary btn-lg auth-btn" type="submit">Crear cuenta</button>
+    </form>
+    <p class="auth-alt">¿Ya tienes cuenta? <a href="{% url 'accounts:login' %}">Entra</a></p>
   </div>
-</div>
+  {% include "accounts/_auth_side.html" %}
+</section>
 {% endblock %}

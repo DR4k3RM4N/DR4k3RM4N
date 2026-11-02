@@ -65,8 +65,20 @@ def landing(request):
     })
 
 
+
+
+PRICING_FAQS = [
+    ("¿Qué es un análisis con IA?", "Cada resumen ejecutivo de un reporte o análisis de transcripción hecho con IA. El análisis estadístico, las recomendaciones automáticas y los reportes son ilimitados en todos los planes."),
+    ("¿Puedo cambiar de plan?", "Sí, cuando quieras, desde Plan y pagos. El cambio se prorratea en tu siguiente cobro."),
+    ("¿Cobran en pesos?", "Sí. Los precios son mensuales, en pesos mexicanos y con IVA incluido. Si pagas el año, son 10 meses: 2 meses gratis."),
+]
+
+
 def pricing(request):
-    return render(request, "accounts/pricing.html", {"plans": PLANS, "trial_days": TRIAL_DAYS})
+    return render(request, "accounts/pricing.html", {
+        "plans": PLANS, "priced": [PLANS[c] for c in ("creator", "pro", "agency")], "trial_days": TRIAL_DAYS,
+        "faqs": PRICING_FAQS + LANDING_FAQS[:1] + LANDING_FAQS[-1:],
+    })
 
 
 @transaction.atomic
@@ -187,9 +199,11 @@ def billing_view(request):
     return render(request, "accounts/billing.html", {
         "plans": PLANS,
         "stripe_enabled": billing.stripe_enabled(),
-        "ai_used": org.ai_runs_this_month(),
-        "brands_used": org.brands.filter(archived=False).count(),
-        "users_used": org.memberships.count(),
+        "usage": [
+            ("Marcas", org.brands.filter(archived=False).count(), org.plan.max_brands),
+            ("Usuarios", org.memberships.count(), org.plan.max_users),
+            ("Análisis con IA este mes", org.ai_runs_this_month(), org.plan.ai_runs_per_month),
+        ],
     })
 
 
