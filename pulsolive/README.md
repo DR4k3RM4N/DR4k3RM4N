@@ -33,6 +33,15 @@ El anual cuesta 10 meses (2 meses gratis). Los precios y límites están en `acc
 
 ## Correrlo en tu compu
 
+### Windows (doble clic)
+
+1. Descarga el proyecto como ZIP desde GitHub (botón verde **Code → Download ZIP**) y descomprímelo en tu carpeta de Documentos. No lo pongas en `C:\Windows`.
+2. Entra a la carpeta `pulsolive` y da doble clic a **`INICIAR_WINDOWS.bat`**.
+3. Si no tienes Python, el archivo abre la página de descarga. Al instalar, marca **"Add python.exe to PATH"** y vuelve a dar doble clic.
+4. La primera vez tarda unos minutos. Después se abre el navegador solo.
+
+### Mac / Linux
+
 ```bash
 cd pulsolive
 python -m venv .venv && source .venv/bin/activate
