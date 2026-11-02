@@ -146,6 +146,30 @@ def live_edit(request, pk):
     return render(request, "lives/form_page.html", {"form": form, "title": "Editar live", "delete": True})
 
 
+EVENT_SHORT = {
+    "product_demo": "Demo", "price_reveal": "Precio", "discount": "Descuento", "flash_sale": "Flash sale",
+    "scarcity": "Escasez", "urgency": "Urgencia", "cta_cart": "Carrito", "giveaway": "Sorteo", "qna": "Preguntas",
+    "shoutout": "Saludos", "testimonial": "Testimonio", "bundle": "Paquete", "free_shipping": "Envío gratis",
+    "product_switch": "Cambio", "guest": "Invitado", "before_after": "Antes/después", "other": "Otro",
+}
+
+
+def _chart_events(analysis):
+    """Los momentos que se marcan sobre la curva: los que causaron un pico, y si no hay, los de mayor alza."""
+    moments = analysis["moments"] or {}
+    causes = [s["cause"] for s in moments.get("spikes", []) if s.get("cause")]
+    if not causes:
+        impacts = sorted(moments.get("event_impacts", []), key=lambda i: i["uplift"], reverse=True)
+        causes = [i for i in impacts if i["uplift"] > 0.5][:6]
+    seen, out = set(), []
+    for e in sorted(causes, key=lambda e: e["minute"]):
+        if e["minute"] in seen:
+            continue
+        seen.add(e["minute"])
+        out.append({"minute": e["minute"], "label": e["label"], "short": EVENT_SHORT.get(e["kind"], e["label"])})
+    return out[:8]
+
+
 @org_required
 def live_detail(request, pk):
     live = get_object_or_404(LiveSession.objects.select_related("brand", "host"), pk=pk, organization=request.org)
@@ -157,12 +181,12 @@ def live_detail(request, pk):
             "labels": [m["minute"] for m in analysis["minutes"]],
             "orders": [m["orders"] for m in analysis["minutes"]],
             "viewers": [m["viewers"] for m in analysis["minutes"]],
-            "events": [{"minute": e["minute"], "label": e["label"]} for e in analysis["events"]],
+            "events": _chart_events(analysis),
         }
     return render(request, "lives/live_detail.html", {
         "live": live,
         "analysis": analysis,
-        "chart_json": json.dumps(chart) if chart else "",
+        "chart": chart,
         "event_form": LiveEventForm(),
         "minute_form": MinuteImportForm(),
         "transcript_form": TranscriptForm(),

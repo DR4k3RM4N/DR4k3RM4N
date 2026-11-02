@@ -1,0 +1,1 @@
+{% load pulso %}{% if d is None %}<span class="dash">—</span> sin lives para comparar{% elif d > 0.005 %}<span class="delta good">{{ d|signed_pct }}</span> vs. promedio de la marca{% elif d < -0.005 %}<span class="delta bad">{{ d|signed_pct }}</span> vs. promedio de la marca{% else %}<span class="delta flat">igual</span> al promedio de la marca{% endif %}

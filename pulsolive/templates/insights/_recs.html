@@ -1,6 +1,6 @@
-{% for r in recs %}
+{% load pulso %}{% for r in recs %}
 <div class="rec">
-  <div><span class="badge {{ r.kind }}">{{ r.kind }}</span></div>
-  <div><div class="title">{{ r.title }}</div><div class="detail">{{ r.detail }}</div>{% if r.evidence %}<small class="muted">{{ r.evidence }}</small>{% endif %}</div>
+  <span class="badge {{ r.kind }}">{{ r.kind }}</span>
+  <div><div class="title">{{ r.title }}</div><div class="detail">{% if brief %}{{ r.detail|brief }}.{% else %}{{ r.detail }}{% endif %}</div>{% if r.evidence and not brief %}<small>{{ r.evidence }}</small>{% endif %}</div>
 </div>
 {% empty %}<p class="muted">Sin recomendaciones todavía.</p>{% endfor %}

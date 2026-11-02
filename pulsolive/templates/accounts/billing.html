@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Plan y pagos{% endblock %}
+{% block crumb %} / Plan y pagos{% endblock %}
 {% block content %}
 <div class="topbar"><h1>Plan y pagos</h1>
   {% if org.stripe_customer_id %}<form method="post" action="{% url 'accounts:billing_portal' %}">{% csrf_token %}<button class="btn">Facturas y método de pago</button></form>{% endif %}

@@ -1,7 +1,8 @@
 {% extends "base.html" %}{% load pulso %}
 {% block title %}{{ exp.name }}{% endblock %}
+{% block crumb %} / <a href="{% url 'insights:experiment_list' %}">Pruebas A/B</a> / {{ exp.name }}{% endblock %}
 {% block content %}
-<div class="topbar"><div><h1>🧪 {{ exp.name }}</h1><span class="muted">{{ exp.brand.name }} · midiendo {{ metric_label|lower }}</span></div>
+<div class="topbar"><div><h1>{{ exp.name }}</h1><span class="muted">{{ exp.brand.name }} · midiendo {{ metric_label|lower }}</span></div>
   {% if membership.can_edit %}<form method="post">{% csrf_token %}<button class="btn" name="finish" value="1">{% if exp.status == 'running' %}Terminar prueba{% else %}Reabrir prueba{% endif %}</button></form>{% endif %}
 </div>
 {% if exp.hypothesis %}<p><strong>Hipótesis:</strong> {{ exp.hypothesis }}</p>{% endif %}

@@ -1,8 +1,9 @@
 {% extends "base.html" %}{% load pulso %}
 {% block title %}Lives{% endblock %}
+{% block crumb %} / Lives{% endblock %}
 {% block content %}
 <div class="topbar"><h1>Lives</h1>
-  <div class="row">{% if untagged %}<a class="btn" href="{% url 'lives:quick_tag' %}">🏷️ Etiquetar {{ untagged }} pendientes</a>{% endif %}
+  <div class="row">{% if untagged %}<a class="btn" href="{% url 'lives:quick_tag' %}">Etiquetar {{ untagged }} pendientes</a>{% endif %}
   <a class="btn" href="{% url 'lives:import' %}">Importar archivo</a><a class="btn btn-primary" href="{% url 'lives:live_create' %}">+ Registrar live</a></div>
 </div>
 <form class="card filters" method="get" style="margin-bottom:16px">

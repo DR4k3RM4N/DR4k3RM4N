@@ -1,11 +1,11 @@
 <form class="filters no-print" method="get">
-  <div><label>Marca</label><select name="marca" onchange="this.form.submit()"><option value="">{% if hide_all %}—{% else %}Todas las marcas{% endif %}</option>{% for b in brands %}<option value="{{ b.pk }}" {% if brand.pk == b.pk %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+  <div><label for="f-marca">Marca</label><select id="f-marca" name="marca" onchange="this.form.submit()"><option value="">{% if hide_all %}Elige una marca{% else %}Todas las marcas{% endif %}</option>{% for b in brands %}<option value="{{ b.pk }}" {% if brand.pk == b.pk %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
   {% if start %}
-  <div><label>Desde</label><input type="date" name="desde" value="{{ start|date:'Y-m-d' }}"></div>
-  <div><label>Hasta</label><input type="date" name="hasta" value="{{ end|date:'Y-m-d' }}"></div>
+  <div><label for="f-desde">Desde</label><input id="f-desde" type="date" name="desde" value="{{ start|date:'Y-m-d' }}"></div>
+  <div><label for="f-hasta">Hasta</label><input id="f-hasta" type="date" name="hasta" value="{{ end|date:'Y-m-d' }}"></div>
   {% endif %}
   {% if metrics %}
-  <div><label>Medir por</label><select name="metrica">{% for k, v in metrics.items %}<option value="{{ k }}" {% if k == metric %}selected{% endif %}>{{ v|capfirst }}</option>{% endfor %}</select></div>
+  <div><label for="f-metrica">Medir por</label><select id="f-metrica" name="metrica">{% for k, v in metrics.items %}<option value="{{ k }}" {% if k == metric %}selected{% endif %}>{{ v|capfirst }}</option>{% endfor %}</select></div>
   {% endif %}
-  <div><button class="btn">Aplicar</button></div>
+  <div style="min-width:0"><button class="btn" type="submit">Aplicar</button></div>
 </form>

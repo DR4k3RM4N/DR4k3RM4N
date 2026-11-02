@@ -10,7 +10,7 @@
   {% if not public %}
   <div class="row no-print">
     {% if membership.can_edit %}<form method="post" action="{% url 'insights:report_regenerate' report.pk %}">{% csrf_token %}<button class="btn btn-sm">Actualizar datos</button></form>{% endif %}
-    {% if can_ai and membership.can_edit %}<form method="post" action="{% url 'insights:report_ai' report.pk %}">{% csrf_token %}<button class="btn btn-sm btn-primary">✨ {% if report.ai_summary %}Rehacer{% else %}Generar{% endif %} resumen con IA</button></form>{% endif %}
+    {% if can_ai and membership.can_edit %}<form method="post" action="{% url 'insights:report_ai' report.pk %}">{% csrf_token %}<button class="btn btn-sm btn-primary">{% if report.ai_summary %}Rehacer{% else %}Generar{% endif %} resumen con IA</button></form>{% endif %}
     {% if can_share and membership.can_edit %}<form method="post" action="{% url 'insights:report_share' report.pk %}">{% csrf_token %}<button class="btn btn-sm">{% if report.shared %}Desactivar link{% else %}Compartir con link{% endif %}</button></form>{% endif %}
     <button class="btn btn-sm" onclick="window.print()">Imprimir / PDF</button>
   </div>
@@ -34,15 +34,17 @@
 </div>
 {% endif %}{% endwith %}
 
-<div class="grid grid-4" style="margin-top:16px">
-  <div class="card kpi"><div class="label">Ventas</div><div class="value">{{ d.kpis.gmv.value|money }}</div>{% include "insights/_delta.html" with d=d.kpis.gmv.delta %}</div>
-  <div class="card kpi"><div class="label">Ventas por hora</div><div class="value">{{ d.kpis.gmv_per_hour.value|money }}</div>{% include "insights/_delta.html" with d=d.kpis.gmv_per_hour.delta %}</div>
-  <div class="card kpi"><div class="label">Pedidos</div><div class="value">{{ d.kpis.orders.value|num }}</div>{% include "insights/_delta.html" with d=d.kpis.orders.delta %}</div>
-  <div class="card kpi"><div class="label">Conversión</div><div class="value">{{ d.kpis.conversion_rate.value|pct:2 }}</div>{% include "insights/_delta.html" with d=d.kpis.conversion_rate.delta %}</div>
-  <div class="card kpi"><div class="label">Lives / horas</div><div class="value">{{ d.kpis.lives.value }} / {{ d.kpis.hours.value }}</div>{% include "insights/_delta.html" with d=d.kpis.lives.delta %}</div>
-  <div class="card kpi"><div class="label">Ticket promedio</div><div class="value">{{ d.kpis.aov.value|money }}</div>{% include "insights/_delta.html" with d=d.kpis.aov.delta %}</div>
-  <div class="card kpi"><div class="label">Visualización</div><div class="value">{{ d.kpis.avg_watch_seconds.value|mmss }}</div>{% include "insights/_delta.html" with d=d.kpis.avg_watch_seconds.delta %}</div>
-  <div class="card kpi"><div class="label">Nuevos seguidores</div><div class="value">{{ d.kpis.new_followers.value|num }}</div>{% include "insights/_delta.html" with d=d.kpis.new_followers.delta %}</div>
+<div class="kpis" style="margin-top:var(--gap)">
+  <div class="kpi"><div class="label">Ventas</div><div class="value lead">{{ d.kpis.gmv.value|money }}</div><div class="cap">{% include "insights/_delta.html" with d=d.kpis.gmv.delta %}</div></div>
+  <div class="kpi"><div class="label">Ventas por hora</div><div class="value">{{ d.kpis.gmv_per_hour.value|money }}</div><div class="cap">{% include "insights/_delta.html" with d=d.kpis.gmv_per_hour.delta %}</div></div>
+  <div class="kpi"><div class="label">Pedidos</div><div class="value">{{ d.kpis.orders.value|num }}</div><div class="cap">{% include "insights/_delta.html" with d=d.kpis.orders.delta %}</div></div>
+  <div class="kpi"><div class="label">Conversión</div><div class="value">{{ d.kpis.conversion_rate.value|pct:2 }}</div><div class="cap">{% include "insights/_delta.html" with d=d.kpis.conversion_rate.delta %}</div></div>
+</div>
+<div class="kpis" style="margin-top:12px">
+  <div class="kpi"><div class="label">Lives / horas</div><div class="value">{{ d.kpis.lives.value }} / {{ d.kpis.hours.value }}</div><div class="cap">{% include "insights/_delta.html" with d=d.kpis.lives.delta %}</div></div>
+  <div class="kpi"><div class="label">Ticket promedio</div><div class="value">{{ d.kpis.aov.value|money }}</div><div class="cap">{% include "insights/_delta.html" with d=d.kpis.aov.delta %}</div></div>
+  <div class="kpi"><div class="label">Visualización</div><div class="value">{{ d.kpis.avg_watch_seconds.value|mmss }}</div><div class="cap">{% include "insights/_delta.html" with d=d.kpis.avg_watch_seconds.delta %}</div></div>
+  <div class="kpi"><div class="label">Nuevos seguidores</div><div class="value">{{ d.kpis.new_followers.value|num }}</div><div class="cap">{% include "insights/_delta.html" with d=d.kpis.new_followers.delta %}</div></div>
 </div>
 {% if d.goal %}<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><strong>Meta del mes: {{ d.goal.target|money }}</strong><span>{{ d.goal.progress|pct:0 }}</span></div><div class="bar {% if d.goal.progress >= 1 %}good{% endif %}" style="margin-top:8px"><span style="width:{{ d.goal.progress|bar_width:1 }}%"></span></div></div>{% endif %}
 

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Equipo{% endblock %}
+{% block crumb %} / Equipo{% endblock %}
 {% block content %}
 <div class="topbar"><h1>Equipo</h1><span class="muted">{{ org.memberships.count }} de {{ org_plan.max_users }} usuarios en tu plan</span></div>
 <div class="grid grid-2">

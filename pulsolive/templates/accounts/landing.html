@@ -1,49 +1,189 @@
-{% extends "base_public.html" %}
-{% block title %}Analítica de lives de TikTok que te dice qué hacer{% endblock %}
-{% block public %}
-<section class="hero">
-  <div>
-    <span class="badge accent">Para agencias, marcas y creadores de TikTok Shop</span>
-    <h1 style="margin-top:14px">Deja de vender <span class="grad">al azar</span> en tus lives.</h1>
-    <p class="lead">PulsoLive analiza cada transmisión y te dice qué hizo que se vendiera más: la hora, el host, la promoción, el guion o el momento exacto. Luego te da sugerencias concretas para repetirlo.</p>
-    <div class="row">
-      <a href="{% url 'accounts:signup' %}" class="btn btn-primary btn-lg">Empieza gratis {{ trial_days }} días</a>
-      <a href="{% url 'accounts:pricing' %}" class="btn btn-lg">Ver precios</a>
+{% extends "base.html" %}{% load static %}
+{% block title %}Analítica para lives de TikTok Shop{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{% static 'css/site.css' %}">{% endblock %}
+{% block head %}<script>document.documentElement.classList.add("js")</script><meta name="description" content="PulsoLive analiza tus lives de TikTok Shop y te dice qué hizo que se vendiera más: la hora, el host, la promoción o el momento exacto del live. Y qué repetir.">{% endblock %}
+{% block body %}
+<div class="site">
+<!-- ===== Hero: two-by-two board ===== -->
+<header class="board hero-board">
+  <div class="toprow">
+    <a class="t t-ink t-logo" href="{% url 'accounts:landing' %}" aria-label="PulsoLive, inicio">
+      <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M3 13h4l2.4-6 4.2 11 2.4-6.5H21" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+    <nav class="t t-ground t-links" aria-label="Secciones">
+      <a href="#como-funciona">Cómo funciona</a><a href="#funciones">Funciones</a><a href="#precios">Precios</a><a href="#preguntas">Preguntas</a>
+      {% if user.is_authenticated %}<a href="{% url 'insights:dashboard' %}">Mi panel</a>{% else %}<a href="{% url 'accounts:login' %}">Entrar</a>{% endif %}
+    </nav>
+    <a class="t t-ink t-action" href="{% url 'accounts:signup' %}">Probar {{ trial_days }} días gratis</a>
+  </div>
+
+  <div class="quad">
+    <h1 class="t t-paper t-name" aria-label="PulsoLive"><span>Pulso</span><span class="live">Live</span></h1>
+
+    <figure class="t t-ui t-curve shutter" data-ui aria-label="Pedidos por minuto de un live de ejemplo, con sus momentos marcados">
+      <div class="frag frag-curve">
+        <div class="frag-head"><strong>Glow Lab · jueves 20:00</strong><span>Pedidos por minuto</span></div>
+        <div class="curve" id="curve" role="img" aria-label="Barras de pedidos por minuto; picos después de la oferta relámpago (min 20) y de 'quedan pocas piezas' (min 51)"></div>
+        <div class="frag-note"><span class="dot"></span>Min 20 · Oferta relámpago: de 1.2 a 2.6 pedidos por minuto</div>
+      </div>
+    </figure>
+
+    <figure class="t t-ui t-factors reveal" data-ui aria-label="Qué pesa más en las ventas de una marca de ejemplo">
+      <div class="frag">
+        <div class="frag-head"><strong>Qué pesa más</strong><span>173 lives</span></div>
+        <div class="share"><i style="width:100%"></i><span>Horario · mejor: noche</span><b>22%</b></div>
+        <div class="share"><i style="width:55%"></i><span>Categoría · mejor: belleza</span><b>12%</b></div>
+        <div class="share"><i style="width:36%"></i><span>Host · mejor: Ana Ruiz</span><b>8%</b></div>
+        <div class="share"><i style="width:23%"></i><span>Guion · mejor: antes y después</span><b>5%</b></div>
+        <div class="share"><i style="width:6%"></i><span>Promoción · mejor: flash sale</span><b>1%</b></div>
+      </div>
+    </figure>
+
+    <div class="pair">
+      <div class="t t-ink t-say reveal"><p>Lo que hizo vender tu live, minuto a minuto.</p></div>
+      <div class="t t-accent t-say reveal"><p>Analítica de lives de TikTok Shop. Y qué repetir.</p><a class="tile-link" href="{% url 'accounts:signup' %}">Empezar gratis</a></div>
     </div>
-    <p class="muted" style="margin-top:10px"><small>Sin tarjeta para la prueba. Importa el archivo de TikTok Shop y ve resultados en minutos.</small></p>
   </div>
-  <div class="mock">
-    <div class="row" style="justify-content:space-between"><strong>¿Qué vende más?</strong><span class="badge alta">confianza alta</span></div>
-    <div class="rec"><span class="badge repetir">repetir</span><div><div class="title">Programa más lives de 19 a 22 h</div><div class="detail">+28% de ventas por hora vs. el promedio (150 lives)</div></div></div>
-    <div class="rec"><span class="badge repetir">repetir</span><div><div class="title">Repite: «quedan pocas piezas»</div><div class="detail">Los pedidos se duplican en los 5 minutos siguientes</div></div></div>
-    <div class="rec"><span class="badge corregir">corregir</span><div><div class="title">Coaching para Sofi</div><div class="detail">La gente se va rápido: trabaja el gancho de los primeros 30 s</div></div></div>
-    <div class="rec"><span class="badge probar">probar</span><div><div class="title">Prueba A/B: flash sale vs. 2x1</div><div class="detail">4 lives de cada uno y te decimos cuál ganó</div></div></div>
+</header>
+
+<main>
+<!-- ===== Showcase: rows as a board (the live thing) ===== -->
+<section class="showcase" aria-labelledby="sc-h">
+  <div class="sc-head">
+    <h2 id="sc-h">Un live, momento por momento</h2>
+    <p>Un live de ejemplo de cuatro horas. Elige un momento y mira qué pasó con los pedidos en los cinco minutos siguientes.</p>
+  </div>
+  <div class="dboard" data-ui id="dboard">
+    {% for m in moments %}
+    <button class="drow{% if forloop.counter == 4 %} open{% endif %}" type="button" aria-expanded="{% if forloop.counter == 4 %}true{% else %}false{% endif %}">
+      <span class="d-name">{{ m.label }}</span>
+      <span class="d-min">min {{ m.minute }}</span>
+      <span class="d-rate">{{ m.before }} → {{ m.after }}/min</span>
+      <span class="d-state {{ m.state }}">{{ m.change }}</span>
+      <span class="d-detail">«{{ m.quote }}»<br>{{ m.note }}</span>
+    </button>
+    {% endfor %}
   </div>
 </section>
 
-<section class="section-l">
-  <h2 style="text-align:center;font-size:1.6rem">De "a veces se vende" a un método que se repite</h2>
-  <p class="muted" style="text-align:center;max-width:640px;margin:8px auto 28px">Tus lives generan datos todos los días. PulsoLive los ordena, encuentra los patrones y los convierte en acciones para el siguiente live.</p>
-  <div class="grid grid-3">
-    <div class="card feature"><div style="font-size:1.6rem">🔍</div><h3>Qué factores venden</h3><p class="muted">Horario, día, host, género y estilo del host, promoción, guion, duración, escenario, producto. Cada uno con su impacto real y su nivel de confianza.</p></div>
-    <div class="card feature"><div style="font-size:1.6rem">⏱️</div><h3>El momento exacto</h3><p class="muted">Cruza la curva de pedidos minuto a minuto con lo que dijo el host. Sube la transcripción y la IA detecta las frases que disparan ventas.</p></div>
-    <div class="card feature"><div style="font-size:1.6rem">📘</div><h3>Playbook por marca</h3><p class="muted">La receta del live ideal de cada marca: cuándo transmitir, con qué promoción, qué guion y qué momentos meter y cada cuánto.</p></div>
-    <div class="card feature"><div style="font-size:1.6rem">📄</div><h3>Reportes diario, semanal y mensual</h3><p class="muted">Comparativo contra el periodo anterior, top lives, aprendizajes y próximas acciones. Con tu logo, listos para mandar a tus clientes.</p></div>
-    <div class="card feature"><div style="font-size:1.6rem">🎤</div><h3>Ranking y coaching de hosts</h3><p class="muted">Quién vende más por hora, quién retiene y quién cierra. Con sugerencias de mejora para cada host.</p></div>
-    <div class="card feature"><div style="font-size:1.6rem">🧪</div><h3>Pruebas A/B guiadas</h3><p class="muted">¿Flash sale o 2x1? ¿Uno o dos hosts? Define la prueba, marca los lives y PulsoLive te dice cuál ganó.</p></div>
+<!-- ===== How it works: stages as one bar ===== -->
+<section class="how" id="como-funciona" aria-labelledby="how-h">
+  <h2 id="how-h" class="reveal">Del archivo a la decisión</h2>
+  <div class="stages" data-ui>
+    <div class="stage s1 reveal" style="flex-grow:2"><span class="dur">2 minutos</span><span class="clause-m">Primero, subes el archivo de TikTok.</span></div>
+    <div class="stage s2 reveal" style="flex-grow:10"><span class="dur">10 minutos</span><span class="clause-m">Luego, etiquetas cada live.</span></div>
+    <div class="stage s3 reveal" style="flex-grow:5"><span class="dur">5 minutos</span><span class="clause-m">Después, lees qué funcionó.</span></div>
+    <div class="stage s4 reveal" style="flex-grow:60"><span class="dur">Toda la semana</span><span class="clause-m">Al final, lo repites y PulsoLive mide si funcionó.</span></div>
+  </div>
+  <div class="clauses">
+    <p style="flex-grow:2" class="reveal">Primero, subes el archivo que exportas de Seller Center o LIVE Center.</p>
+    <p style="flex-grow:10" class="reveal">Luego, etiquetas cada live: host, promoción y tipo de guion.</p>
+    <p style="flex-grow:5" class="reveal">Después, lees qué funcionó, qué corregir y en qué horario transmitir.</p>
+    <p style="flex-grow:60" class="reveal">Al final, lo repites en tus lives y PulsoLive mide si funcionó, con pruebas A/B y un reporte cada lunes.</p>
   </div>
 </section>
 
-<section class="section-l">
-  <div class="card" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px">
-    <div><h3>1. Importa</h3><p class="muted">Sube el CSV o Excel que exportas del Seller Center o LIVE Center. Reconocemos columnas en español e inglés.</p></div>
-    <div><h3>2. Etiqueta en 30 segundos</h3><p class="muted">Host, promoción y tipo de guion de cada live. Lo demás lo calculamos nosotros.</p></div>
-    <div><h3>3. Recibe qué hacer</h3><p class="muted">Recomendaciones priorizadas, playbook y calendario sugerido para la próxima semana.</p></div>
+<!-- ===== Features: close-ups on a board ===== -->
+<section class="features" id="funciones" aria-labelledby="ft-h">
+  <div class="board fboard">
+    <div class="t t-ground f-head reveal"><h2 id="ft-h">Todo lo que mide</h2></div>
+
+    <div class="t t-pink f-kpi reveal" data-ui>
+      <div class="zoom" style="font-size:4.2em"><span class="z-fig">+28%</span><span class="z-sub">ventas por hora</span></div>
+      <div class="cap"><strong>Qué vende más</strong><span>Hora, día, host, promoción, guion y duración, cada uno aislado de los demás.</span></div>
+    </div>
+
+    <div class="t t-ground f-hosts reveal" data-ui>
+      <div class="zoom discs"><i style="background:#fdeaf2;color:#8a0f46">AR</i><i style="background:#e4eefb;color:#1e4d86">VR</i><i style="background:#f7ecd6;color:#6d4706">LO</i></div>
+      <div class="cap"><strong>Ranking de hosts</strong><span>Quién vende, quién retiene y quién cierra, con coaching.</span></div>
+    </div>
+
+    <div class="t t-ink f-rep reveal" data-ui>
+      <div class="zoom"><span class="z-pill">repetir</span></div>
+      <div class="cap"><strong>Recomendaciones</strong><span>Qué repetir, qué corregir y qué probar.</span></div>
+    </div>
+
+    <div class="t t-ground f-ab reveal" data-ui>
+      <div class="zoom"><span class="z-seg"><b>A</b><span>B</span></span></div>
+      <div class="cap"><strong>Pruebas A/B</strong><span>¿Flash sale o 2x1? Te decimos cuál ganó.</span></div>
+    </div>
+
+    <div class="t t-paper f-report reveal" data-ui>
+      <div class="zoom"><span class="z-fig small">$463,662</span><span class="z-delta">+33% vs. semana anterior</span></div>
+      <div class="cap"><strong>Reportes diario, semanal y mensual</strong><span>Con tu logo y un link para cada marca.</span></div>
+    </div>
+
+    <div class="t t-pink f-quote reveal" data-ui>
+      <div class="zoom"><span class="z-quote">«Últimas piezas»</span></div>
+      <div class="cap"><strong>Transcripciones</strong><span>Qué frase del host disparó pedidos.</span></div>
+    </div>
+
+    <div class="t t-ground f-file reveal" data-ui>
+      <div class="zoom"><span class="z-file">lives_octubre.xlsx</span></div>
+      <div class="cap"><strong>Importa en minutos</strong><span>El archivo de TikTok, en español o en inglés.</span></div>
+    </div>
+
+    <div class="t t-ink f-heat reveal" data-ui>
+      <div class="zoom heatmini" aria-hidden="true">{% for c in heat_cells %}<i style="opacity:{{ c }}"></i>{% endfor %}</div>
+      <div class="cap"><strong>Mejores horarios</strong><span>Día por hora, y un calendario para la próxima semana.</span></div>
+    </div>
   </div>
 </section>
 
-<section class="section-l" id="precios">
-  <h2 style="text-align:center;font-size:1.6rem;margin-bottom:24px">Precios simples, en pesos</h2>
-  {% include "accounts/_pricing_cards.html" %}
+<!-- ===== Pricing: plans that step up ===== -->
+<section class="pricing-s" id="precios" aria-labelledby="pr-h">
+  <div class="steps-row">
+    <h2 id="pr-h" class="pr-head reveal">Precios en pesos</h2>
+    {% for p in priced %}
+    <div class="plan plan-{{ forloop.counter }} reveal">
+      <div class="plan-body">
+        <h3>{{ p.name }}</h3>
+        <p class="plan-price">${{ p.price_mxn|floatformat:"0g" }}<span> al mes</span></p>
+        <ul>{% for h in p.highlights %}<li>{{ h }}</li>{% endfor %}</ul>
+      </div>
+      <a class="plan-btn" href="{% url 'accounts:signup' %}?plan={{ p.code }}">Probar {{ p.name }} {{ trial_days }} días gratis</a>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="pr-note">IVA incluido. Pago anual: 2 meses gratis. ¿Más de 20 marcas o conexión directa con TikTok Shop? <a href="mailto:ventas@pulsolive.app?subject=Plan%20Enterprise">Plan Enterprise</a>.</p>
 </section>
+
+<!-- ===== FAQ: a band per question ===== -->
+<section class="faq" id="preguntas" aria-labelledby="faq-h">
+  <div class="band band-head"><h2 id="faq-h">Preguntas</h2></div>
+  {% for q, a in faqs %}
+  <div class="band{% cycle '' ' alt' %}"><h3 class="reveal">{{ q }}</h3><p class="reveal">{{ a }}</p></div>
+  {% endfor %}
+</section>
+
+<!-- ===== CTA: the action tile ===== -->
+<section class="cta" aria-labelledby="cta-h">
+  <div class="t t-pink cta-side" aria-hidden="true"></div>
+  <div class="t t-accent cta-main reveal">
+    <h2 id="cta-h">Tu próximo live, con datos</h2>
+    <p>Sube tus lives del último mes y en minutos ves qué hora, qué host y qué momento vendieron más. {{ trial_days }} días gratis, sin tarjeta.</p>
+    <form class="cta-form" method="get" action="{% url 'accounts:signup' %}">
+      <label for="cta-email" class="vh">Tu correo</label>
+      <input id="cta-email" name="email" type="email" placeholder="tu@agencia.mx" autocomplete="email">
+      <button type="submit">Crear cuenta</button>
+    </form>
+  </div>
+  <div class="t t-ink cta-side" aria-hidden="true"></div>
+</section>
+</main>
+
+<!-- ===== Footer: the mark, built large ===== -->
+<footer class="foot" aria-labelledby="foot-h">
+  <h2 id="foot-h" class="vh">PulsoLive</h2>
+  <div class="blocks" role="img" aria-label="PulsoLive">{% for l, h, c in letters %}<span style="height:{{ h }}%;background:{{ c }}">{{ l }}</span>{% endfor %}</div>
+  <div class="foot-cols">
+    <nav aria-label="Producto"><strong>Producto</strong><a href="#funciones">Funciones</a><a href="#precios">Precios</a><a href="{% url 'accounts:pricing' %}">Planes</a></nav>
+    <nav aria-label="Cuenta"><strong>Cuenta</strong><a href="{% url 'accounts:signup' %}">Crear cuenta</a><a href="{% url 'accounts:login' %}">Entrar</a></nav>
+    <nav aria-label="Ayuda"><strong>Ayuda</strong><a href="#preguntas">Preguntas</a><a href="#como-funciona">Cómo funciona</a></nav>
+    <nav aria-label="Contacto"><strong>Contacto</strong><a href="mailto:hola@pulsolive.app">hola@pulsolive.app</a><a href="mailto:ventas@pulsolive.app">ventas@pulsolive.app</a></nav>
+  </div>
+  <div class="foot-last"><span>© {% now "Y" %} PulsoLive. Hecho en México. No está afiliado a TikTok.</span><a class="foot-btn" href="{% url 'accounts:signup' %}">Probar gratis</a></div>
+</footer>
+</div>
 {% endblock %}
+{% block scripts %}<script src="{% static 'js/site.js' %}"></script>{% endblock %}

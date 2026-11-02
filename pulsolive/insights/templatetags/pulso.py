@@ -79,3 +79,14 @@ def times100(value):
         return round(float(value) * 100)
     except (TypeError, ValueError):
         return 0
+
+
+@register.filter
+def brief(text):
+    """La primera idea de una recomendación: hasta el primer paréntesis o punto."""
+    text = str(text or "").replace("vs. ", "vs\u00a0")
+    if " (" in text:
+        text = text.split(" (", 1)[0]
+    elif ". " in text:
+        text = text.split(". ", 1)[0]
+    return text.replace("vs\u00a0", "vs. ").rstrip(".;, ")

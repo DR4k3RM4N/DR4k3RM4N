@@ -43,6 +43,12 @@ def _range_from_request(request, default_days=30):
     return start, end
 
 
+def _with_bars(rows, key):
+    """Añade `bar` (0-100): el ancho de la fila como proporción del valor más alto."""
+    top = max((max(r[key], 0) for r in rows), default=0) or 1
+    return [{**r, "bar": max(4, round(max(r[key], 0) / top * 100))} for r in rows]
+
+
 @org_required
 def dashboard(request):
     org = request.org
@@ -74,10 +80,12 @@ def dashboard(request):
     top_lives = sorted(current["rows"], key=lambda r: r["gmv"], reverse=True)[:5]
     return render(request, "insights/dashboard.html", {
         "brand": brand, "brands": org.brands.filter(archived=False), "start": start, "end": end,
-        "kpis": k, "chart_json": json.dumps({"labels": labels, "values": values}),
+        "kpis": k,
+        "chart": {"labels": labels, "values": values,
+                  "best": max(range(len(values)), key=values.__getitem__) if any(values) else None},
         "recommendations": history["recommendations"][:6],
         "best_slots": history["best_slots"][:3],
-        "events": history["events"][:4],
+        "events": _with_bars(history["events"][:5], "median_uplift"),
         "top_lives": top_lives,
         "has_lives": has_lives,
         "has_brands": org.brands.exists(),

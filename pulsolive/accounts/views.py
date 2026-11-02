@@ -22,10 +22,47 @@ from .plans import PLANS, TRIAL_DAYS
 log = logging.getLogger(__name__)
 
 
+# Momentos de un live de ejemplo (los mismos patrones que la cuenta demo) para el tablero de la portada.
+LANDING_MOMENTS = [
+    ("Demostró el producto", 3, "0.7", "1.8", "+170%", "up", "Miren cómo se absorbe en segundos.", "La demo al abrir el live engancha a quien acaba de entrar."),
+    ("Pidió dar clic al carrito", 12, "2.0", "1.6", "−20%", "down", "Den clic en el carrito naranja.", "Pedir el clic antes de mostrar el precio no funcionó."),
+    ("Reveló el precio", 16, "1.0", "1.6", "+60%", "up", "Normal 389, hoy a solo 289.", "Precio ancla y precio del live, juntos."),
+    ("Lanzó oferta relámpago", 20, "1.2", "2.6", "+117%", "up", "Solo por los próximos 10 minutos.", "El pico más alto del live: repítelo cada 15 a 20 minutos."),
+    ("Escasez: últimas piezas", 51, "0.6", "1.4", "+133%", "up", "Quedan solo 40 piezas.", "Funciona cuando la cifra es real y se actualiza."),
+    ("Cambió de producto", 85, "0.4", "0.0", "−100%", "down", "Vamos a cambiar al protector solar.", "Se fue un tercio de la audiencia; haz la transición más corta."),
+    ("Respondió preguntas", 95, "0.4", "1.6", "+300%", "up", "¿Sirve para piel grasa? Sí, es ligero.", "Resolver la objeción en voz alta destrabó pedidos."),
+    ("Testimonio de clienta", 158, "1.8", "1.0", "−44%", "down", "A mí me funcionó para las manchas.", "Muy largo para este momento del live."),
+    ("Saludó por nombre", 193, "1.6", "1.0", "−38%", "down", "Saludos a Mariana y a Coco.", "Retiene, pero no vende: úsalo entre ofertas."),
+]
+
+LANDING_FAQS = [
+    ("¿De dónde salen los datos?", "Del archivo que exportas de TikTok Shop Seller Center o LIVE Center, en CSV o Excel, en español o en inglés. Para el minuto a minuto subes la serie de pedidos y espectadores; para los momentos, la transcripción o los subtítulos del live. El plan Enterprise se conecta directo a la API de TikTok Shop."),
+    ("¿Cuántos lives necesito para ver resultados?", "Con 10 lives ya ves tendencias; con 20 a 30 lives etiquetados por marca, los patrones son confiables. PulsoLive te dice el nivel de confianza de cada conclusión y te avisa cuando todavía hay pocos datos."),
+    ("¿El análisis dice qué causó las ventas?", "Muestra qué se asocia con vender más y separa cada factor de los demás, por ejemplo al host del horario en que le toca transmitir. Para confirmar una causa, crea una prueba A/B y PulsoLive te dice cuál opción ganó."),
+    ("¿Puedo compartir los reportes con mis marcas?", "Sí. En el plan Agencia los reportes llevan tu logo y tus colores, se imprimen en PDF y cada uno tiene un link para compartir. También puedes invitar a la marca con acceso de solo lectura."),
+    ("¿Qué pasa al terminar la prueba?", "Eliges un plan o tu cuenta queda en pausa con tus datos guardados. La prueba no pide tarjeta."),
+]
+
+
 def landing(request):
     if request.user.is_authenticated and request.org:
         return redirect("insights:dashboard")
-    return render(request, "accounts/landing.html", {"plans": PLANS, "trial_days": TRIAL_DAYS})
+    moments = [dict(zip(("label", "minute", "before", "after", "change", "state", "quote", "note"), m))
+               for m in LANDING_MOMENTS]
+    # Intensidad del mapa de calor de ejemplo (7 días × 24 h): más fuerte en la noche y en jueves y viernes.
+    heat_cells = []
+    for day in range(7):
+        for hour in range(24):
+            v = {9: .35, 11: .45, 13: .5, 16: .6, 18: .7, 20: 1, 21: .9, 23: .55}.get(hour, 0)
+            v *= {3: 1, 4: 1, 6: .9}.get(day, .75)
+            heat_cells.append(f"{max(v, .08):.2f}")
+    palette = ["#e11d74", "#131416", "#b0145a", "#131416", "#e11d74", "#45474a", "#e11d74", "#131416", "#b0145a"]
+    heights = [100, 72, 88, 64, 94, 80, 68, 92, 76]
+    letters = list(zip("PULSOLIVE", heights, palette))
+    return render(request, "accounts/landing.html", {
+        "plans": PLANS, "priced": [PLANS[c] for c in ("creator", "pro", "agency")], "trial_days": TRIAL_DAYS,
+        "moments": moments, "heat_cells": heat_cells, "faqs": LANDING_FAQS, "letters": letters,
+    })
 
 
 def pricing(request):

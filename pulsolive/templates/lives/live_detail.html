@@ -1,118 +1,127 @@
 {% extends "base.html" %}{% load pulso %}
-{% block title %}{{ live }}{% endblock %}
+{% block title %}{{ live.brand.name }} · {{ live.started_at|date:"j M H:i" }}{% endblock %}
+{% block crumb %} / <a href="{% url 'lives:live_list' %}">Lives</a> / {{ live.brand.name }}{% endblock %}
 {% block content %}
-<div class="topbar">
+<div class="title-row">
   <div>
-    <h1>{{ live.brand.name }} · {{ live.started_at|date:"l d \d\e F Y, H:i" }}</h1>
-    <span class="muted">{{ live.title }} · {{ live.host.name|default:"sin host" }} · {{ live.duration_minutes }} min · {{ live.get_promo_type_display }}{% if live.script_type %} · {{ live.get_script_type_display }}{% endif %}</span>
-    {% for t in live.tags.all %}<span class="badge">#{{ t.name }}</span>{% endfor %}
+    <h1>{{ live.brand.name }}, {{ live.started_at|date:"l j \d\e F, H:i" }}</h1>
+    <p class="sub">{{ live.host.name|default:"Sin host" }} · {{ live.duration_minutes }} min · {{ live.get_promo_type_display }}{% if live.script_type %} · {{ live.get_script_type_display }}{% endif %}{% if live.main_product %} · {{ live.main_product }}{% endif %}{% for t in live.tags.all %} · #{{ t.name }}{% endfor %}</p>
   </div>
-  {% if membership.can_edit %}<a class="btn" href="{% url 'lives:live_edit' live.pk %}">Editar / etiquetar</a>{% endif %}
+  {% if membership.can_edit %}<div class="title-actions"><a class="btn" href="{% url 'lives:live_edit' live.pk %}">Editar y etiquetar</a></div>{% endif %}
 </div>
 
-<div class="grid grid-4">
-  {% with c=analysis.comparison %}
-  <div class="card kpi"><div class="label">Ventas</div><div class="value">{{ live.gmv|money }}</div><small class="muted">{{ live.orders }} pedidos · ticket {{ live.aov|money }}</small></div>
-  <div class="card kpi"><div class="label">Ventas por hora</div><div class="value">{{ live.gmv_per_hour|money }}</div>
-    {% if c.gmv_per_hour.delta is not None %}<span class="delta {% if c.gmv_per_hour.delta >= 0 %}up{% else %}down{% endif %}">{{ c.gmv_per_hour.delta|signed_pct }} vs. promedio de la marca</span>{% endif %}</div>
-  <div class="card kpi"><div class="label">Conversión</div><div class="value">{{ live.conversion_rate|pct:2 }}</div>
-    {% if c.conversion_rate.delta is not None %}<span class="delta {% if c.conversion_rate.delta >= 0 %}up{% else %}down{% endif %}">{{ c.conversion_rate.delta|signed_pct }}</span>{% endif %} <small class="muted">{{ live.viewers|num }} espectadores</small></div>
-  <div class="card kpi"><div class="label">Tiempo de visualización</div><div class="value">{{ live.avg_watch_seconds|mmss }}</div>
-    {% if c.avg_watch_seconds.delta is not None %}<span class="delta {% if c.avg_watch_seconds.delta >= 0 %}up{% else %}down{% endif %}">{{ c.avg_watch_seconds.delta|signed_pct }}</span>{% endif %}
-    {% if c.rank %}<small class="muted"> · lugar {{ c.rank.position }} de {{ c.rank.of }}</small>{% endif %}</div>
-  {% endwith %}
+{% with c=analysis.comparison %}
+<div class="kpis" role="group" aria-label="Resultados del live contra el promedio de la marca">
+  <div class="kpi"><div class="label">Ventas</div><div class="value lead">{{ live.gmv|money }}</div><div class="cap tabular">{{ live.orders|num }} pedidos · ticket {{ live.aov|money }}</div></div>
+  <div class="kpi"><div class="label">Ventas por hora</div><div class="value">{{ live.gmv_per_hour|money }}</div><div class="cap">{% include "lives/_vs_avg.html" with d=c.gmv_per_hour.delta %}</div></div>
+  <div class="kpi"><div class="label">Conversión</div><div class="value">{{ live.conversion_rate|pct:2 }}</div><div class="cap">{% include "lives/_vs_avg.html" with d=c.conversion_rate.delta %}</div></div>
+  <div class="kpi"><div class="label">Visualización promedio</div><div class="value">{{ live.avg_watch_seconds|mmss }}<span class="unit">min</span></div><div class="cap">{% include "lives/_vs_avg.html" with d=c.avg_watch_seconds.delta %}</div></div>
 </div>
+{% if c.rank %}<p class="muted" style="font-size:13px;margin:8px 0 0">Lugar {{ c.rank.position }} de {{ c.rank.of }} lives de {{ live.brand.name }} por ventas por hora.</p>{% endif %}
+{% endwith %}
 
-<div class="card" style="margin-top:16px">
-  <div class="card-head"><h2 style="margin:0">Minuto a minuto</h2>
+<div class="overview" style="margin-top:var(--gap)">
+<div class="col">
+<div class="card">
+  <div class="card-head">
+    <h2>Pedidos minuto a minuto</h2>
     {% if membership.can_edit %}
-    <form method="post" action="{% url 'lives:minutes_upload' live.pk %}" enctype="multipart/form-data" class="row">{% csrf_token %}
-      <input type="file" name="file" accept=".csv,.xlsx,.xls" required style="max-width:240px">
-      <button class="btn btn-sm">Subir serie</button>
+    <form method="post" action="{% url 'lives:minutes_upload' live.pk %}" enctype="multipart/form-data" class="row no-print">{% csrf_token %}
+      <label for="min-file" style="margin:0;font-weight:400;color:var(--muted);font-size:12px">{% if chart %}Reemplazar serie{% else %}Subir serie{% endif %}</label>
+      <input id="min-file" type="file" name="file" accept=".csv,.xlsx,.xls" required style="max-width:220px">
+      <button class="btn btn-sm" type="submit">Subir</button>
       <a class="btn btn-sm btn-ghost" href="{% url 'lives:minute_template' %}">Plantilla</a>
     </form>
     {% endif %}
   </div>
-  {% if chart_json %}
-    <div style="height:300px"><canvas id="liveChart"></canvas></div>
-    <p class="muted"><small>Barras: pedidos por minuto · Línea: espectadores · ▲ momentos registrados</small></p>
+  {% if chart %}
+    <p class="muted" style="font-size:13px;margin:-4px 0 8px">Marcados: los momentos que antecedieron a un pico de pedidos.</p>
+    <div id="ordersChart" class="chart" style="height:240px"></div>
+    <h3 style="margin:20px 0 4px;font-weight:500;color:var(--muted)">Espectadores</h3>
+    <div id="viewersChart" class="chart" style="height:140px"></div>
   {% else %}
-    <div class="empty">Sube la serie de pedidos y espectadores por minuto para ver qué momento disparó las ventas.</div>
+    <div class="empty">Sube la serie de pedidos y espectadores por minuto (CSV o Excel) para ver qué momento disparó las ventas.</div>
   {% endif %}
 </div>
 
-{% if analysis.moments %}
-<div class="grid grid-2" style="margin-top:16px">
   <div class="card">
-    <h2>🚀 Picos de ventas</h2>
-    {% for s in analysis.moments.spikes %}
-      <div class="rec"><span class="badge repetir">min {{ s.minute }}</span><div><div class="title">{{ s.orders }} pedidos (normal: ~{{ s.baseline|floatformat:0 }})</div>
-      <div class="detail">{% if s.cause %}Justo después de: <strong>{{ s.cause.label }}</strong> (min {{ s.cause.minute }}){% if s.cause.quote %} — «{{ s.cause.quote|truncatechars:120 }}»{% endif %}{% else %}Sin momento registrado cerca. ¿Qué pasó aquí? Agrégalo abajo.{% endif %}</div></div></div>
-    {% empty %}<p class="muted">No hubo picos fuera de lo normal.</p>{% endfor %}
-  </div>
-  <div class="card">
-    <h2>📉 Caídas de audiencia</h2>
-    {% for d in analysis.moments.drops %}
-      <div class="rec"><span class="badge corregir">min {{ d.minute }}</span><div><div class="title">De {{ d.from|floatformat:0 }} a {{ d.to|floatformat:0 }} espectadores</div>
-      <div class="detail">{% if d.cause %}Después de: <strong>{{ d.cause.label }}</strong> (min {{ d.cause.minute }}){% else %}Sin momento registrado cerca.{% endif %}</div></div></div>
-    {% empty %}<p class="muted">No hubo caídas fuertes de audiencia.</p>{% endfor %}
-  </div>
-</div>
-{% endif %}
-
-<div class="grid grid-2" style="margin-top:16px">
-  <div class="card">
-    <h2>Momentos del live</h2>
+    <div class="card-head"><h2>Momentos del live</h2><span class="meta">{{ analysis.events|length }} registrados</span></div>
     {% if analysis.events %}
+    <div class="table-wrap">
     <table>
-      <tr><th>Min</th><th>Momento</th><th class="num">Pedidos antes → después</th><th></th></tr>
+      <thead><tr><th class="num" style="width:40px">Min</th><th>Momento</th><th class="num">Pedidos/min antes → después</th></tr></thead>
+      <tbody>
       {% for e in analysis.events %}
-      <tr><td>{{ e.minute }}</td><td><strong>{{ e.label }}</strong> {% if e.source != 'manual' %}<span class="badge">{{ e.source }}</span>{% endif %}
-        {% if e.description %}<br><small class="muted">{{ e.description }}</small>{% endif %}
-        {% if e.quote %}<br><small><em>«{{ e.quote|truncatechars:140 }}»</em></small>{% endif %}</td>
-        <td class="num">{% for imp in analysis.moments.event_impacts %}{% if imp.minute == e.minute and imp.kind == e.kind %}{{ imp.orders_before|floatformat:1 }} → {{ imp.orders_after|floatformat:1 }}/min <span class="{{ imp.uplift|lift_class }}">{{ imp.uplift|signed_pct }}</span>{% endif %}{% endfor %}</td>
-        <td></td></tr>
+      <tr><td class="num">{{ e.minute }}</td>
+        <td>{{ e.label }}{% if e.source != 'manual' %} <span class="badge">{% if e.source == 'ai' %}IA{% else %}palabras clave{% endif %}</span>{% endif %}
+          {% if e.description %}<small>{{ e.description }}</small>{% endif %}
+          {% if e.quote %}<small class="quote">«{{ e.quote|truncatechars:140 }}»</small>{% endif %}</td>
+        <td class="num">{% for imp in analysis.moments.event_impacts %}{% if imp.minute == e.minute and imp.kind == e.kind %}{{ imp.orders_before|floatformat:1 }} → {{ imp.orders_after|floatformat:1 }} <span class="{{ imp.uplift|lift_class }}">{{ imp.uplift|signed_pct }}</span>{% endif %}{% empty %}<span class="dash">—</span>{% endfor %}</td></tr>
       {% endfor %}
+      </tbody>
     </table>
-    {% else %}<p class="muted">Aún no hay momentos. Agrégalos a mano o sube la transcripción para detectarlos.</p>{% endif %}
+    </div>
+    {% else %}<div class="empty">Aún no hay momentos. Agrégalos a mano o sube la transcripción para detectarlos.</div>{% endif %}
     {% if membership.can_edit %}
-    <form method="post" action="{% url 'lives:event_add' live.pk %}" class="row" style="margin-top:12px;align-items:end">{% csrf_token %}
-      <div style="width:80px"><label>Minuto</label>{{ event_form.minute }}</div>
-      <div style="flex:1;min-width:160px"><label>Qué pasó</label>{{ event_form.kind }}</div>
-      <div style="flex:2;min-width:160px"><label>Detalle (opcional)</label>{{ event_form.description }}</div>
-      <button class="btn">Agregar</button>
+    <form method="post" action="{% url 'lives:event_add' live.pk %}" class="row no-print" style="margin-top:16px;align-items:flex-end">{% csrf_token %}
+      <div style="width:84px"><label for="{{ event_form.minute.id_for_label }}">Minuto</label>{{ event_form.minute }}</div>
+      <div style="flex:1;min-width:160px"><label for="{{ event_form.kind.id_for_label }}">Qué pasó</label>{{ event_form.kind }}</div>
+      <div style="flex:2;min-width:160px"><label for="{{ event_form.description.id_for_label }}">Detalle (opcional)</label>{{ event_form.description }}</div>
+      <button class="btn" type="submit">Agregar</button>
     </form>
     {% endif %}
   </div>
 
+</div>
+<aside class="col rail" aria-label="Lo que pasó en el live">
+{% if analysis.moments %}
   <div class="card">
-    <div class="card-head"><h2 style="margin:0">Transcripción y análisis del host</h2>{% if not can_transcripts %}<span class="badge accent">Plan Pro</span>{% endif %}</div>
+    <div class="card-head"><h2>Picos de pedidos</h2><span class="meta">{{ analysis.moments.spikes|length }} en el live</span></div>
+    {% for s in analysis.moments.spikes %}
+      <div class="list-row">
+        <span class="name" style="white-space:normal">Min {{ s.minute }}: {{ s.orders }} pedidos <span class="muted" style="font-weight:400">(normal ~{{ s.baseline|floatformat:0 }})</span>
+          <span class="sub" style="display:block;font-weight:400">{% if s.cause %}Después de: {{ s.cause.label|lower }}, min {{ s.cause.minute }}{% else %}Sin momento registrado cerca. Si sabes qué pasó, agrégalo en «Momentos del live».{% endif %}</span></span>
+      </div>
+    {% empty %}<p class="muted">No hubo picos fuera de lo normal.</p>{% endfor %}
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Caídas de audiencia</h2><span class="meta">{{ analysis.moments.drops|length }} en el live</span></div>
+    {% for d in analysis.moments.drops %}
+      <div class="list-row">
+        <span class="name" style="white-space:normal">Min {{ d.minute }}: de {{ d.from|floatformat:0 }} a {{ d.to|floatformat:0 }} espectadores
+          <span class="sub" style="display:block;font-weight:400">{% if d.cause %}Después de: {{ d.cause.label|lower }}, min {{ d.cause.minute }}{% else %}Sin momento registrado cerca.{% endif %}</span></span>
+      </div>
+    {% empty %}<p class="muted">No hubo caídas fuertes de audiencia.</p>{% endfor %}
+  </div>
+{% endif %}
+  <div class="card">
+    <div class="card-head"><h2>Transcripción y retroalimentación</h2>{% if not can_transcripts %}<span class="badge accent">Plan Pro</span>{% endif %}</div>
     {% if transcript %}
       {% if transcript.analyzed_at %}
         {% if transcript.summary %}<p>{{ transcript.summary }}</p>{% endif %}
         {% with a=transcript.analysis %}
-          {% if a.host_strengths %}<h3>Lo que hizo bien</h3><ul>{% for s in a.host_strengths %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
+          {% if a.host_strengths %}<h3 style="margin-top:12px">Lo que hizo bien</h3><ul>{% for s in a.host_strengths %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
           {% if a.host_improvements %}<h3>Qué mejorar</h3><ul>{% for s in a.host_improvements %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
-          {% if a.replicable_lines %}<h3>Frases para replicar</h3><ul>{% for s in a.replicable_lines %}<li><em>«{{ s }}»</em></li>{% endfor %}</ul>{% endif %}
-          {% if a.mode == 'keywords' %}<p class="muted"><small>Análisis por palabras clave. Con IA obtienes resumen, retroalimentación al host y detección más precisa.</small></p>{% endif %}
+          {% if a.replicable_lines %}<h3>Frases para repetir</h3><ul>{% for s in a.replicable_lines %}<li>«{{ s }}»</li>{% endfor %}</ul>{% endif %}
+          {% if a.mode == 'keywords' %}<p class="muted" style="font-size:13px">Detectado por palabras clave. Con IA obtienes resumen, retroalimentación al host y detección más precisa.</p>{% endif %}
         {% endwith %}
       {% else %}
-        <p class="muted">Transcripción cargada ({{ transcript.segments|length }} fragmentos). Analízala para detectar los momentos clave.</p>
+        <p class="muted">Transcripción cargada: {{ transcript.segments|length }} fragmentos. Analízala para detectar los momentos clave.</p>
       {% endif %}
       {% if membership.can_edit and can_transcripts %}
-      <form method="post" action="{% url 'lives:transcript_analyze' live.pk %}" class="row">{% csrf_token %}
-        {% if ai_enabled %}<button class="btn btn-primary" name="mode" value="ai">✨ Analizar con IA</button>{% endif %}
-        <button class="btn" name="mode" value="keywords">Detectar por palabras clave</button>
+      <form method="post" action="{% url 'lives:transcript_analyze' live.pk %}" class="row no-print" style="margin-top:12px">{% csrf_token %}
+        {% if ai_enabled %}<button class="btn btn-primary" name="mode" value="ai" type="submit"><svg class="icon"><use href="#i-spark"/></svg>Analizar con IA</button>{% endif %}
+        <button class="btn" name="mode" value="keywords" type="submit">Detectar por palabras clave</button>
       </form>
       {% endif %}
-      <details style="margin-top:12px"><summary class="muted">Ver transcripción</summary>
-        <div style="max-height:300px;overflow:auto;font-size:.85rem;margin-top:8px">{% for s in transcript.segments %}<div><span class="muted">[{{ s.start|mmss }}]</span> {{ s.text }}</div>{% endfor %}</div>
+      <details style="margin-top:16px"><summary>Ver transcripción</summary>
+        <div style="max-height:300px;overflow:auto;font-size:13px;margin-top:8px">{% for s in transcript.segments %}<div><span class="muted tabular">{{ s.start|mmss }}</span> {{ s.text }}</div>{% endfor %}</div>
       </details>
     {% endif %}
     {% if membership.can_edit and can_transcripts %}
-      <details {% if not transcript %}open{% endif %} style="margin-top:12px"><summary><strong>{% if transcript %}Reemplazar transcripción{% else %}Subir transcripción{% endif %}</strong></summary>
-        <p class="muted" style="margin-top:8px"><small>Sirven archivos .srt o .vtt (subtítulos de CapCut, TikTok Studio, etc.) o texto con marcas de tiempo tipo <code>[00:12:30] texto</code>.</small></p>
-        <form method="post" action="{% url 'lives:transcript_upload' live.pk %}" enctype="multipart/form-data">{% csrf_token %}{{ transcript_form.as_p }}<button class="btn">Guardar transcripción</button></form>
+      <details {% if not transcript %}open{% endif %} style="margin-top:12px"><summary>{% if transcript %}Reemplazar transcripción{% else %}Subir transcripción{% endif %}</summary>
+        <p class="muted" style="margin-top:8px;font-size:13px">Archivos .srt o .vtt (subtítulos de CapCut o TikTok Studio) o texto con marcas de tiempo, como <code>[00:12:30] texto</code>.</p>
+        <form method="post" action="{% url 'lives:transcript_upload' live.pk %}" enctype="multipart/form-data">{% csrf_token %}{{ transcript_form.as_p }}<button class="btn" type="submit">Guardar transcripción</button></form>
       </details>
     {% elif not can_transcripts %}
       <p class="muted">Sube lo que dijo el host y detectamos qué frases dispararon ventas. <a href="{% url 'accounts:billing' %}">Disponible desde Pro</a>.</p>
@@ -120,8 +129,11 @@
   </div>
 </div>
 
-{% if live.notes %}<div class="card" style="margin-top:16px"><h3>Notas</h3><p>{{ live.notes|linebreaksbr }}</p></div>{% endif %}
+</aside>
+</div>
+
+{% if live.notes %}<div class="card" style="margin-top:var(--gap)"><h2>Notas</h2><p style="margin-top:8px">{{ live.notes|linebreaksbr }}</p></div>{% endif %}
 {% endblock %}
 {% block scripts %}
-{% if chart_json %}<script>PulsoCharts.live("liveChart", {{ chart_json|safe }});</script>{% endif %}
+{% if chart %}{{ chart|json_script:"live-data" }}<script>(function(){var d=JSON.parse(document.getElementById("live-data").textContent);PulsoCharts.liveOrders("ordersChart",d);PulsoCharts.liveViewers("viewersChart",d);})();</script>{% endif %}
 {% endblock %}

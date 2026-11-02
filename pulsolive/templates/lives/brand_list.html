@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% load pulso %}
 {% block title %}Marcas{% endblock %}
+{% block crumb %} / Marcas{% endblock %}
 {% block content %}
 <div class="topbar"><h1>Marcas</h1><span class="muted">{{ brands|length }} de {% if org_plan.max_brands > 100000 %}∞{% else %}{{ org_plan.max_brands }}{% endif %} en tu plan</span></div>
 <div class="grid grid-2">

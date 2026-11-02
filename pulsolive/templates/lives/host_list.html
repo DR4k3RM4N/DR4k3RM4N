@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% load pulso %}
 {% block title %}Hosts{% endblock %}
+{% block crumb %} / Hosts{% endblock %}
 {% block content %}
 <div class="topbar"><h1>Hosts</h1><a class="btn" href="{% url 'insights:hosts' %}">Ver ranking →</a></div>
 <div class="grid grid-2">
