@@ -5,9 +5,8 @@
   <div class="t t-paper auth-form">
     <h1>Crea tu cuenta</h1>
     <p class="auth-sub">{{ trial_days }} días gratis con todo el plan Pro. Sin tarjeta.</p>
-    <form method="post">{% csrf_token %}{{ form.non_field_errors }}
-      <div class="form-grid">{% for f in form %}<p{% if f.name == "org_name" or f.name == "email" %} class="wide"{% endif %}>{{ f.label_tag }}{{ f }}{% if f.help_text and "password" not in f.name %}<span class="helptext">{{ f.help_text|safe }}</span>{% endif %}{{ f.errors }}</p>{% endfor %}</div>
-      <p class="helptext" style="margin:-4px 0 16px">La contraseña necesita al menos 8 caracteres y no puede ser solo números.</p>
+    <form method="post">{% csrf_token %}{% include "accounts/_fields.html" %}
+      <p class="helptext pw-note">La contraseña necesita al menos 8 caracteres y no puede ser solo números.</p>
       <button class="btn btn-primary btn-lg auth-btn" type="submit">Crear cuenta</button>
     </form>
     <p class="auth-alt">¿Ya tienes cuenta? <a href="{% url 'accounts:login' %}">Entra</a></p>

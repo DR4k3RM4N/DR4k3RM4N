@@ -1,5 +1,5 @@
   <div class="steps-row">
-    {% if heading_tag == "h1" %}<h1 id="pr-h" class="pr-head">Precios en pesos</h1>{% else %}<h2 id="pr-h" class="pr-head reveal">Precios en pesos</h2>{% endif %}
+    {% if heading_tag == "h1" %}<div class="pr-head"><h1 id="pr-h">Precios en pesos</h1><p class="pr-sub">Analítica de lives de TikTok Shop para creadores, marcas y agencias. {{ trial_days }} días gratis, sin tarjeta.</p></div>{% else %}<h2 id="pr-h" class="pr-head reveal">Precios en pesos</h2>{% endif %}
     {% for p in priced %}
     <div class="plan plan-{{ forloop.counter }} reveal">
       <div class="plan-body">

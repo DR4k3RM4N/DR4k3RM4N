@@ -1,0 +1,2 @@
+{{ form.non_field_errors }}
+{% for f in form %}{% if f.is_hidden %}{{ f }}{% else %}<p><label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}{% if f.help_text and "password" not in f.name %}<span class="helptext">{{ f.help_text|safe }}</span>{% endif %}{{ f.errors }}</p>{% endif %}{% endfor %}

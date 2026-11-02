@@ -336,3 +336,13 @@
 }
 .public-report { max-width: 1240px; margin: 0 auto; padding: 32px 24px 64px; font-size: 14px; line-height: 1.5; }
 .public-report p { margin: 0 0 8px; }
+.auth-form .helptext, .auth-form .errorlist { font-size: var(--small); }
+.pw-note { margin: -4px 0 16px !important; color: var(--muted); }
+.pricing-page .pr-head h1 { font-size: var(--xl); font-weight: 500; line-height: 1; letter-spacing: -0.03em; }
+.pr-sub { font-size: var(--body); color: var(--muted); margin-top: 12px !important; max-width: 40ch; letter-spacing: 0; }
+.pricing-page .pr-head { font-size: inherit; }
+@media (max-width: 760px) { .pricing-page .pr-head h1 { font-size: 11vw; } .pricing-s { padding-right: 20px; } }
+.pricing-page .pr-head { position: static; grid-column: 1 / -1; max-width: none; margin-bottom: 24px; }
+.pricing-page .plan-1 { margin-top: 0; }
+.site .auth-form form p { margin: 0 0 16px; }
+.pr-sub { font-weight: 400; }
