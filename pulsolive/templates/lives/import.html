@@ -21,9 +21,9 @@
 {% if history %}
 <div class="card" style="margin-top:16px">
   <h2>Importaciones recientes</h2>
-  <table><tr><th>Fecha</th><th>Marca</th><th>Archivo</th><th class="num">Nuevos</th><th class="num">Actualizados</th><th class="num">Con error</th></tr>
+  <div class="table-wrap"><table><tr><th>Fecha</th><th>Marca</th><th>Archivo</th><th class="num">Nuevos</th><th class="num">Actualizados</th><th class="num">Con error</th></tr>
   {% for b in history %}<tr><td>{{ b.created_at|date:"d/m/Y H:i" }}</td><td>{{ b.brand.name }}</td><td>{{ b.filename }} <small class="muted">({{ b.get_kind_display }})</small></td><td class="num">{{ b.created }}</td><td class="num">{{ b.updated }}</td><td class="num">{{ b.skipped }}</td></tr>{% endfor %}
-  </table>
+  </table></div>
 </div>
 {% endif %}
 {% endblock %}

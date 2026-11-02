@@ -14,17 +14,17 @@
 <div class="grid grid-2" style="margin-top:16px">
   <div class="card">
     <h2>Lives en la prueba</h2>
-    <table><tr><th>Fecha</th><th>Variante</th><th>Host</th><th class="num">Ventas/h</th><th></th></tr>
+    <div class="table-wrap"><table><tr><th>Fecha</th><th>Variante</th><th>Host</th><th class="num">Ventas/h</th><th></th></tr>
     {% for l in lives %}<tr><td><a href="{% url 'lives:live_detail' l.pk %}">{{ l.started_at|date:"D d M H:i" }}</a></td><td><span class="badge accent">{{ l.experiment_variant }}</span></td><td>{{ l.host.name|default:"—" }}</td><td class="num">{{ l.gmv_per_hour|money }}</td>
       <td>{% if membership.can_edit %}<form method="post">{% csrf_token %}<input type="hidden" name="live" value="{{ l.pk }}"><button class="btn btn-sm btn-ghost" name="assign" value="1">Quitar</button></form>{% endif %}</td></tr>
-    {% empty %}<tr><td colspan="5" class="muted">Agrega lives desde la lista de la derecha.</td></tr>{% endfor %}</table>
+    {% empty %}<tr><td colspan="5" class="muted">Agrega lives desde la lista de la derecha.</td></tr>{% endfor %}</table></div>
   </div>
   {% if membership.can_edit %}
   <div class="card">
     <h2>Agregar lives recientes</h2>
-    <table>{% for l in candidates %}<tr><td>{{ l.started_at|date:"D d M H:i" }}<br><small class="muted">{{ l.get_promo_type_display }}</small></td><td class="num">{{ l.gmv|money }}</td>
+    <div class="table-wrap"><table>{% for l in candidates %}<tr><td>{{ l.started_at|date:"D d M H:i" }}<br><small class="muted">{{ l.get_promo_type_display }}</small></td><td class="num">{{ l.gmv|money }}</td>
       <td><form method="post" class="row">{% csrf_token %}<input type="hidden" name="live" value="{{ l.pk }}"><input type="hidden" name="assign" value="1"><button class="btn btn-sm" name="variant" value="A">A</button><button class="btn btn-sm" name="variant" value="B">B</button></form></td></tr>
-    {% empty %}<tr><td class="muted">No hay lives recientes de esta marca sin asignar.</td></tr>{% endfor %}</table>
+    {% empty %}<tr><td class="muted">No hay lives recientes de esta marca sin asignar.</td></tr>{% endfor %}</table></div>
   </div>
   {% endif %}
 </div>

@@ -16,7 +16,7 @@
 </form>
 <div class="card table-wrap">
   {% if page.object_list %}
-  <table>
+  <div class="table-wrap"><table>
     <tr><th>Fecha</th><th>Marca · Host</th><th>Qué se hizo</th><th class="num">Duración</th><th class="num">Ventas</th><th class="num">Ventas/h</th><th class="num">Pedidos</th><th class="num">Conversión</th></tr>
     {% for l in page.object_list %}
     <tr onclick="location.href='{% url 'lives:live_detail' l.pk %}'" style="cursor:pointer">
@@ -30,7 +30,7 @@
       <td class="num">{{ l.conversion_rate|pct:2 }}</td>
     </tr>
     {% endfor %}
-  </table>
+  </table></div>
   <div class="row" style="margin-top:12px">
     {% if page.has_previous %}<a class="btn btn-sm" href="?{% for k, v in request.GET.items %}{% if k != 'p' %}{{ k }}={{ v }}&{% endif %}{% endfor %}p={{ page.previous_page_number }}">← Anterior</a>{% endif %}
     <span class="muted">Página {{ page.number }} de {{ page.paginator.num_pages }} · {{ page.paginator.count }} lives</span>

@@ -61,7 +61,7 @@
 
   <header class="topbar-app">
     <button class="btn btn-ghost btn-sm menu-toggle" type="button" aria-controls="sidebar" aria-expanded="false" onclick="var s=document.getElementById('sidebar');var o=s.classList.toggle('open');this.setAttribute('aria-expanded',o)"><svg class="icon"><use href="#i-menu"/></svg><span>Menú</span></button>
-    <span class="crumb"><strong>{{ org.name }}</strong>{% block crumb %}{% endblock %}</span>
+    <span class="crumb"><strong>{{ org.name }}</strong><span class="crumb-path">{% block crumb %}{% endblock %}</span></span>
     <span class="spacer"></span>
     <span class="user-chip">
       <span class="avatar" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1"|upper }}</span>

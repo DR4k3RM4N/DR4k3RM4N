@@ -6,7 +6,7 @@
 <div class="grid grid-2">
   <div class="card">
     {% if hosts %}
-    <table>
+    <div class="table-wrap"><table>
       <tr><th>Host</th><th>Perfil</th><th class="num">Lives</th><th class="num">Ventas</th><th></th></tr>
       {% for h in hosts %}
       <tr {% if not h.active %}style="opacity:.55"{% endif %}><td><strong>{{ h.name }}</strong><br><small class="muted">{{ h.handle }}</small></td>
@@ -14,7 +14,7 @@
       <td class="num">{{ h.n_lives }}</td><td class="num">{{ h.total_gmv|money }}</td>
       <td><a href="{% url 'lives:host_edit' h.pk %}">Editar</a></td></tr>
       {% endfor %}
-    </table>
+    </table></div>
     {% else %}<div class="empty">Agrega a las personas que conducen los lives.</div>{% endif %}
   </div>
   <div class="card">

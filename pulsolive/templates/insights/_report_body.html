@@ -27,7 +27,7 @@
     <div><h3>Lo que hay que corregir</h3><ul>{% for x in a.what_to_fix %}<li>{{ x }}</li>{% endfor %}</ul></div>
   </div>
   <h3>Próximas acciones</h3>
-  <table><tr><th>Acción</th><th>Por qué</th><th>Cómo medir</th></tr>{% for x in a.next_actions %}<tr><td><strong>{{ x.action }}</strong></td><td>{{ x.why }}</td><td>{{ x.how_to_measure }}</td></tr>{% endfor %}</table>
+  <div class="table-wrap"><table><tr><th>Acción</th><th>Por qué</th><th>Cómo medir</th></tr>{% for x in a.next_actions %}<tr><td><strong>{{ x.action }}</strong></td><td>{{ x.why }}</td><td>{{ x.how_to_measure }}</td></tr>{% endfor %}</table></div>
   {% if a.experiment_idea %}<p style="margin-top:12px"><span class="badge probar">prueba A/B sugerida</span> <strong>{{ a.experiment_idea.name }}</strong>: {{ a.experiment_idea.variant_a }} vs. {{ a.experiment_idea.variant_b }}. <span class="muted">{{ a.experiment_idea.hypothesis }}</span>
     {% if not public %}<a class="no-print" href="{% url 'insights:experiment_list' %}?nombre={{ a.experiment_idea.name|urlencode }}&a={{ a.experiment_idea.variant_a|urlencode }}&b={{ a.experiment_idea.variant_b|urlencode }}&hipotesis={{ a.experiment_idea.hypothesis|urlencode }}">Crear prueba →</a>{% endif %}</p>{% endif %}
   {% if a.data_caveats %}<p class="muted"><small>{{ a.data_caveats }}</small></p>{% endif %}
@@ -52,9 +52,9 @@
   <div class="card"><h2>Recomendaciones</h2><p class="muted"><small>Patrones de los últimos 90 días ({{ d.history_lives }} lives).</small></p>{% include "insights/_recs.html" with recs=d.recommendations %}</div>
   <div class="card">
     <h2>Top lives del periodo</h2>
-    <table><tr><th>Fecha</th><th>Host</th><th class="num">Ventas</th><th class="num">Ventas/h</th></tr>
+    <div class="table-wrap"><table><tr><th>Fecha</th><th>Host</th><th class="num">Ventas</th><th class="num">Ventas/h</th></tr>
     {% for l in d.top_lives %}<tr><td>{% if public %}{{ l.started_at|slice:":10" }} {{ l.started_at|slice:"11:16" }}{% else %}<a href="{% url 'lives:live_detail' l.id %}">{{ l.started_at|slice:":10" }} {{ l.started_at|slice:"11:16" }}</a>{% endif %}<br><small class="muted">{{ l.brand }}</small></td><td>{{ l.host|default:"—" }}</td><td class="num">{{ l.gmv|money }}</td><td class="num">{{ l.gmv_per_hour|money }}</td></tr>
-    {% empty %}<tr><td colspan="4" class="muted">No hubo lives en este periodo.</td></tr>{% endfor %}</table>
+    {% empty %}<tr><td colspan="4" class="muted">No hubo lives en este periodo.</td></tr>{% endfor %}</table></div>
   </div>
 </div>
 
@@ -63,23 +63,23 @@
     <h2>Patrones principales</h2>
     {% for f in d.history_factors|slice:":5" %}
       <h3 style="margin-top:12px">{{ f.label }}</h3>
-      <table>{% for lv in f.levels|slice:":4" %}<tr><td>{{ lv.level }}</td><td class="num">{{ lv.n }} lives</td><td class="num {{ lv.lift|lift_class }}">{{ lv.lift|signed_pct }}</td><td><span class="badge {{ lv.confidence }}">{{ lv.confidence }}</span></td></tr>{% endfor %}</table>
+      <div class="table-wrap"><table>{% for lv in f.levels|slice:":4" %}<tr><td>{{ lv.level }}</td><td class="num">{{ lv.n }} lives</td><td class="num {{ lv.lift|lift_class }}">{{ lv.lift|signed_pct }}</td><td><span class="badge {{ lv.confidence }}">{{ lv.confidence }}</span></td></tr>{% endfor %}</table></div>
     {% endfor %}
   </div>
   <div class="card">
     {% if d.hosts %}
     <h2>Hosts en el periodo</h2>
-    <table><tr><th>Host</th><th class="num">Lives</th><th class="num">Ventas/h</th><th class="num">vs. equipo</th></tr>
+    <div class="table-wrap"><table><tr><th>Host</th><th class="num">Lives</th><th class="num">Ventas/h</th><th class="num">vs. equipo</th></tr>
       {% for h in d.hosts %}<tr><td>{{ h.host }}</td><td class="num">{{ h.lives }}</td><td class="num">{{ h.gmv_per_hour|money }}</td><td class="num {{ h.relative.gmv_per_hour|lift_class }}">{{ h.relative.gmv_per_hour|signed_pct }}</td></tr>{% endfor %}
-    </table>
+    </table></div>
     {% endif %}
     {% if d.events %}
     <h2 style="margin-top:16px">Momentos que movieron ventas</h2>
-    <table>{% for e in d.events|slice:":6" %}<tr><td>{{ e.label }}</td><td class="num">{{ e.n }}×</td><td class="num {{ e.median_uplift|lift_class }}">{{ e.median_uplift|signed_pct }}</td></tr>{% endfor %}</table>
+    <div class="table-wrap"><table>{% for e in d.events|slice:":6" %}<tr><td>{{ e.label }}</td><td class="num">{{ e.n }}×</td><td class="num {{ e.median_uplift|lift_class }}">{{ e.median_uplift|signed_pct }}</td></tr>{% endfor %}</table></div>
     {% endif %}
     {% if d.calendar %}
     <h2 style="margin-top:16px">Calendario sugerido</h2>
-    <table>{% for c in d.calendar %}<tr><td>{{ c.weekday }} <small class="muted">{{ c.date }}</small></td><td>{{ c.daypart }}</td></tr>{% endfor %}</table>
+    <div class="table-wrap"><table>{% for c in d.calendar %}<tr><td>{{ c.weekday }} <small class="muted">{{ c.date }}</small></td><td>{{ c.daypart }}</td></tr>{% endfor %}</table></div>
     {% endif %}
   </div>
 </div>

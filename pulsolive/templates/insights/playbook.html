@@ -19,12 +19,12 @@
 <div class="grid grid-2" style="margin-top:16px">
   <div class="card">
     <h2>La receta</h2>
-    <table>
+    <div class="table-wrap"><table>
       <tr><th>Elemento</th><th>Lo que mejor funciona</th><th class="num">Efecto</th><th>Confianza</th></tr>
       {% for r in pb.recipe %}
       <tr><td>{{ r.factor }}</td><td><strong>{{ r.choice }}</strong></td><td class="num lift-pos">{{ r.lift|signed_pct }}</td><td><span class="badge {{ r.confidence }}">{{ r.confidence }}</span></td></tr>
       {% empty %}<tr><td colspan="4" class="muted">Aún no hay elementos claros.</td></tr>{% endfor %}
-    </table>
+    </table></div>
   </div>
   <div class="card">
     <h2>Momentos que hay que meter en el guion</h2>
@@ -37,9 +37,9 @@
 <div class="grid grid-2" style="margin-top:16px">
   <div class="card">
     <h2>Calendario sugerido (próximos 7 días)</h2>
-    <table>
+    <div class="table-wrap"><table>
       {% for d in calendar %}<tr><td><strong>{{ d.weekday }}</strong> <small class="muted">{{ d.date }}</small></td><td>{{ d.daypart }}</td><td><span class="badge {% if d.kind == 'probado' %}repetir{% else %}probar{% endif %}">{{ d.kind }}</span><br><small class="muted">{{ d.reason }}</small></td></tr>{% endfor %}
-    </table>
+    </table></div>
   </div>
   <div class="card">
     <h2>Lives para estudiar</h2>

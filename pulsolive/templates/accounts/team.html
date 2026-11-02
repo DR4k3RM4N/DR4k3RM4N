@@ -6,7 +6,7 @@
 <div class="grid grid-2">
   <div class="card">
     <h2>Usuarios</h2>
-    <table>
+    <div class="table-wrap"><table>
       <tr><th>Nombre</th><th>Rol</th><th></th></tr>
       {% for m in members %}
       <tr><td>{{ m.user.first_name|default:m.user.username }}<br><small class="muted">{{ m.user.email }}</small></td><td>{{ m.get_role_display }}</td>
@@ -15,7 +15,7 @@
       {% for i in invitations %}
       <tr><td>{{ i.email }}<br><small class="muted">Invitación pendiente · <a href="{% url 'accounts:accept_invitation' i.token %}">link</a></small></td><td>{{ i.get_role_display }}</td><td></td></tr>
       {% endfor %}
-    </table>
+    </table></div>
   </div>
   {% if membership.can_manage %}
   <div class="card">

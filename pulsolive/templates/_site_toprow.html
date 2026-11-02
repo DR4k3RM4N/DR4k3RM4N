@@ -3,8 +3,8 @@
     <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M3 13h4l2.4-6 4.2 11 2.4-6.5H21" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </a>
   <nav class="t t-ground t-links" aria-label="Secciones">
-    <a href="{% url 'accounts:landing' %}#como-funciona">Cómo funciona</a><a href="{% url 'accounts:landing' %}#funciones">Funciones</a><a href="{% url 'accounts:pricing' %}">Precios</a><a href="{% url 'accounts:landing' %}#preguntas">Preguntas</a>
-    {% if user.is_authenticated %}<a href="{% url 'insights:dashboard' %}">Mi panel</a>{% else %}<a href="{% url 'accounts:login' %}">Entrar</a>{% endif %}
+    <a href="{% url 'accounts:landing' %}#como-funciona">Cómo funciona</a><a href="{% url 'accounts:landing' %}#funciones">Funciones</a><a class="keep" href="{% url 'accounts:pricing' %}">Precios</a><a href="{% url 'accounts:landing' %}#preguntas">Preguntas</a>
+    {% if user.is_authenticated %}<a class="keep" href="{% url 'insights:dashboard' %}">Mi panel</a>{% else %}<a class="keep" href="{% url 'accounts:login' %}">Entrar</a>{% endif %}
   </nav>
   {% if user.is_authenticated %}
     <a class="t t-ink t-action" href="{% url 'insights:dashboard' %}">Ir a mi panel</a>

@@ -356,3 +356,27 @@ details[open] > summary::before { transform: rotate(45deg); }
 .plan-card ul li + li { margin-top: 4px; }
 @media (max-width: 1180px) { .plans { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .plans { grid-template-columns: 1fr; } }
+
+/* ---------- Responsive fixes (auditoría en 375–1440 px) ---------- */
+/* Las cifras de los indicadores se ajustan al ancho real de su casilla: nunca se salen ni se cortan. */
+.kpis { container-type: inline-size; }
+.kpis > .kpi { overflow: hidden; }
+.kpis .kpi .value { font-size: clamp(18px, calc((100cqi / var(--kpi-cols, 4) - 40px) / 5.6), 26px); }
+.kpis .kpi .value.lead { font-size: clamp(20px, calc((100cqi / var(--kpi-cols, 4) - 40px) / 5.2), 30px); }
+.kpis:has(> .kpi:nth-child(3):last-child) { --kpi-cols: 3; }
+.kpi .cap { overflow-wrap: anywhere; }
+@media (max-width: 900px) { .kpis { --kpi-cols: 2 !important; } }
+/* Tablas: se desplazan dentro de su tarjeta en lugar de empujar la página. */
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.card, .col, .overview, .grid > * { min-width: 0; }
+td, th { overflow-wrap: break-word; }
+/* Celular: la ruta superior muestra solo la página actual. */
+@media (max-width: 600px) {
+  .topbar-app .crumb-path { display: none; }
+  .topbar-app .crumb { font-size: 14px; min-width: 0; }
+  .title-row .title-actions { width: 100%; }
+  .title-row .title-actions .btn { flex: 1; }
+  .filters > div { flex: 1 1 140px; min-width: 0; }
+  .card { padding: 16px; }
+  .rec { grid-template-columns: 1fr; }
+}

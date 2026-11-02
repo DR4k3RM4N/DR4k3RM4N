@@ -346,3 +346,52 @@
 .pricing-page .plan-1 { margin-top: 0; }
 .site .auth-form form p { margin: 0 0 16px; }
 .pr-sub { font-weight: 400; }
+
+/* ---------- Responsive fixes (auditoría en 375–1440 px) ---------- */
+.t-name { line-height: .92; }
+.plan h3 { line-height: 1.2; }
+.plan-price { line-height: 1 !important; margin: 14px 0 18px !important; }
+/* Los planes crecen con su contenido; el escalón es una altura mínima. */
+.plan-1, .plan-2, .plan-3 { height: auto; }
+.plan-1 { min-height: 360px; } .plan-2 { min-height: 480px; } .plan-3 { min-height: 600px; }
+.plan ul { padding-bottom: 8px; }
+/* Barra superior: en pantallas medianas los enlaces empiezan a la izquierda y se quitan los secundarios. */
+@media (max-width: 1100px) {
+  .t-links { padding-left: 20px !important; gap: 20px; }
+  .steps-row { grid-template-columns: 1fr; gap: 12px; }
+  .pr-head { position: static; max-width: none; margin-bottom: 8px; }
+  .plan { grid-column: auto; min-height: 0 !important; margin-top: 0 !important; }
+  .plan-body { padding: 24px; }
+}
+@media (max-width: 900px) {
+  .t-links a:not(.keep) { display: none; }
+  .t-links { display: flex !important; justify-content: flex-end; padding-right: 20px; }
+}
+@media (max-width: 760px) {
+  .toprow { grid-template-columns: 56px 1fr auto; }
+  .t-action { padding: 0 14px !important; }
+  .t-links { padding: 0 14px !important; }
+  /* Curva de la portada: la segunda etiqueta baja un renglón para no encimarse. */
+  .curve { padding-top: 48px; }
+  .curve .mark.end { top: 22px; height: calc(100% - 26px); }
+  .curve .mark { font-size: 13px; }
+  /* Tablero de momentos: el nombre puede usar dos renglones. */
+  .drow { height: auto; min-height: 64px; padding: 12px 14px; }
+  .drow > span.d-name { white-space: normal; overflow: visible; line-height: 1.2; }
+  .drow.open { height: auto; min-height: 200px; }
+  .drow:first-child { margin-top: 0; }
+  .dboard { margin-bottom: 0; padding-bottom: 12px; }
+}
+@media (max-width: 420px) {
+  .t-action { font-size: 14px; padding: 0 12px !important; }
+  .t-links { padding: 0 12px !important; }
+}
+.t-name { line-height: 1; }
+.pricing-page .pr-head h1 { line-height: 1.08; }
+.pr-sub { margin-top: 18px !important; }
+@media (max-width: 900px) {
+  .curve { padding-top: 48px; }
+  .curve .mark.end { top: 22px; height: calc(100% - 26px); }
+}
+.curve .mark { width: max-content; }
+@media (max-width: 420px) { .curve .mark { font-size: 12px; } }

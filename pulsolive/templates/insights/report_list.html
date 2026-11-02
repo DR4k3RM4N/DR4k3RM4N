@@ -12,10 +12,10 @@
   <div class="card">
     <h2>Generados</h2>
     {% if reports %}
-    <table>{% for r in reports %}
+    <div class="table-wrap"><table>{% for r in reports %}
       <tr><td><a href="{% url 'insights:report_detail' r.pk %}">{{ r.get_period_display }} · {{ r.start|date:"d M" }}{% if r.end != r.start %}–{{ r.end|date:"d M Y" }}{% else %} {{ r.start|date:"Y" }}{% endif %}</a></td>
       <td>{{ r.brand.name|default:"Todas las marcas" }}</td><td>{% if r.ai_summary %}<span class="badge accent">IA</span>{% endif %} {% if r.shared %}<span class="badge">compartido</span>{% endif %}</td></tr>
-    {% endfor %}</table>
+    {% endfor %}</table></div>
     {% else %}<p class="muted">Aún no hay reportes.</p>{% endif %}
   </div>
 </div>

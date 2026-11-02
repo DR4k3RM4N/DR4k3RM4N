@@ -12,13 +12,13 @@
       <div><span class="badge accent">#{{ c.rank }}</span> <strong style="font-size:1.1rem">{{ c.host }}</strong></div>
       <small class="muted">{{ c.lives }} lives · {{ c.gmv|money }}{% if not c.enough_data %} · <span class="badge baja">pocos datos</span>{% endif %}</small>
     </div>
-    <table>
+    <div class="table-wrap"><table>
       <tr><th>Métrica</th><th class="num">Host</th><th class="num">vs. equipo</th></tr>
       <tr><td>Ventas por hora</td><td class="num">{{ c.gmv_per_hour|money }}</td><td class="num {{ c.relative.gmv_per_hour|lift_class }}">{{ c.relative.gmv_per_hour|signed_pct }}</td></tr>
       <tr><td>Conversión</td><td class="num">{{ c.conversion_rate|pct:2 }}</td><td class="num {{ c.relative.conversion_rate|lift_class }}">{{ c.relative.conversion_rate|signed_pct }}</td></tr>
       <tr><td>Tiempo de visualización</td><td class="num">{{ c.avg_watch_seconds|mmss }}</td><td class="num {{ c.relative.avg_watch_seconds|lift_class }}">{{ c.relative.avg_watch_seconds|signed_pct }}</td></tr>
       <tr><td>Ticket promedio</td><td class="num">{{ c.aov|money }}</td><td class="num {{ c.relative.aov|lift_class }}">{{ c.relative.aov|signed_pct }}</td></tr>
-    </table>
+    </table></div>
     <p style="margin-top:10px"><small class="muted">Su mejor franja:</small> {{ c.best_daypart }}</p>
     {% for tip in c.coaching %}<div class="rec"><span class="badge {% if c.relative.gmv_per_hour >= 0.15 %}repetir{% else %}probar{% endif %}">coaching</span><div class="detail">{{ tip }}</div></div>{% endfor %}
   </div>

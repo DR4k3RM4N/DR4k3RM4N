@@ -6,14 +6,14 @@
 <div class="grid grid-2">
   <div class="card">
     {% if brands %}
-    <table>
+    <div class="table-wrap"><table>
       <tr><th>Marca</th><th class="num">Lives</th><th class="num">Ventas</th><th></th></tr>
       {% for b in brands %}
       <tr><td><strong>{{ b.name }}</strong><br><small class="muted">{{ b.category }} {{ b.tiktok_handle }}</small></td>
         <td class="num">{{ b.n_lives }}</td><td class="num">{{ b.total_gmv|money }}</td>
         <td class="num"><a href="{% url 'insights:dashboard' %}?marca={{ b.pk }}">Panel</a> · <a href="{% url 'lives:import' %}?marca={{ b.pk }}">Importar</a> · <a href="{% url 'lives:brand_edit' b.pk %}">Editar</a></td></tr>
       {% endfor %}
-    </table>
+    </table></div>
     {% else %}
       <div class="empty">Aún no tienes marcas. Crea la primera →</div>
     {% endif %}
