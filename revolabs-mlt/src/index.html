@@ -35,6 +35,20 @@
           <option value="0.8">80%</option><option value="1">100%</option>
         </select>
       </label>
+      <label title="Video + chat muestra los comentarios y espectadores junto al video. Solo video lo muestra más grande."><span class="lbl">Vista</span><span class="sh">💬</span>
+        <select id="view">
+          <option value="chat">Video + chat</option>
+          <option value="video">Solo video</option>
+        </select>
+      </label>
+      <label title="Líneas encima del video para revisar que el live esté derecho y centrado (G)"><span class="lbl">Guías</span><span class="sh">📐</span>
+        <select id="guides">
+          <option value="off">Sin guías</option>
+          <option value="thirds">Tercios + centro</option>
+          <option value="center">Solo centro</option>
+          <option value="grid">Cuadrícula fina</option>
+        </select>
+      </label>
       <label title="Recargar todos los lives automáticamente"><span class="lbl">Recargar cada</span><span class="sh">⏱</span>
         <select id="autoReload">
           <option value="0">Nunca</option><option value="5">5 min</option>
@@ -75,7 +89,7 @@
       <h2>Sin lives todavía</h2>
       <p>Escribe arriba el usuario de TikTok (por ejemplo <b>miempresa</b>, el @ ya está puesto) y pulsa <b>Agregar</b>.</p>
       <p>O abre tus cuentas guardadas desde <b>⭐ Favoritas</b>.</p>
-      <p class="hint">Atajos: 1–9 escuchar ese live · F ampliar · M silenciar/activar todo · R recargar todo · F11 pantalla completa · Ctrl+K escribir en la barra</p>
+      <p class="hint">Atajos: 1–9 escuchar ese live · F ampliar · M silenciar/activar todo · R recargar todo · G guías · F11 pantalla completa · Ctrl+K escribir en la barra</p>
     </div>
   </div>
 
@@ -92,6 +106,8 @@
         <span class="status">Cargando…</span>
         <span class="spacer"></span>
         <button class="audio" title="Escuchar solo este live (Ctrl+clic: sumarlo a los que suenan)">🔇</button>
+        <button class="view" title="Cambiar vista">💬</button>
+        <button class="guides" title="Guías de encuadre">📐</button>
         <button class="reload" title="Volver a este live y recargar">⟳</button>
         <button class="expand" title="Ampliar">⤢</button>
         <button class="open" title="Abrir en el navegador">↗</button>
@@ -118,7 +134,7 @@
       <p class="sub">Monitor de Lives de TikTok</p>
       <p>Versión <b id="aboutVer"></b></p>
       <p class="sub">© 2026 Revo Labs. Uso interno.</p>
-      <p class="hint">Atajos: 1–9 escuchar un live · F ampliar · M silenciar/activar todo · R recargar todo · F11 pantalla completa · Ctrl+K escribir en la barra · Esc salir</p>
+      <p class="hint">Atajos: 1–9 escuchar un live · F ampliar · M silenciar/activar todo · R recargar todo · G guías de encuadre · F11 pantalla completa · Ctrl+K escribir en la barra · Esc salir</p>
       <p class="hint">Arrastra un live desde ⠿ para cambiarlo de lugar.</p>
       <div class="actions"><button id="aboutClose" class="primary">Cerrar</button></div>
     </div>

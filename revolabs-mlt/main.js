@@ -22,6 +22,8 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       webviewTag: true,
+      // Que la app siga revisando los lives aunque esté minimizada.
+      backgroundThrottling: false,
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -30,6 +32,13 @@ function createWindow() {
   Menu.setApplicationMenu(isMac ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]) : null);
   win.on('page-title-updated', (e) => e.preventDefault());
   win.on('focus', () => win.flashFrame(false));
+  // Avisa a la página cuando la ventana se minimiza o se restaura, para no confundir
+  // el video frenado por Windows/Mac con un live caído.
+  const vis = (hidden) => () => { if (!win.isDestroyed()) win.webContents.send('window-hidden', hidden); };
+  win.on('minimize', vis(true));
+  win.on('hide', vis(true));
+  win.on('restore', vis(false));
+  win.on('show', vis(false));
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
 }
 

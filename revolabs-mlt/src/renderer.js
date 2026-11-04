@@ -1,8 +1,11 @@
 const STORAGE_KEY = 'tiktok-monitor-v1';
 const PARTITION = 'persist:tiktok'; // sesión compartida y guardada entre todos los lives
 const LOGIN = '__login__';
-const MONITOR_EVERY = 20000; // cada cuánto se revisa que cada live siga transmitiendo (ms)
-const RETRY_EVERY = 45000;   // cada cuánto se reintenta un live caído (ms)
+const MONITOR_EVERY = 15000; // cada cuánto se revisa que cada live siga transmitiendo (ms)
+const ALERT_AFTER = 45000;   // un live debe seguir mal este tiempo antes de avisar (ms)
+const FREEZE_CHECKS = 4;     // revisiones seguidas con el video detenido para considerarlo congelado (~1 min)
+const RETRY_EVERY = 60000;   // cada cuánto se reintenta un live caído (ms)
+const RETRY_ENDED = 120000;  // cada cuánto se revisa si un live terminado volvió (ms)
 
 const $ = (id) => document.getElementById(id);
 const grid = $('grid');
@@ -10,7 +13,7 @@ const empty = $('empty');
 const tpl = $('tileTpl');
 const els = {
   form: $('addForm'), input: $('userInput'), cols: $('cols'), zoom: $('zoom'),
-  autoReload: $('autoReload'), alerts: $('alerts'), muteAll: $('muteAll'),
+  autoReload: $('autoReload'), alerts: $('alerts'), view: $('view'), guides: $('guides'), muteAll: $('muteAll'),
   reloadAll: $('reloadAll'), login: $('login'),
   favToggle: $('favToggle'), favPanel: $('favPanel'), favList: $('favList'),
   favEmpty: $('favEmpty'), favCount: $('favCount'), alertsBox: $('alertsBox'), ghost: $('dragGhost'),
@@ -21,11 +24,11 @@ const audible = new Set(); // usuarios que se están escuchando
 let expanded = null;       // usuario ampliado
 let reloadTimer = null;
 let offline = !navigator.onLine;
-const tiles = new Map();   // usuario -> { el, webview, statusEl, wasOk, alerted, lastTime, stuck, retry }
+const tiles = new Map();   // usuario -> { el, webview, statusEl, armed, alerted, badSince, lastTime, stuck, retry }
 
 // ---------- Datos guardados ----------
 function load() {
-  const base = { lives: [], favorites: [], notes: {}, cols: 'auto', zoom: 'auto', autoReload: '0', alerts: 'all', favOpen: true, v: 5 };
+  const base = { lives: [], favorites: [], notes: {}, cols: 'auto', zoom: 'auto', autoReload: '0', alerts: 'all', favOpen: true, view: 'chat', tileView: {}, guides: 'off', tileGuides: {}, v: 5 };
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (s && Array.isArray(s.lives)) {
@@ -86,13 +89,17 @@ function addLive(user) {
   webview.setAttribute('partition', PARTITION);
   webview.setAttribute('src', liveUrl(user));
   webview.setAttribute('allowpopups', '');
+  webview.setAttribute('webpreferences', 'backgroundThrottling=no');
   el.insertBefore(webview, noteEl);
-  const t = { el, webview, statusEl, wasOk: false, alerted: false, lastTime: null, stuck: 0, retry: 0, loading: true };
+  const t = { el, webview, statusEl, armed: false, alerted: false, badSince: null, lastTime: null, stuck: 0, retry: 0, loading: true };
 
   webview.addEventListener('dom-ready', () => {
     webview.setAudioMuted(!audible.has(user));
     applyZoom(user);
-    if (user !== LOGIN) webview.executeJavaScript(LOCK_SCRIPT).catch(() => {});
+    if (user !== LOGIN) {
+      webview.executeJavaScript(LOCK_SCRIPT).catch(() => {});
+      webview.executeJavaScript(GUIDES_SCRIPT).then(() => applyGuides(user)).catch(() => {});
+    }
   });
   // Si TikTok igual cambia a otro usuario, regresamos al live de esta casilla.
   const guard = (e) => {
@@ -121,6 +128,8 @@ function addLive(user) {
   el.querySelector('.audio').onclick = (e) => { e.stopPropagation(); toggleAudio(user, e.ctrlKey || e.metaKey || e.shiftKey); };
   el.querySelector('.reload').onclick = () => reloadLive(user);
   el.querySelector('.expand').onclick = () => toggleExpand(user);
+  el.querySelector('.view').onclick = () => toggleTileView(user);
+  el.querySelector('.guides').onclick = () => toggleTileGuides(user);
   el.querySelector('.open').onclick = () => window.open(liveUrl(user));
   el.querySelector('.remove').onclick = () => removeLive(user);
   const star = el.querySelector('.star');
@@ -195,6 +204,8 @@ function focusInput() {
 }
 
 // ---------- Estado y alertas de desconexión ----------
+// Para evitar falsas alarmas, un live tiene que seguir mal durante ALERT_AFTER antes de avisar.
+// Los cortes cortos (buffering, recargas, un segundo sin internet) ya no disparan alertas.
 function setStatus(user, text, kind) {
   const t = tiles.get(user);
   if (!t) return;
@@ -203,56 +214,77 @@ function setStatus(user, text, kind) {
   t.statusEl.dataset.kind = kind;
   if (kind === 'ok') {
     t.retry = 0;
+    t.badSince = null;
+    t.stuck = 0;
     if (t.alerted) { t.alerted = false; t.el.classList.remove('alert'); recovered(user); }
-    t.wasOk = true;
+    t.armed = true; // estaba transmitiendo bien: si se cae, sí hay que avisar
   } else if (kind === 'bad') {
-    // Solo se avisa cuando un live que estaba bien se cae (no al abrir uno que ya terminó).
-    if (t.wasOk && !t.alerted && user !== LOGIN) { t.alerted = true; raiseAlert(user, text); }
-    t.wasOk = false;
+    if (!t.badSince) t.badSince = Date.now();
   }
   renderFavs();
 }
 
-// Revisión aproximada: textos que TikTok muestra cuando el live terminó y si el video sigue avanzando.
+// Revisión: textos que TikTok muestra cuando el live terminó y si el video sigue avanzando.
 const ENDED = ['live has ended', 'live ended', 'ha finalizado', 'ha terminado', 'terminó el live', 'no está en live', 'is not live', 'live is over'];
 const PROBE = `(() => {
   const text = document.body ? document.body.innerText.slice(0, 20000).toLowerCase() : '';
-  const v = [...document.querySelectorAll('video')].sort((a, b) => b.clientWidth - a.clientWidth)[0];
-  return { text, hasVideo: !!v, time: v ? v.currentTime : null, paused: v ? v.paused : null };
+  const vids = [...document.querySelectorAll('video')].filter((v) => v.clientWidth > 50);
+  const v = vids.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+  return { text, hasVideo: !!v, time: v ? v.currentTime : null, paused: v ? v.paused : null, ended: v ? v.ended : null };
 })()`;
 async function checkLive(user) {
   const t = tiles.get(user);
   if (!t || user === LOGIN) { if (t) setStatus(user, 'Abierto', 'ok'); return; }
   let r;
-  try { r = await t.webview.executeJavaScript(PROBE); } catch { return setStatus(user, 'Abierto', 'ok'); }
-  if (!tiles.has(user)) return;
-  if (ENDED.some((w) => r.text.includes(w))) return setStatus(user, 'Live terminado', 'bad');
-  // Video congelado: el live estaba avanzando y dejó de hacerlo en dos revisiones seguidas.
-  // No se revisa si la casilla está oculta (al ampliar otra) o si alguien lo pausó.
-  const visible = !t.el.classList.contains('hidden');
-  if (r.hasVideo && !r.paused && visible && t.lastTime !== null && Math.abs(r.time - t.lastTime) < 0.05) {
-    t.stuck++;
-    if (t.stuck >= 2) return setStatus(user, 'Señal detenida', 'bad');
-  } else {
-    t.stuck = 0;
-  }
+  try { r = await t.webview.executeJavaScript(PROBE); } catch { return; }
+  if (!tiles.has(user) || t.loading) return;
+  const advancing = r.hasVideo && t.lastTime !== null && Math.abs(r.time - t.lastTime) >= 0.05;
+  const prevTime = t.lastTime;
   t.lastTime = r.hasVideo ? r.time : null;
-  if (t.statusEl.dataset.kind !== 'bad' || t.stuck === 0) setStatus(user, 'En vivo', 'ok');
+  // "Terminado" solo cuenta si además no hay un video transmitiendo
+  // (TikTok muestra textos de otros lives terminados en las recomendaciones).
+  const playing = r.hasVideo && !r.paused && !r.ended;
+  if (ENDED.some((w) => r.text.includes(w)) && !(playing && advancing)) return setStatus(user, 'Live terminado', 'bad');
+  // Video congelado: solo se revisa con la app visible, la casilla a la vista y el video sin pausar.
+  // Con la app minimizada Windows/Mac frenan el video y eso no es una caída.
+  const visible = !appHidden() && !t.el.classList.contains('hidden');
+  if (playing && visible && prevTime !== null && !advancing) {
+    t.stuck++;
+    if (t.stuck >= FREEZE_CHECKS) return setStatus(user, 'Señal detenida', 'bad');
+    return; // todavía no se decide: se vuelve a revisar en la siguiente vuelta
+  }
+  t.stuck = 0;
+  setStatus(user, 'En vivo', 'ok');
 }
 
 function monitor() {
-  if (offline) return;
+  const now = Date.now();
   for (const [user, t] of tiles) {
-    if (user === LOGIN || t.loading) continue;
-    if (t.statusEl.dataset.kind === 'bad') {
-      // Live caído: se reintenta solo cada cierto tiempo para saber cuándo vuelve.
-      t.retry += MONITOR_EVERY;
-      if (t.retry >= RETRY_EVERY) { t.retry = 0; reloadLive(user); }
-      else checkLive(user);
-    } else {
-      checkLive(user);
+    if (user === LOGIN) continue;
+    const bad = t.statusEl.dataset.kind === 'bad';
+    if (bad && t.badSince && t.armed && !t.alerted && now - t.badSince >= ALERT_AFTER && !offline) {
+      t.alerted = true;
+      t.armed = false;
+      raiseAlert(user, t.statusEl.textContent);
     }
+    if (offline || t.loading) continue;
+    if (bad && t.badSince && now - t.badSince >= ALERT_AFTER) {
+      // Live caído: se reintenta cada cierto tiempo para saber cuándo vuelve.
+      t.retry += MONITOR_EVERY;
+      const every = t.statusEl.textContent === 'Live terminado' ? RETRY_ENDED : RETRY_EVERY;
+      if (t.retry >= every) { t.retry = 0; reloadLive(user); continue; }
+    }
+    checkLive(user);
   }
+}
+
+// Al volver a mostrar la app (después de minimizarla) se empieza a medir de cero.
+let winHidden = false;
+const appHidden = () => winHidden || document.hidden;
+function resetFreeze() { tiles.forEach((t) => { t.lastTime = null; t.stuck = 0; }); }
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resetFreeze(); });
+if (window.app && window.app.onWindowHidden) {
+  window.app.onWindowHidden((hidden) => { winHidden = hidden; if (!hidden) resetFreeze(); });
 }
 
 const sound = (() => {
@@ -281,6 +313,12 @@ function timeNow() {
   return new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
 }
 
+// Las alertas que llegan casi juntas se agrupan en un solo sonido y un solo aviso del sistema,
+// y el sonido no se repite más de una vez cada SOUND_GAP.
+const SOUND_GAP = 15000;
+let lastSound = 0;
+let pending = [];
+let pendingTimer = 0;
 function raiseAlert(user, text, global = false) {
   if (state.alerts === 'off') return;
   if (!global) {
@@ -289,14 +327,20 @@ function raiseAlert(user, text, global = false) {
   }
   const title = global ? 'Sin internet' : `@${user}`;
   toast(user, 'bad', '⚠️', title, `${global ? 'Se perdió la conexión' : text} · ${timeNow()}`);
-  if (state.alerts === 'all') sound();
+  pending.push(global ? 'Se perdió la conexión a internet' : `@${user}: ${text}`);
+  clearTimeout(pendingTimer);
+  pendingTimer = setTimeout(flushAlerts, 1500);
+}
+function flushAlerts() {
+  const items = pending;
+  pending = [];
+  if (!items.length || state.alerts === 'off') return;
+  if (state.alerts === 'all' && Date.now() - lastSound > SOUND_GAP) { lastSound = Date.now(); sound(); }
   if (window.app) window.app.attention();
   try {
-    const n = new Notification('RevoLabs MLT · Alerta', {
-      body: global ? 'Se perdió la conexión a internet.' : `@${user}: ${text}`,
-      icon: '../build/icon.png', silent: true,
-    });
-    n.onclick = () => { if (window.app) window.app.showWindow(); if (!global) select(user); };
+    const body = items.length === 1 ? items[0] : `${items.length} lives con problemas:\n${items.slice(0, 4).join('\n')}${items.length > 4 ? '\n…' : ''}`;
+    const n = new Notification('RevoLabs MLT · Alerta', { body, icon: '../build/icon.png', silent: true });
+    n.onclick = () => { if (window.app) window.app.showWindow(); };
   } catch {}
 }
 
@@ -339,15 +383,22 @@ function dismissToast(key) {
   for (const el of els.alertsBox.querySelectorAll('.toast')) if (el.dataset.key === key) el.remove();
 }
 
+// Internet: solo se avisa si la falta de conexión dura más de unos segundos.
+let offlineTimer = 0;
+let offlineAlerted = false;
 window.addEventListener('offline', () => {
   offline = true;
-  raiseAlert('__net__', '', true);
+  clearTimeout(offlineTimer);
+  offlineTimer = setTimeout(() => { if (offline) { offlineAlerted = true; raiseAlert('__net__', '', true); } }, 15000);
 });
 window.addEventListener('online', () => {
   offline = false;
+  clearTimeout(offlineTimer);
   dismissToast('__net__');
-  toast('__net__', 'ok', '✅', 'Internet de vuelta', `Recargando los lives · ${timeNow()}`, 6000);
-  tiles.forEach((t, u) => { if (u !== LOGIN) reloadLive(u); });
+  if (offlineAlerted) toast('__net__', 'ok', '✅', 'Internet de vuelta', `Recargando los lives caídos · ${timeNow()}`, 6000);
+  offlineAlerted = false;
+  // Solo se recargan los lives que quedaron mal, no todos.
+  tiles.forEach((t, u) => { if (u !== LOGIN && t.statusEl.dataset.kind === 'bad') reloadLive(u); });
 });
 
 // ---------- Audio ----------
@@ -512,6 +563,7 @@ function refresh() {
     t.el.querySelector('.expand').title = expanded === u ? 'Volver a la cuadrícula (Esc)' : 'Ampliar (F)';
   });
   renderFavs();
+  renderTileButtons();
   layout();
 }
 
@@ -541,13 +593,18 @@ function layout() {
   if (state.zoom === 'auto') tiles.forEach((_t, u) => applyZoom(u));
 }
 
-// Zoom automático: el contenido de TikTok se achica o agranda según el ancho de cada casilla.
+// Zoom automático: TikTok acomoda su página según el ancho que "ve". Con la vista "Video + chat"
+// se le hace creer que la casilla mide al menos VIEW_WIDTH.chat px, para que muestre el chat y
+// los espectadores junto al video. Con "Solo video" se usa menos ancho y el video se ve más grande.
+const VIEW_WIDTH = { chat: 1440, video: 900 };
+const viewOf = (user) => state.tileView[user] || state.view;
 function zoomFor(user) {
   if (state.zoom !== 'auto') return parseFloat(state.zoom);
   const t = tiles.get(user);
-  const w = t ? t.el.clientWidth : 800;
-  if (!w) return 0.67;
-  return Math.round(Math.min(1, Math.max(0.35, w / 1100)) * 20) / 20;
+  const w = t ? t.webview.clientWidth || t.el.clientWidth : 800;
+  if (!w) return 0.6;
+  const target = VIEW_WIDTH[viewOf(user)] || VIEW_WIDTH.chat;
+  return Math.round(Math.min(1, Math.max(0.25, w / target)) * 40) / 40;
 }
 function applyZoom(user) {
   const t = tiles.get(user);
@@ -555,6 +612,88 @@ function applyZoom(user) {
   const z = zoomFor(user);
   if (t.zoom === z) return;
   try { t.webview.setZoomFactor(z); t.zoom = z; } catch {}
+}
+function toggleTileView(user) {
+  const next = viewOf(user) === 'chat' ? 'video' : 'chat';
+  if (next === state.view) delete state.tileView[user]; else state.tileView[user] = next;
+  if (state.zoom !== 'auto') { state.zoom = 'auto'; els.zoom.value = 'auto'; }
+  save();
+  renderTileButtons();
+  applyZoom(user);
+}
+
+// ---------- Guías de encuadre ----------
+// Se dibujan dentro de la página de TikTok, justo encima de la imagen del video
+// (descontando las franjas negras), para revisar si el live está derecho y centrado.
+const GUIDES_SCRIPT = `(() => {
+  if (window.__mltGuides) return true;
+  const box = document.createElement('div');
+  box.id = '__mlt_guides';
+  box.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;display:none;outline:1px solid rgba(37,244,238,.9);';
+  let mode = 'off';
+  const line = (css) => '<div style="position:absolute;' + css + '"></div>';
+  const C = 'rgba(37,244,238,.85)', F = 'rgba(255,255,255,.35)';
+  const draw = () => {
+    let h = '';
+    const v = (p, c, w) => line('top:0;bottom:0;left:' + p + '%;width:' + (w || 1) + 'px;background:' + c);
+    const hz = (p, c, w) => line('left:0;right:0;top:' + p + '%;height:' + (w || 1) + 'px;background:' + c);
+    if (mode === 'grid') for (let i = 1; i < 10; i++) if (i !== 5) { h += v(i * 10, F); h += hz(i * 10, F); }
+    if (mode === 'thirds' || mode === 'grid') { h += v(33.333, C); h += v(66.666, C); h += hz(33.333, C); h += hz(66.666, C); }
+    if (mode === 'center' || mode === 'thirds' || mode === 'grid') {
+      h += v(50, 'rgba(254,44,85,.9)'); h += hz(50, 'rgba(254,44,85,.9)');
+      h += line('left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border:1px solid rgba(254,44,85,.9);border-radius:50%');
+    }
+    box.innerHTML = h;
+  };
+  const place = () => {
+    if (mode === 'off') { box.style.display = 'none'; return; }
+    const vids = [...document.querySelectorAll('video')].filter((x) => x.clientWidth > 50);
+    const vid = vids.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+    if (!vid) { box.style.display = 'none'; return; }
+    const r = vid.getBoundingClientRect();
+    let x = r.left, y = r.top, w = r.width, hh = r.height;
+    const vw = vid.videoWidth, vh = vid.videoHeight;
+    const fit = getComputedStyle(vid).objectFit;
+    if (vw && vh && fit !== 'fill') {
+      const sc = fit === 'cover' ? Math.max(w / vw, hh / vh) : Math.min(w / vw, hh / vh);
+      const cw = vw * sc, ch = vh * sc;
+      x += (w - cw) / 2; y += (hh - ch) / 2; w = cw; hh = ch;
+      // Si la imagen se recorta (cover), las guías se limitan a lo que se ve.
+      if (fit === 'cover') { const L = Math.max(x, r.left), T = Math.max(y, r.top); w = Math.min(x + w, r.right) - L; hh = Math.min(y + hh, r.bottom) - T; x = L; y = T; }
+    }
+    Object.assign(box.style, { display: 'block', left: x + 'px', top: y + 'px', width: w + 'px', height: hh + 'px' });
+    if (!box.isConnected && document.body) document.body.appendChild(box);
+  };
+  setInterval(place, 400);
+  window.__mltGuides = (m) => { mode = m; draw(); place(); };
+  return true;
+})()`;
+const guidesOf = (user) => state.tileGuides[user] || state.guides;
+function applyGuides(user) {
+  const t = tiles.get(user);
+  if (!t || user === LOGIN) return;
+  t.webview.executeJavaScript(`window.__mltGuides && window.__mltGuides(${JSON.stringify(guidesOf(user))})`).catch(() => {});
+}
+function toggleTileGuides(user) {
+  // En una casilla, el botón 📐 prende o apaga sus guías sin tocar las demás.
+  const cur = guidesOf(user);
+  const next = cur === 'off' ? (state.guides !== 'off' ? state.guides : 'thirds') : 'off';
+  if (next === state.guides) delete state.tileGuides[user]; else state.tileGuides[user] = next;
+  save();
+  renderTileButtons();
+  applyGuides(user);
+}
+function renderTileButtons() {
+  for (const [u, t] of tiles) {
+    const view = t.el.querySelector('.view');
+    const chat = viewOf(u) === 'chat';
+    view.classList.toggle('on', chat);
+    view.title = chat ? 'Vista: video + chat y espectadores. Clic para ver solo el video más grande' : 'Vista: solo video. Clic para ver también el chat y los espectadores';
+    const g = t.el.querySelector('.guides');
+    const on = guidesOf(u) !== 'off';
+    g.classList.toggle('on', on);
+    g.title = on ? 'Ocultar guías de encuadre en este live (G: todas)' : 'Mostrar guías de encuadre en este live (G: todas)';
+  }
 }
 
 let resizeRaf = 0;
@@ -599,6 +738,25 @@ els.cols.value = state.cols;
 els.zoom.value = state.zoom;
 els.autoReload.value = state.autoReload;
 els.alerts.value = state.alerts;
+els.view.value = state.view;
+els.guides.value = state.guides;
+els.view.onchange = () => {
+  state.view = els.view.value;
+  state.tileView = {};
+  if (state.zoom !== 'auto') { state.zoom = 'auto'; els.zoom.value = 'auto'; }
+  save();
+  renderTileButtons();
+  tiles.forEach((_t, u) => applyZoom(u));
+};
+els.guides.onchange = () => setGuides(els.guides.value);
+function setGuides(mode) {
+  state.guides = mode;
+  state.tileGuides = {};
+  els.guides.value = mode;
+  save();
+  renderTileButtons();
+  tiles.forEach((_t, u) => applyGuides(u));
+}
 els.cols.onchange = () => { state.cols = els.cols.value; save(); layout(); };
 els.zoom.onchange = () => {
   state.zoom = els.zoom.value; save();
@@ -633,6 +791,7 @@ document.addEventListener('keydown', (e) => {
   if (/^[1-9]$/.test(e.key) && users[+e.key - 1]) { toggleAudio(users[+e.key - 1], e.ctrlKey || e.shiftKey); select(users[+e.key - 1]); }
   else if (e.key === 'f' || e.key === 'F') { const u = selectedUser(); if (u) toggleExpand(u); }
   else if (e.key === 'm' || e.key === 'M') toggleAudioAll();
+  else if (e.key === 'g' || e.key === 'G') setGuides(state.guides === 'off' ? 'thirds' : 'off');
   else if (e.key === 'r' || e.key === 'R') els.reloadAll.click();
   else if (e.key === 'Escape' && expanded) { expanded = null; refresh(); }
 });

@@ -51,7 +51,7 @@ button.subtle { color: #a9adb9; }
 button.active-all { border-color: #25f4ee; color: #8ffaf6; }
 
 /* En ventanas angostas se ocultan los textos y quedan solo los iconos y valores. */
-@media (max-width: 1250px) {
+@media (max-width: 1450px) {
   .group .lbl { display: none; }
   .group .sh { display: inline; }
 }
@@ -129,6 +129,8 @@ button.icon:hover { background: #2f3441; }
 .status[data-kind="ok"] { background: #12483f; color: #6ff3d6; }
 .status[data-kind="bad"] { background: #5a1a28; color: #ff8fa6; }
 .spacer { flex: 1; }
+.bar button.view, .bar button.guides { opacity: 0.55; }
+.bar button.view.on, .bar button.guides.on { opacity: 1; border-color: #25f4ee; }
 webview { flex: 1; min-height: 0; background: #000; }
 .note { border: 0; border-top: 1px solid #2a2e38; border-radius: 0; background: #181b21; font-size: 12px; }
 
@@ -137,8 +139,11 @@ webview { flex: 1; min-height: 0; background: #000; }
   .bar .open { display: none; }
   .status { font-size: 11px; padding: 1px 5px; }
 }
+@container (max-width: 380px) {
+  .bar .guides { display: none; }
+}
 @container (max-width: 340px) {
-  .bar .expand, .num { display: none; }
+  .bar .expand, .num, .bar .view { display: none; }
 }
 @container (max-width: 270px) {
   .bar .reload { display: none; }

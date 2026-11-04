@@ -1,6 +1,6 @@
 {
   "name": "monitor-lives-tiktok",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "RevoLabs MLT - Monitor de Lives de TikTok",
   "main": "main.js",
   "author": "Revo Labs",

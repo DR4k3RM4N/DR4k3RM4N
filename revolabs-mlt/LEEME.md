@@ -1,6 +1,13 @@
 # RevoLabs MLT · Monitor de Lives de TikTok
 
-Versión **0.5.0** · © 2026 Revo Labs · Uso interno.
+Versión **0.5.1** · © 2026 Revo Labs · Uso interno.
+
+## Novedades de la v0.5.1
+
+- **Chat y espectadores visibles:** nueva opción **Vista** en la barra. "Video + chat" (viene activada por defecto) hace que TikTok muestre los comentarios y los espectadores junto al video; "Solo video" lo muestra más grande. Cada live puede cambiar su propia vista con el botón 💬. Si el texto se ve muy chico, usa menos columnas o amplía el live (⤢ o doble clic).
+- **Guías de encuadre:** opción **Guías** en la barra (Tercios + centro, Solo centro o Cuadrícula fina) o tecla G. Las líneas se dibujan justo sobre la imagen del video para ver si el live está derecho y centrado. El botón 📐 de cada live prende o apaga las guías solo en ese live.
+- **Menos falsas alarmas:** un live tiene que seguir caído unos 45 segundos antes de avisar, y uno congelado necesita alrededor de 1 minuto sin avanzar. Los cortes cortos ya no avisan.
+- **Sin avalancha al minimizar:** con la app minimizada ya no se revisa si el video está congelado, porque Windows y Mac lo frenan. Varias alertas juntas se agrupan en un solo aviso, el sonido no se repite más de una vez cada 15 segundos, y un corte breve de internet tampoco avisa.
 
 ## Novedades de la v0.5
 
@@ -15,9 +22,9 @@ Tu lista de lives, tus notas y tu sesión de las versiones anteriores se conserv
 
 ## Instalar
 
-- **Windows:** extrae `RevoLabs-MLT-0.5.0-Windows.zip` y abre `RevoLabs-MLT-0.5.0.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
-- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.0-Mac-arm64.zip`.
-- **Mac Intel:** `RevoLabs-MLT-0.5.0-Mac-x64.zip`.
+- **Windows:** extrae `RevoLabs-MLT-0.5.1-Windows.zip` y abre `RevoLabs-MLT-0.5.1.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
+- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.1-Mac-arm64.zip`.
+- **Mac Intel:** `RevoLabs-MLT-0.5.1-Mac-x64.zip`.
   La primera vez ve a Ajustes del Sistema → Privacidad y seguridad → "Abrir de todas formas". Si dice que la app "está dañada", abre Terminal y ejecuta `xattr -cr "/Applications/RevoLabs MLT.app"`.
 
 ## Para desarrolladores
