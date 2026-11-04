@@ -1,0 +1,56 @@
+{
+  "name": "drakotv",
+  "productName": "DrakoTV",
+  "version": "1.0.0",
+  "description": "Reproductor IPTV de escritorio: TV en vivo con guia, peliculas, series, favoritos y seguir viendo.",
+  "main": "main.js",
+  "author": "Miguel Armenta",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable --x64",
+    "dist:linux": "electron-builder --linux AppImage",
+    "dist:mac": "electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "hls.js": "1.7.4",
+    "mpegts.js": "1.8.2"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "com.drakoapps.drakotv",
+    "productName": "DrakoTV",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "build/icon.png",
+      "node_modules/hls.js/dist/hls.min.js",
+      "node_modules/mpegts.js/dist/mpegts.js",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "DrakoTV",
+      "createDesktopShortcut": true
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "icon": "build/icon.png",
+    "portable": {
+      "artifactName": "DrakoTV-portable-${version}.exe"
+    }
+  }
+}
