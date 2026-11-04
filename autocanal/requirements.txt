@@ -1,0 +1,8 @@
+anthropic>=2.3
+google-play-scraper>=1.2
+edge-tts>=7.0
+Pillow>=11.0
+requests>=2.32
+python-dotenv>=1.0
+google-api-python-client>=2.150
+google-auth-oauthlib>=1.2

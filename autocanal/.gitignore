@@ -1,0 +1,9 @@
+.env
+salida/
+entrada/
+historial.json
+client_secret*.json
+youtube_token.json
+__pycache__/
+assets/musica.mp3
+assets/cara.png

@@ -1,0 +1,57 @@
+"""Agente 7 — YouTube: sube el video, la miniatura y los metadatos."""
+from __future__ import annotations
+
+from pathlib import Path
+
+from . import config
+
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube"]
+
+
+def _servicio():
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+
+    token = config.BASE / "youtube_token.json"
+    creds = Credentials.from_authorized_user_file(str(token), SCOPES) if token.exists() else None
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:  # la primera vez abre el navegador para que autorices tu canal
+            secretos = config.BASE / config.env("YT_CLIENT_SECRETS", "client_secret.json")
+            creds = InstalledAppFlow.from_client_secrets_file(str(secretos), SCOPES).run_local_server(port=0)
+        token.write_text(creds.to_json(), encoding="utf-8")
+    return build("youtube", "v3", credentials=creds)
+
+
+def subir(video: Path, miniatura: Path | None, titulo: str, descripcion: str, etiquetas: list[str],
+          sintetico: bool = True) -> str:
+    from googleapiclient.http import MediaFileUpload
+
+    yt = _servicio()
+    cuerpo = {
+        "snippet": {
+            "title": titulo[:100], "description": descripcion[:5000],
+            "tags": etiquetas[:30], "categoryId": config.env("YT_CATEGORIA", "28"),
+            "defaultLanguage": config.CANAL_IDIOMA, "defaultAudioLanguage": config.CANAL_IDIOMA,
+        },
+        "status": {
+            "privacyStatus": config.env("YT_PRIVACIDAD", "private"),
+            "selfDeclaredMadeForKids": False,
+            # Divulgación de contenido alterado o sintético (voz generada por IA) que pide YouTube.
+            "containsSyntheticMedia": sintetico,
+        },
+    }
+    req = yt.videos().insert(part="snippet,status", body=cuerpo,
+                             media_body=MediaFileUpload(str(video), chunksize=-1, resumable=True))
+    resp = None
+    while resp is None:
+        estado, resp = req.next_chunk()
+        if estado:
+            print(f"  · subiendo {int(estado.progress() * 100)}%")
+    video_id = resp["id"]
+    if miniatura and miniatura.exists():
+        yt.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(miniatura))).execute()
+    return f"https://youtu.be/{video_id}"
