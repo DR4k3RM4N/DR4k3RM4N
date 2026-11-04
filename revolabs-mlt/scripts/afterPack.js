@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 exports.default = async function afterPack(ctx) {
+  if (ctx.electronPlatformName === 'darwin') return adhocSignMac(ctx);
   if (ctx.electronPlatformName !== 'win32') return;
   const ResEdit = await import('resedit');
   const { NtExecutable, NtExecutableResource, Resource, Data } = ResEdit;
@@ -40,3 +41,12 @@ exports.default = async function afterPack(ctx) {
   res.outputResource(exe);
   fs.writeFileSync(exePath, Buffer.from(exe.generate()));
 };
+
+// En Mac con chip Apple (M1–M4) una app sin ninguna firma no abre ("está dañada").
+// Cuando se compila en una Mac, se le pone una firma local (ad-hoc), que es gratis.
+function adhocSignMac(ctx) {
+  if (process.platform !== 'darwin') return;
+  const { execFileSync } = require('child_process');
+  const appPath = path.join(ctx.appOutDir, `${ctx.packager.appInfo.productFilename}.app`);
+  execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'inherit' });
+}

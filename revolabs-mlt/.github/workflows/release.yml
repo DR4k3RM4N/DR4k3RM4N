@@ -1,0 +1,69 @@
+# Compila RevoLabs MLT para Windows y Mac y publica los archivos en "Releases".
+# Se ejecuta al subir una etiqueta de versión (por ejemplo v0.5.1) o a mano desde la pestaña Actions.
+name: Publicar versión
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx electron-builder --win portable --x64 --publish never
+      - name: Empaquetar zip
+        shell: pwsh
+        run: Compress-Archive -Path dist/*.exe, LEEME.md -DestinationPath RevoLabs-MLT-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: RevoLabs-MLT-Windows.zip
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx electron-builder --mac zip --arm64 --x64 --publish never
+      - name: Renombrar
+        run: |
+          mv dist/*-Mac-arm64.zip RevoLabs-MLT-Mac-AppleSilicon.zip
+          mv dist/*-Mac-x64.zip RevoLabs-MLT-Mac-Intel.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: RevoLabs-MLT-Mac-*.zip
+
+  release:
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: out
+      - name: Leer versión
+        id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          name: RevoLabs MLT v${{ steps.v.outputs.version }}
+          body_path: LEEME.md
+          files: out/*.zip
+          make_latest: true
