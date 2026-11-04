@@ -114,7 +114,7 @@ function addLive(user) {
   webview.addEventListener('did-navigate-in-page', guard);
   let failed = false;
   webview.addEventListener('did-start-loading', () => {
-    failed = false; t.loading = true; t.lastTime = null; t.stuck = 0; t.noVideo = 0; t.dark = 0; t.endedHits = 0;
+    failed = false; t.loading = true; t.lastTime = null; t.stuck = 0; t.noVideo = 0; t.dark = 0; t.endedHits = 0; t.frozen = 0;
     if (t.statusEl.dataset.kind !== 'bad') setStatus(user, 'Cargando…', 'loading');
   });
   webview.addEventListener('did-stop-loading', () => { t.loading = false; if (!failed) checkLive(user); });
@@ -256,8 +256,36 @@ const PROBE = `(() => {
       } catch (e) { dark = null; }
     }
   }
+  // Detector de imagen congelada: cada segundo compara una miniatura del cuadro con la anterior
+  // y guarda la última vez que la imagen cambió.
+  if (!window.__mltFrame) {
+    const F = window.__mltFrame = { last: null, lastChange: Date.now(), ok: false };
+    const c = document.createElement('canvas'); c.width = 64; c.height = 36;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    setInterval(() => {
+      const vs = [...document.querySelectorAll('video')].filter((e) => e.clientWidth > 50 && e.clientHeight > 50);
+      const cur = vs.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+      if (!cur || cur.readyState < 2 || !cur.videoWidth) { F.last = null; F.lastChange = Date.now(); return; }
+      try {
+        x.drawImage(cur, 0, 0, 64, 36);
+        const d = x.getImageData(0, 0, 64, 36).data;
+        const g = new Uint8Array(2304);
+        for (let i = 0, j = 0; i < d.length; i += 4, j++) g[j] = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
+        if (F.last) {
+          let diff = 0;
+          for (let j = 0; j < 2304; j++) diff += Math.abs(g[j] - F.last[j]);
+          // Una imagen congelada repite exactamente el mismo cuadro (diferencia 0); cualquier
+          // movimiento, por mínimo que sea (ruido de cámara, chat encima no cuenta), la supera.
+          if (diff / 2304 > 0.15) F.lastChange = Date.now();
+        } else F.lastChange = Date.now();
+        F.last = g; F.ok = true;
+      } catch (e) { F.ok = false; }
+    }, 1000);
+  }
+  const F = window.__mltFrame;
+  const still = F.ok ? (Date.now() - F.lastChange) / 1000 : null;
   return { text, href: location.href.toLowerCase(), hasVideo: !!v, time: v ? v.currentTime : null,
-    paused: v ? v.paused : null, ended: v ? v.ended : null, dark };
+    paused: v ? v.paused : null, ended: v ? v.ended : null, dark, still };
 })()`;
 async function checkLive(user) {
   const t = tiles.get(user);
@@ -283,13 +311,17 @@ async function checkLive(user) {
   // 4) Pantalla en negro.
   if (visible && r.dark === true) t.dark = (t.dark || 0) + 1;
   else if (r.dark === false) t.dark = 0;
+  // 5) Imagen congelada: el live sigue corriendo pero el cuadro no cambia nada.
+  if (visible && r.still !== null && r.still >= MONITOR_EVERY / 1000 - 1) t.frozen = (t.frozen || 0) + 1;
+  else if (r.still !== null && r.still < MONITOR_EVERY / 1000 - 1) t.frozen = 0;
 
   if (t.endedHits >= 2 && !advancing) return setStatus(user, 'Live terminado', 'bad');
   if (t.noVideo >= CHECKS_TO_DECIDE) return setStatus(user, t.everVideo ? 'Live terminado' : 'Sin transmisión', 'bad');
-  if (t.stuck >= CHECKS_TO_DECIDE) return setStatus(user, r.ended || r.paused ? 'Live detenido' : 'Señal detenida', 'bad');
+  if (t.stuck >= CHECKS_TO_DECIDE) return setStatus(user, r.ended || r.paused ? 'Live detenido' : 'Imagen congelada', 'bad');
   if (t.dark >= CHECKS_TO_DECIDE) return setStatus(user, 'Pantalla en negro', 'bad');
+  if (t.frozen >= CHECKS_TO_DECIDE) return setStatus(user, 'Imagen congelada', 'bad');
   // Hay alguna señal pero todavía no se confirma: se deja el estado como está.
-  if (t.endedHits || t.noVideo || t.stuck || t.dark) return;
+  if (t.endedHits || t.noVideo || t.stuck || t.dark || t.frozen) return;
   setStatus(user, 'En vivo', 'ok');
 }
 
@@ -317,7 +349,13 @@ function monitor() {
 // Al volver a mostrar la app (después de minimizarla) se empieza a medir de cero.
 let winHidden = false;
 const appHidden = () => winHidden || document.hidden;
-function resetFreeze() { tiles.forEach((t) => { t.lastTime = null; t.stuck = 0; t.dark = 0; }); }
+// Al volver de minimizar se empieza a medir de cero (minimizada, la imagen puede no actualizarse).
+function resetFreeze() {
+  tiles.forEach((t, u) => {
+    t.lastTime = null; t.stuck = 0; t.dark = 0; t.frozen = 0;
+    if (u !== LOGIN) t.webview.executeJavaScript('window.__mltFrame && (window.__mltFrame.lastChange = Date.now()); true').catch(() => {});
+  });
+}
 document.addEventListener('visibilitychange', () => { if (!document.hidden) resetFreeze(); });
 if (window.app && window.app.onWindowHidden) {
   window.app.onWindowHidden((hidden) => {

@@ -1,6 +1,11 @@
 # RevoLabs MLT · Monitor de Lives de TikTok
 
-Versión **0.5.2.2** · © 2026 Revo Labs · Uso interno.
+Versión **0.5.3** · © 2026 Revo Labs · Uso interno.
+
+## Novedades de la v0.5.3
+
+- **Detecta imagen congelada:** cada segundo la app compara la imagen de cada live con la anterior. Si el live sigue corriendo (por ejemplo, se oye el audio) pero la imagen no cambia nada durante unos 30 a 45 segundos, lo marca como **Imagen congelada** y avisa. Un live con poco movimiento no cuenta, porque la cámara siempre tiene algún cambio mínimo; solo avisa si la imagen queda exactamente igual.
+- Lo que antes se llamaba "Señal detenida" ahora también se muestra como **Imagen congelada**.
 
 ## Novedades de la v0.5.2.2
 
@@ -40,9 +45,9 @@ Tu lista de lives, tus notas y tu sesión de las versiones anteriores se conserv
 
 ## Instalar
 
-- **Windows:** extrae `RevoLabs-MLT-0.5.2.2-Windows.zip` y abre `RevoLabs-MLT-0.5.2.2.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
-- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.2.2-Mac-arm64.zip`.
-- **Mac Intel:** `RevoLabs-MLT-0.5.2.2-Mac-x64.zip`.
+- **Windows:** extrae `RevoLabs-MLT-0.5.3-Windows.zip` y abre `RevoLabs-MLT-0.5.3.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
+- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.3-Mac-arm64.zip`.
+- **Mac Intel:** `RevoLabs-MLT-0.5.3-Mac-x64.zip`.
   La primera vez ve a Ajustes del Sistema → Privacidad y seguridad → "Abrir de todas formas". Si dice que la app "está dañada", abre Terminal y ejecuta `xattr -cr "/Applications/RevoLabs MLT.app"`.
 
 ## Para desarrolladores
