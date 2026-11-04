@@ -257,3 +257,10 @@ body.tv .alerts { width: min(520px, calc(100vw - 28px)); }
 .tv-summary .ok { color: #6ff3d6; }
 .tv-exit { display: none; font-size: 13px; }
 body.tv.reveal .tv-exit { display: inline-block; }
+
+/* Salida de audio (ventana de TV) y botón de audio del modo TV */
+.audio-out { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; padding: 10px; border-radius: 8px; background: #20242d; }
+.audio-out label { color: #e8e9ee; font-weight: 600; }
+.audio-out select { flex: 1 1 180px; min-width: 0; }
+.tv-audio { font-size: 16px; padding: 3px 10px; border-radius: 16px; }
+.tv-audio.off { border-color: #fe2c55; color: #ff8fa6; }

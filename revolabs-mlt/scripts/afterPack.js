@@ -22,9 +22,11 @@ exports.default = async function afterPack(ctx) {
   Resource.IconGroupEntry.replaceIconsForResource(res.entries, groupId, lang, iconFile.icons.map((i) => i.data));
 
   const [vi] = Resource.VersionInfo.fromEntries(res.entries);
-  const [maj, min, pat] = pkg.version.split('.').map(Number);
-  vi.setFileVersion(maj, min, pat, 0, 1033);
-  vi.setProductVersion(maj, min, pat, 0, 1033);
+  // "0.5.2-1" se muestra como 0.5.2.1
+  const [maj, min, pat, rev = 0] = pkg.version.match(/\d+/g).map(Number);
+  const shown = [maj, min, pat].concat(rev ? [rev] : []).join('.');
+  vi.setFileVersion(maj, min, pat, rev, 1033);
+  vi.setProductVersion(maj, min, pat, rev, 1033);
   const strings = {
     CompanyName: 'Revo Labs',
     FileDescription: 'RevoLabs MLT - Monitor de Lives de TikTok',
@@ -32,8 +34,8 @@ exports.default = async function afterPack(ctx) {
     LegalCopyright: '© 2026 Revo Labs',
     OriginalFilename: 'RevoLabs MLT.exe',
     InternalName: 'RevoLabs MLT',
-    FileVersion: pkg.version,
-    ProductVersion: pkg.version,
+    FileVersion: shown,
+    ProductVersion: shown,
   };
   for (const lng of vi.getAllLanguagesForStringValues()) vi.setStringValues(lng, strings);
   vi.outputToResourceEntries(res.entries);

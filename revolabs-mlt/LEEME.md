@@ -1,6 +1,12 @@
 # RevoLabs MLT · Monitor de Lives de TikTok
 
-Versión **0.5.2** · © 2026 Revo Labs · Uso interno.
+Versión **0.5.2.1** · © 2026 Revo Labs · Uso interno.
+
+## Novedades de la v0.5.2.1
+
+- **Sonido en la TV:** TikTok dejaba su propio video en silencio y por eso a veces no se oía nada. Ahora el live que activas suena siempre al 100%.
+- **Salida de audio:** en la ventana del botón **TV** puedes elegir a dónde va el sonido (por ejemplo, tu TV Hisense) si Windows o Mac lo siguen mandando a las bocinas de la computadora. Con **▶ Probar sonido** compruebas por dónde sale.
+- **Botón de audio en el modo TV:** abajo a la izquierda se ve qué live está sonando. Si dice "🔇 Sin audio", un clic activa el sonido del live seleccionado.
 
 ## Novedades de la v0.5.2
 
@@ -29,9 +35,9 @@ Tu lista de lives, tus notas y tu sesión de las versiones anteriores se conserv
 
 ## Instalar
 
-- **Windows:** extrae `RevoLabs-MLT-0.5.2-Windows.zip` y abre `RevoLabs-MLT-0.5.2.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
-- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.2-Mac-arm64.zip`.
-- **Mac Intel:** `RevoLabs-MLT-0.5.2-Mac-x64.zip`.
+- **Windows:** extrae `RevoLabs-MLT-0.5.2.1-Windows.zip` y abre `RevoLabs-MLT-0.5.2.1.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
+- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.2.1-Mac-arm64.zip`.
+- **Mac Intel:** `RevoLabs-MLT-0.5.2.1-Mac-x64.zip`.
   La primera vez ve a Ajustes del Sistema → Privacidad y seguridad → "Abrir de todas formas". Si dice que la app "está dañada", abre Terminal y ejecuta `xattr -cr "/Applications/RevoLabs MLT.app"`.
 
 ## Para desarrolladores

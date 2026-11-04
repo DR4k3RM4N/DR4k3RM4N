@@ -11,6 +11,8 @@ app.setName(APP_NAME);
 // Necesario en Windows para que salgan los avisos de desconexión.
 if (process.platform === 'win32') app.setAppUserModelId('com.revolabs.mlt');
 const isMac = process.platform === 'darwin';
+// Permite que la app active el sonido de los lives sin que haya que dar clic dentro de TikTok.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 const isWin = process.platform === 'win32';
 
 let mainWin = null;
@@ -24,7 +26,7 @@ function createWindow() {
     minHeight: 500,
     backgroundColor: '#111318',
     icon: path.join(__dirname, 'build', 'icon.png'),
-    title: `${APP_NAME} · Monitor de Lives TikTok · v${app.getVersion()}`,
+    title: `${APP_NAME} · Monitor de Lives TikTok · v${app.getVersion().replace('-', '.')}`,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       webviewTag: true,
@@ -89,7 +91,7 @@ ipcMain.on('set-fullscreen', (e, on) => {
 });
 
 ipcMain.on('app-info', (e) => {
-  e.returnValue = { name: APP_NAME, version: app.getVersion(), platform: process.platform };
+  e.returnValue = { name: APP_NAME, version: app.getVersion().replace('-', '.'), platform: process.platform };
 });
 
 // ---------- Ventana flotante (siempre encima, como el mini reproductor de YouTube) ----------
@@ -113,7 +115,7 @@ function onScreen(b) {
   });
 }
 
-ipcMain.on('pip-open', (_e, { user, audio, auto }) => {
+ipcMain.on('pip-open', (_e, { user, audio, auto, sink }) => {
   if (minis.has(user)) {
     const m = minis.get(user);
     m.showInactive();
@@ -145,7 +147,7 @@ ipcMain.on('pip-open', (_e, { user, audio, auto }) => {
   // Nivel alto para que quede encima incluso de programas en pantalla completa.
   mini.setAlwaysOnTop(true, 'screen-saver');
   if (isMac) mini.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  mini.loadFile(path.join(__dirname, 'src', 'mini.html'), { query: { user, audio: audio ? '1' : '0' } });
+  mini.loadFile(path.join(__dirname, 'src', 'mini.html'), { query: { user, audio: audio ? '1' : '0', sink: sink || '' } });
   // Se muestra sin quitarle el foco a lo que estés haciendo.
   mini.once('ready-to-show', () => mini.showInactive());
   const remember = () => { if (!mini.isDestroyed()) saveBounds(mini.getBounds()); };

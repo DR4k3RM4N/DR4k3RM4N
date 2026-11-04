@@ -28,7 +28,7 @@ const tiles = new Map();   // usuario -> { el, webview, statusEl, armed, alerted
 
 // ---------- Datos guardados ----------
 function load() {
-  const base = { lives: [], favorites: [], notes: {}, cols: 'auto', zoom: 'auto', autoReload: '0', alerts: 'all', favOpen: true, view: 'chat', tileView: {}, guides: 'off', tileGuides: {}, autoPip: 'on', v: 5 };
+  const base = { lives: [], favorites: [], notes: {}, cols: 'auto', zoom: 'auto', autoReload: '0', alerts: 'all', favOpen: true, view: 'chat', tileView: {}, guides: 'off', tileGuides: {}, autoPip: 'on', audioOut: '', v: 5 };
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (s && Array.isArray(s.lives)) {
@@ -98,6 +98,7 @@ function addLive(user) {
     applyZoom(user);
     if (user !== LOGIN) {
       webview.executeJavaScript(LOCK_SCRIPT).catch(() => {});
+      webview.executeJavaScript(window.MLT_AUDIO.pageScript(state.audioOut)).catch(() => {});
       webview.executeJavaScript(GUIDES_SCRIPT).then(() => applyGuides(user)).catch(() => {});
     }
   });
@@ -436,6 +437,7 @@ function applyAudio() {
   els.muteAll.innerHTML = any ? '🔇 <span class="lbl">Silenciar todo</span>' : '🔊 <span class="lbl">Activar todo</span>';
   els.muteAll.title = any ? 'Silenciar todos los lives (M)' : 'Activar el audio de todos los lives (M)';
   els.muteAll.classList.toggle('active-all', any);
+  paintTvAudio();
 }
 
 // ---------- Favoritas ----------
@@ -824,7 +826,7 @@ function openPip(user, auto) {
   const withAudio = audible.has(user);
   pipOpen.add(user);
   pipAudio.set(user, withAudio);
-  window.app.pipOpen(user, withAudio, auto);
+  window.app.pipOpen(user, withAudio, auto, state.audioOut);
   applyAudio();
   renderTileButtons();
 }
@@ -859,19 +861,42 @@ function castSteps() {
     'En la Mac abre el <b>Centro de control</b> (arriba a la derecha) → <b>Duplicar pantalla</b> y elige tu TV Hisense.',
     'Si la TV muestra un código, escríbelo en la Mac.',
     'Pulsa <b>📺 Modo TV</b> para ver los lives en pantalla completa y con letra grande.',
+    'Activa el audio del live que quieras oír (🔊 o teclas 1–9). Si no se escucha en la TV, elige la TV en <b>Salida de audio</b> y pulsa <b>Probar sonido</b>.',
   ] : [
     'Enciende la TV y en el control pulsa <b>Entrada / Input</b> → <b>Anyview Cast</b> (o <b>Screen Mirroring</b>). La TV y la PC deben estar en la misma red Wi-Fi.',
     'En la PC se abrió el panel <b>Transmitir</b> (abajo a la derecha). Elige tu TV Hisense en la lista. Si no se abrió, pulsa <b>Windows + K</b>.',
     'Si la TV pregunta, acepta la conexión con el control.',
     'Pulsa <b>📺 Modo TV</b> para ver los lives en pantalla completa y con letra grande.',
+    'Activa el audio del live que quieras oír (🔊 o teclas 1–9). Si no se escucha en la TV, elige tu TV en <b>Salida de audio</b> y pulsa <b>Probar sonido</b>. También revisa que la TV no esté en silencio.',
   ];
   $('castSteps').innerHTML = steps.map((x) => `<li>${x}</li>`).join('');
   $('castTip').textContent = isMacApp
     ? 'No todas las TV Hisense tienen AirPlay. Si la tuya no aparece, conéctala a la Mac con un cable HDMI.'
     : 'Si se traba o se ve con retraso, acércate al módem o usa un cable HDMI (lo más estable). Para dejar de transmitir: Windows + K → Desconectar.';
 }
+async function fillAudioOut() {
+  const sel = $('audioOut');
+  const outs = await window.MLT_AUDIO.outputs();
+  sel.length = 1;
+  for (const d of outs) sel.add(new Option(d.label, d.label));
+  // Si el dispositivo guardado ya no está conectado, se muestra igual para no perder la elección.
+  if (state.audioOut && !outs.some((d) => d.label === state.audioOut)) sel.add(new Option(state.audioOut + ' (no conectado)', state.audioOut));
+  sel.value = state.audioOut;
+}
+function setAudioOut(label) {
+  state.audioOut = label;
+  save();
+  const code = window.MLT_AUDIO.pageScript(label);
+  tiles.forEach((t, u) => { if (u !== LOGIN) t.webview.executeJavaScript(code).catch(() => {}); });
+  // Las ventanas flotantes abiertas se reabren para tomar la nueva salida.
+  [...pipOpen].forEach((u) => { const a = pipAudio.get(u); window.app.pipClose(u); setTimeout(() => { if (tiles.has(u)) { if (a) audible.add(u); openPip(u, false); } }, 400); });
+}
+$('audioOut').onchange = () => setAudioOut($('audioOut').value);
+$('testTone').onclick = () => window.MLT_AUDIO.testTone(state.audioOut);
+if (navigator.mediaDevices) navigator.mediaDevices.addEventListener('devicechange', () => { if (!castModal.hidden) fillAudioOut(); });
 async function openCast() {
   castSteps();
+  fillAudioOut();
   focusApp();
   castModal.hidden = false;
   if (window.app && window.app.cast) {
@@ -897,6 +922,20 @@ function setTvMode(on) {
   else document.body.classList.remove('reveal');
   setTimeout(layout, 300);
 }
+function paintTvAudio() {
+  const b = $('tvAudio');
+  if (!b) return;
+  const on = [...audible];
+  b.textContent = on.length ? `🔊 ${on.length === 1 ? '@' + on[0] : on.length + ' lives'}` : '🔇 Sin audio';
+  b.classList.toggle('off', !on.length);
+}
+$('tvAudio').onclick = () => {
+  // Sin audio: activa el live seleccionado (o el primero). Con audio: lo silencia.
+  if (audible.size) { audible.clear(); applyAudio(); return; }
+  const order = state.lives.map((l) => l.user).filter((u) => tiles.has(u));
+  const u = (selectedUser() && selectedUser() !== LOGIN && selectedUser()) || order[0];
+  if (u) toggleAudio(u);
+};
 function updateHud() {
   $('tvClock').textContent = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   let ok = 0, bad = 0;

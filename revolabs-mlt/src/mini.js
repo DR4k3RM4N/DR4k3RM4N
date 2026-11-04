@@ -56,6 +56,7 @@ webview.addEventListener('dom-ready', () => {
   webview.setAudioMuted(!audioOn);
   webview.setZoomFactor(0.5);
   webview.executeJavaScript(LOCK_SCRIPT).catch(() => {});
+  webview.executeJavaScript(window.MLT_AUDIO.pageScript(params.get('sink') || '')).catch(() => {});
   setPin();
 });
 // Si TikTok cambia a otro usuario, se regresa a este live.

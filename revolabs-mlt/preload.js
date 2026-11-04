@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('app', {
   setFullscreen: (v) => ipcRenderer.send('set-fullscreen', v),
   onWindowHidden: on('window-hidden'),
   // Ventana flotante
-  pipOpen: (user, audio, auto) => ipcRenderer.send('pip-open', { user, audio, auto }),
+  pipOpen: (user, audio, auto, sink) => ipcRenderer.send('pip-open', { user, audio, auto, sink }),
   pipClose: (user) => ipcRenderer.send('pip-close', user),
   pipCloseAuto: () => ipcRenderer.send('pip-close-auto'),
   pipBack: (user) => ipcRenderer.send('pip-back', user),
