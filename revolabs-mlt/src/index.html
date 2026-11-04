@@ -64,8 +64,15 @@
       </label>
       <button id="muteAll" title="Silenciar o activar el audio de todos (M)">🔊 <span class="lbl">Activar todo</span></button>
       <button id="reloadAll" title="Recargar todos (R)">⟳ <span class="lbl">Recargar todo</span></button>
+      <label title="Qué pasa al minimizar la app"><span class="lbl">Al minimizar</span><span class="sh">⧉</span>
+        <select id="autoPip">
+          <option value="on">Ventana flotante</option>
+          <option value="off">No hacer nada</option>
+        </select>
+      </label>
       <button id="login" class="subtle" title="Opcional: inicia sesión una vez y queda guardada">Iniciar sesión</button>
     </div>
+    <button id="castBtn" class="cast-btn" title="Ver en la TV (inalámbrico: Miracast / AirPlay)"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2a9 9 0 0 1 9 9h2c0-6.08-4.93-11-11-11z"/></svg><span>TV</span></button>
   </header>
 
   <div class="body">
@@ -89,11 +96,31 @@
       <h2>Sin lives todavía</h2>
       <p>Escribe arriba el usuario de TikTok (por ejemplo <b>miempresa</b>, el @ ya está puesto) y pulsa <b>Agregar</b>.</p>
       <p>O abre tus cuentas guardadas desde <b>⭐ Favoritas</b>.</p>
-      <p class="hint">Atajos: 1–9 escuchar ese live · F ampliar · M silenciar/activar todo · R recargar todo · G guías · F11 pantalla completa · Ctrl+K escribir en la barra</p>
+      <p class="hint">Atajos: 1–9 escuchar ese live · F ampliar · M silenciar/activar todo · R recargar todo · G guías · T modo TV · F11 pantalla completa · Ctrl+K escribir en la barra</p>
     </div>
   </div>
 
   <div id="alertsBox" class="alerts" aria-live="assertive"></div>
+
+  <!-- Modo TV: reloj y resumen grandes, visibles desde lejos -->
+  <div id="tvHud" class="tv-hud" hidden>
+    <span id="tvClock" class="tv-clock"></span>
+    <span id="tvSummary" class="tv-summary"></span>
+    <button id="tvExit" class="tv-exit" title="Salir del modo TV (Esc)">Salir del modo TV</button>
+  </div>
+
+  <div id="castModal" class="modal" hidden>
+    <div class="box cast-box">
+      <div class="cast-head"><svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><path fill="currentColor" d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2a9 9 0 0 1 9 9h2c0-6.08-4.93-11-11-11z"/></svg><h2>Ver en la TV</h2></div>
+      <ol id="castSteps" class="cast-steps"></ol>
+      <p class="hint" id="castTip"></p>
+      <div class="actions">
+        <button id="castAgain">Abrir otra vez el panel</button>
+        <button id="castTv" class="primary">📺 Modo TV</button>
+        <button id="castClose">Cerrar</button>
+      </div>
+    </div>
+  </div>
   <div id="dragGhost" class="drag-ghost" hidden></div>
 
   <template id="tileTpl">
@@ -109,6 +136,7 @@
         <button class="view" title="Cambiar vista">💬</button>
         <button class="guides" title="Guías de encuadre">📐</button>
         <button class="reload" title="Volver a este live y recargar">⟳</button>
+        <button class="pip" title="Ventana flotante: siempre encima de todo">⧉</button>
         <button class="expand" title="Ampliar">⤢</button>
         <button class="open" title="Abrir en el navegador">↗</button>
         <button class="remove" title="Quitar">✕</button>
@@ -134,7 +162,7 @@
       <p class="sub">Monitor de Lives de TikTok</p>
       <p>Versión <b id="aboutVer"></b></p>
       <p class="sub">© 2026 Revo Labs. Uso interno.</p>
-      <p class="hint">Atajos: 1–9 escuchar un live · F ampliar · M silenciar/activar todo · R recargar todo · G guías de encuadre · F11 pantalla completa · Ctrl+K escribir en la barra · Esc salir</p>
+      <p class="hint">Atajos: 1–9 escuchar un live · F ampliar · M silenciar/activar todo · R recargar todo · G guías de encuadre · T modo TV · F11 pantalla completa · Ctrl+K escribir en la barra · Esc salir</p>
       <p class="hint">Arrastra un live desde ⠿ para cambiarlo de lugar.</p>
       <div class="actions"><button id="aboutClose" class="primary">Cerrar</button></div>
     </div>

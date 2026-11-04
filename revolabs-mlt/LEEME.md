@@ -1,6 +1,13 @@
 # RevoLabs MLT · Monitor de Lives de TikTok
 
-Versión **0.5.1** · © 2026 Revo Labs · Uso interno.
+Versión **0.5.2** · © 2026 Revo Labs · Uso interno.
+
+## Novedades de la v0.5.2
+
+- **Ventana flotante (como el mini reproductor de YouTube):** el botón ⧉ de cada live lo saca a una ventanita que queda encima de todas las demás ventanas, para seguir monitoreando mientras haces otras cosas. Se mueve arrastrando la barra de arriba, se cambia de tamaño desde las orillas y recuerda dónde la dejaste. Sus botones son: 🔊 audio, ⛶ solo video o página completa, ⤢ volver a la app y ✕ cerrar.
+- **Al minimizar:** la app saca sola en ventana flotante el live que estás escuchando (o el seleccionado) y la cierra al volver. Se puede apagar en la opción **Al minimizar** de la barra.
+- **Botón TV:** el botón turquesa de arriba a la derecha abre la conexión inalámbrica a la TV. En Windows usa Miracast (Anyview Cast en las Hisense); en Mac, AirPlay. Trae los pasos para conectar.
+- **Modo TV (tecla T):** pantalla completa con nombres y alertas grandes, reloj y resumen ("8 en vivo · 1 con problemas"). Los controles aparecen al mover el mouse. Esc para salir.
 
 ## Novedades de la v0.5.1
 
@@ -22,9 +29,9 @@ Tu lista de lives, tus notas y tu sesión de las versiones anteriores se conserv
 
 ## Instalar
 
-- **Windows:** extrae `RevoLabs-MLT-0.5.1-Windows.zip` y abre `RevoLabs-MLT-0.5.1.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
-- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.1-Mac-arm64.zip`.
-- **Mac Intel:** `RevoLabs-MLT-0.5.1-Mac-x64.zip`.
+- **Windows:** extrae `RevoLabs-MLT-0.5.2-Windows.zip` y abre `RevoLabs-MLT-0.5.2.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
+- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.2-Mac-arm64.zip`.
+- **Mac Intel:** `RevoLabs-MLT-0.5.2-Mac-x64.zip`.
   La primera vez ve a Ajustes del Sistema → Privacidad y seguridad → "Abrir de todas formas". Si dice que la app "está dañada", abre Terminal y ejecuta `xattr -cr "/Applications/RevoLabs MLT.app"`.
 
 ## Para desarrolladores

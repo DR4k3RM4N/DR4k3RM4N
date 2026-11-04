@@ -13,7 +13,7 @@ const empty = $('empty');
 const tpl = $('tileTpl');
 const els = {
   form: $('addForm'), input: $('userInput'), cols: $('cols'), zoom: $('zoom'),
-  autoReload: $('autoReload'), alerts: $('alerts'), view: $('view'), guides: $('guides'), muteAll: $('muteAll'),
+  autoReload: $('autoReload'), alerts: $('alerts'), view: $('view'), guides: $('guides'), autoPip: $('autoPip'), muteAll: $('muteAll'),
   reloadAll: $('reloadAll'), login: $('login'),
   favToggle: $('favToggle'), favPanel: $('favPanel'), favList: $('favList'),
   favEmpty: $('favEmpty'), favCount: $('favCount'), alertsBox: $('alertsBox'), ghost: $('dragGhost'),
@@ -28,7 +28,7 @@ const tiles = new Map();   // usuario -> { el, webview, statusEl, armed, alerted
 
 // ---------- Datos guardados ----------
 function load() {
-  const base = { lives: [], favorites: [], notes: {}, cols: 'auto', zoom: 'auto', autoReload: '0', alerts: 'all', favOpen: true, view: 'chat', tileView: {}, guides: 'off', tileGuides: {}, v: 5 };
+  const base = { lives: [], favorites: [], notes: {}, cols: 'auto', zoom: 'auto', autoReload: '0', alerts: 'all', favOpen: true, view: 'chat', tileView: {}, guides: 'off', tileGuides: {}, autoPip: 'on', v: 5 };
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (s && Array.isArray(s.lives)) {
@@ -94,7 +94,7 @@ function addLive(user) {
   const t = { el, webview, statusEl, armed: false, alerted: false, badSince: null, lastTime: null, stuck: 0, retry: 0, loading: true };
 
   webview.addEventListener('dom-ready', () => {
-    webview.setAudioMuted(!audible.has(user));
+    webview.setAudioMuted(!audible.has(user) || pipOpen.has(user));
     applyZoom(user);
     if (user !== LOGIN) {
       webview.executeJavaScript(LOCK_SCRIPT).catch(() => {});
@@ -129,6 +129,7 @@ function addLive(user) {
   el.querySelector('.reload').onclick = () => reloadLive(user);
   el.querySelector('.expand').onclick = () => toggleExpand(user);
   el.querySelector('.view').onclick = () => toggleTileView(user);
+  el.querySelector('.pip').onclick = () => togglePip(user);
   el.querySelector('.guides').onclick = () => toggleTileGuides(user);
   el.querySelector('.open').onclick = () => window.open(liveUrl(user));
   el.querySelector('.remove').onclick = () => removeLive(user);
@@ -161,6 +162,7 @@ async function removeLive(user, confirmFirst = true) {
   tiles.delete(user);
   state.lives = state.lives.filter((l) => l.user !== user);
   audible.delete(user);
+  if (pipOpen.has(user) && window.app) window.app.pipClose(user);
   if (expanded === user) expanded = null;
   dismissToast(user);
   save();
@@ -284,7 +286,11 @@ const appHidden = () => winHidden || document.hidden;
 function resetFreeze() { tiles.forEach((t) => { t.lastTime = null; t.stuck = 0; }); }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) resetFreeze(); });
 if (window.app && window.app.onWindowHidden) {
-  window.app.onWindowHidden((hidden) => { winHidden = hidden; if (!hidden) resetFreeze(); });
+  window.app.onWindowHidden((hidden) => {
+    winHidden = hidden;
+    if (!hidden) resetFreeze();
+    autoPip(hidden);
+  });
 }
 
 const sound = (() => {
@@ -421,7 +427,8 @@ function toggleAudioAll() {
 function applyAudio() {
   for (const [u, t] of tiles) {
     const on = audible.has(u);
-    try { t.webview.setAudioMuted(!on); } catch {}
+    // Si el live está en la ventana flotante, el audio sale de ahí y no de la cuadrícula.
+    try { t.webview.setAudioMuted(!on || pipOpen.has(u)); } catch {}
     t.el.classList.toggle('listening', on);
     t.el.querySelector('.audio').textContent = on ? '🔊' : '🔇';
   }
@@ -689,6 +696,11 @@ function renderTileButtons() {
     const chat = viewOf(u) === 'chat';
     view.classList.toggle('on', chat);
     view.title = chat ? 'Vista: video + chat y espectadores. Clic para ver solo el video más grande' : 'Vista: solo video. Clic para ver también el chat y los espectadores';
+    const pip = t.el.querySelector('.pip');
+    pip.classList.toggle('on', pipOpen.has(u));
+    t.el.classList.toggle('in-pip', pipOpen.has(u));
+    pip.title = pipOpen.has(u) ? 'Cerrar la ventana flotante' : 'Ventana flotante: siempre encima de todo';
+    if (u === LOGIN) pip.style.display = 'none';
     const g = t.el.querySelector('.guides');
     const on = guidesOf(u) !== 'off';
     g.classList.toggle('on', on);
@@ -739,6 +751,8 @@ els.zoom.value = state.zoom;
 els.autoReload.value = state.autoReload;
 els.alerts.value = state.alerts;
 els.view.value = state.view;
+els.autoPip.value = state.autoPip;
+els.autoPip.onchange = () => { state.autoPip = els.autoPip.value; save(); };
 els.guides.value = state.guides;
 els.view.onchange = () => {
   state.view = els.view.value;
@@ -791,10 +805,113 @@ document.addEventListener('keydown', (e) => {
   if (/^[1-9]$/.test(e.key) && users[+e.key - 1]) { toggleAudio(users[+e.key - 1], e.ctrlKey || e.shiftKey); select(users[+e.key - 1]); }
   else if (e.key === 'f' || e.key === 'F') { const u = selectedUser(); if (u) toggleExpand(u); }
   else if (e.key === 'm' || e.key === 'M') toggleAudioAll();
+  else if (e.key === 't' || e.key === 'T') setTvMode(!tvMode);
+  else if (e.key === 'Escape' && tvMode && !expanded) setTvMode(false);
   else if (e.key === 'g' || e.key === 'G') setGuides(state.guides === 'off' ? 'thirds' : 'off');
   else if (e.key === 'r' || e.key === 'R') els.reloadAll.click();
   else if (e.key === 'Escape' && expanded) { expanded = null; refresh(); }
 });
+
+// ---------- Ventana flotante ----------
+const pipOpen = new Set();   // lives que están en ventana flotante
+const pipAudio = new Map();  // usuario -> si la ventana flotante tiene el audio activado
+function togglePip(user) {
+  if (!window.app || user === LOGIN) return;
+  if (pipOpen.has(user)) { window.app.pipClose(user); return; }
+  openPip(user, false);
+}
+function openPip(user, auto) {
+  const withAudio = audible.has(user);
+  pipOpen.add(user);
+  pipAudio.set(user, withAudio);
+  window.app.pipOpen(user, withAudio, auto);
+  applyAudio();
+  renderTileButtons();
+}
+// Al minimizar la app, el live que estás escuchando (o el seleccionado, o el primero) sale en ventana flotante.
+function autoPip(hidden) {
+  if (!window.app) return;
+  if (!hidden) { window.app.pipCloseAuto(); return; }
+  if (state.autoPip !== 'on' || pipOpen.size) return;
+  const order = state.lives.map((l) => l.user).filter((u) => tiles.has(u));
+  const pick = order.find((u) => audible.has(u)) || (selectedUser() !== LOGIN && selectedUser()) || order[0];
+  if (pick) openPip(pick, true);
+}
+if (window.app && window.app.onPipClosed) {
+  window.app.onPipClosed((user) => {
+    pipOpen.delete(user);
+    // Si en la ventana flotante estaba sonando, el audio regresa a la cuadrícula.
+    if (pipAudio.get(user)) audible.add(user); else audible.delete(user);
+    pipAudio.delete(user);
+    applyAudio();
+    renderTileButtons();
+  });
+  window.app.onPipAudio(({ user, on }) => pipAudio.set(user, on));
+  window.app.onPipSelect((user) => { select(user); flash(user); });
+}
+
+// ---------- Ver en la TV y modo TV ----------
+const isMacApp = window.app && window.app.info && window.app.info.platform === 'darwin';
+const castModal = $('castModal');
+function castSteps() {
+  const steps = isMacApp ? [
+    'Enciende la TV y en el control pulsa <b>Entrada / Input</b> → <b>AirPlay</b> o <b>Screen Mirroring</b> (en Hisense también aparece como <b>Anyview Cast</b>).',
+    'En la Mac abre el <b>Centro de control</b> (arriba a la derecha) → <b>Duplicar pantalla</b> y elige tu TV Hisense.',
+    'Si la TV muestra un código, escríbelo en la Mac.',
+    'Pulsa <b>📺 Modo TV</b> para ver los lives en pantalla completa y con letra grande.',
+  ] : [
+    'Enciende la TV y en el control pulsa <b>Entrada / Input</b> → <b>Anyview Cast</b> (o <b>Screen Mirroring</b>). La TV y la PC deben estar en la misma red Wi-Fi.',
+    'En la PC se abrió el panel <b>Transmitir</b> (abajo a la derecha). Elige tu TV Hisense en la lista. Si no se abrió, pulsa <b>Windows + K</b>.',
+    'Si la TV pregunta, acepta la conexión con el control.',
+    'Pulsa <b>📺 Modo TV</b> para ver los lives en pantalla completa y con letra grande.',
+  ];
+  $('castSteps').innerHTML = steps.map((x) => `<li>${x}</li>`).join('');
+  $('castTip').textContent = isMacApp
+    ? 'No todas las TV Hisense tienen AirPlay. Si la tuya no aparece, conéctala a la Mac con un cable HDMI.'
+    : 'Si se traba o se ve con retraso, acércate al módem o usa un cable HDMI (lo más estable). Para dejar de transmitir: Windows + K → Desconectar.';
+}
+async function openCast() {
+  castSteps();
+  focusApp();
+  castModal.hidden = false;
+  if (window.app && window.app.cast) {
+    try { await window.app.cast(); } catch {}
+  }
+}
+$('castBtn').onclick = openCast;
+$('castAgain').onclick = () => { if (window.app) window.app.cast(); };
+$('castClose').onclick = () => { castModal.hidden = true; focusInput(); };
+$('castTv').onclick = () => { castModal.hidden = true; setTvMode(true); };
+castModal.addEventListener('mousedown', (e) => { if (e.target === castModal) { castModal.hidden = true; focusInput(); } });
+
+let tvMode = false;
+let tvTimer = 0;
+let revealTimer = 0;
+function setTvMode(on) {
+  tvMode = on;
+  document.body.classList.toggle('tv', on);
+  $('tvHud').hidden = !on;
+  if (window.app && window.app.setFullscreen) window.app.setFullscreen(on);
+  clearInterval(tvTimer);
+  if (on) { updateHud(); tvTimer = setInterval(updateHud, 1000); reveal(); }
+  else document.body.classList.remove('reveal');
+  setTimeout(layout, 300);
+}
+function updateHud() {
+  $('tvClock').textContent = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  let ok = 0, bad = 0;
+  tiles.forEach((t, u) => { if (u === LOGIN) return; if (t.statusEl.dataset.kind === 'bad') bad++; else if (t.statusEl.dataset.kind === 'ok') ok++; });
+  $('tvSummary').innerHTML = `<span class="ok">${ok} en vivo</span>` + (bad ? ` · <span class="bad">${bad} con problemas</span>` : '');
+}
+// En modo TV los controles aparecen al mover el mouse y se esconden solos a los 3 segundos.
+function reveal() {
+  if (!tvMode) return;
+  document.body.classList.add('reveal');
+  clearTimeout(revealTimer);
+  revealTimer = setTimeout(() => document.body.classList.remove('reveal'), 3000);
+}
+document.addEventListener('mousemove', reveal);
+$('tvExit').onclick = () => setTvMode(false);
 
 // ---------- Versión y "Acerca de" ----------
 const info = (window.app && window.app.info) || { version: '' };

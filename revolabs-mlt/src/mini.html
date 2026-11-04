@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>RevoLabs MLT · Ventana flotante</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+      font: 12px "Segoe UI", system-ui, -apple-system, sans-serif; color: #fff; }
+    webview { position: absolute; inset: 0; width: 100%; height: 100%; }
+    /* Borde para distinguir la ventana flotante del resto de la pantalla. */
+    .frame { position: fixed; inset: 0; border: 2px solid #25f4ee; border-radius: 2px; pointer-events: none; z-index: 3; }
+    /* Barra superior: se arrastra para mover la ventana. Aparece al pasar el mouse. */
+    .top {
+      position: fixed; left: 0; right: 0; top: 0; height: 34px; z-index: 4;
+      display: flex; align-items: center; gap: 4px; padding: 0 6px;
+      background: linear-gradient(#000d, #0000); -webkit-app-region: drag;
+      opacity: .45; transition: opacity .15s ease-out;
+    }
+    body:hover .top, body.show .top { opacity: 1; }
+    .live { color: #fe2c55; font-size: 10px; }
+    .name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 2px #000; }
+    button {
+      -webkit-app-region: no-drag; cursor: pointer; font: inherit; color: #fff;
+      background: #0009; border: 1px solid #fff3; border-radius: 6px; padding: 2px 7px; line-height: 18px;
+    }
+    button:hover { background: #333c; }
+    #close:hover { background: #fe2c55; border-color: #fe2c55; }
+    /* Esquina para arrastrar y mover desde abajo también. */
+    .grip { position: fixed; left: 0; right: 0; bottom: 0; height: 14px; z-index: 4; -webkit-app-region: drag; }
+  </style>
+</head>
+<body class="show">
+  <div class="top">
+    <span class="live">●</span>
+    <span id="name" class="name"></span>
+    <button id="audio" title="Activar o silenciar el audio">🔇</button>
+    <button id="fit" title="Ver solo el video o la página completa">⛶</button>
+    <button id="back" title="Volver a la app">⤢</button>
+    <button id="close" title="Cerrar ventana flotante">✕</button>
+  </div>
+  <div class="grip"></div>
+  <div class="frame"></div>
+  <script src="mini.js"></script>
+</body>
+</html>
