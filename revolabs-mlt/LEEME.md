@@ -1,6 +1,11 @@
 # RevoLabs MLT · Monitor de Lives de TikTok
 
-Versión **0.5.2.1** · © 2026 Revo Labs · Uso interno.
+Versión **0.5.2.2** · © 2026 Revo Labs · Uso interno.
+
+## Novedades de la v0.5.2.2
+
+- **Detecta cuando termina un live:** antes, si TikTok dejaba la pantalla en negro al terminar, la app seguía marcando "En vivo". Ahora revisa cuatro cosas: si el video se detuvo o se pausó, si TikTok quitó el video, si la página dice que el live terminó, y si la imagen se quedó en negro. Al confirmarlo marca **Live terminado**, **Live detenido**, **Señal detenida** o **Pantalla en negro**, y avisa en alrededor de 1 minuto.
+- Si abres una cuenta que no está transmitiendo, se marca **Sin transmisión**, en rojo y sin alerta.
 
 ## Novedades de la v0.5.2.1
 
@@ -35,9 +40,9 @@ Tu lista de lives, tus notas y tu sesión de las versiones anteriores se conserv
 
 ## Instalar
 
-- **Windows:** extrae `RevoLabs-MLT-0.5.2.1-Windows.zip` y abre `RevoLabs-MLT-0.5.2.1.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
-- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.2.1-Mac-arm64.zip`.
-- **Mac Intel:** `RevoLabs-MLT-0.5.2.1-Mac-x64.zip`.
+- **Windows:** extrae `RevoLabs-MLT-0.5.2.2-Windows.zip` y abre `RevoLabs-MLT-0.5.2.2.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
+- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.2.2-Mac-arm64.zip`.
+- **Mac Intel:** `RevoLabs-MLT-0.5.2.2-Mac-x64.zip`.
   La primera vez ve a Ajustes del Sistema → Privacidad y seguridad → "Abrir de todas formas". Si dice que la app "está dañada", abre Terminal y ejecuta `xattr -cr "/Applications/RevoLabs MLT.app"`.
 
 ## Para desarrolladores

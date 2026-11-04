@@ -1,6 +1,6 @@
 {
   "name": "monitor-lives-tiktok",
-  "version": "0.5.2-1",
+  "version": "0.5.2-2",
   "description": "RevoLabs MLT - Monitor de Lives de TikTok",
   "main": "main.js",
   "author": "Revo Labs",
@@ -41,7 +41,7 @@
       "artifactName": "RevoLabs-MLT-${version}-Mac-${arch}.${ext}"
     },
     "afterPack": "scripts/afterPack.js",
-    "buildVersion": "0.5.2.1"
+    "buildVersion": "0.5.2.2"
   },
   "devDependencies": {
     "electron": "^33.4.11",

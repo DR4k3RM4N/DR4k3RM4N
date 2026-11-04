@@ -2,8 +2,8 @@ const STORAGE_KEY = 'tiktok-monitor-v1';
 const PARTITION = 'persist:tiktok'; // sesión compartida y guardada entre todos los lives
 const LOGIN = '__login__';
 const MONITOR_EVERY = 15000; // cada cuánto se revisa que cada live siga transmitiendo (ms)
-const ALERT_AFTER = 45000;   // un live debe seguir mal este tiempo antes de avisar (ms)
-const FREEZE_CHECKS = 4;     // revisiones seguidas con el video detenido para considerarlo congelado (~1 min)
+const ALERT_AFTER = 30000;   // un live debe seguir mal este tiempo antes de avisar (ms)
+const CHECKS_TO_DECIDE = 3;  // revisiones seguidas con la misma falla para darla por buena (~30-45 s)
 const RETRY_EVERY = 60000;   // cada cuánto se reintenta un live caído (ms)
 const RETRY_ENDED = 120000;  // cada cuánto se revisa si un live terminado volvió (ms)
 
@@ -114,7 +114,7 @@ function addLive(user) {
   webview.addEventListener('did-navigate-in-page', guard);
   let failed = false;
   webview.addEventListener('did-start-loading', () => {
-    failed = false; t.loading = true; t.lastTime = null; t.stuck = 0;
+    failed = false; t.loading = true; t.lastTime = null; t.stuck = 0; t.noVideo = 0; t.dark = 0; t.endedHits = 0;
     if (t.statusEl.dataset.kind !== 'bad') setStatus(user, 'Cargando…', 'loading');
   });
   webview.addEventListener('did-stop-loading', () => { t.loading = false; if (!failed) checkLive(user); });
@@ -228,12 +228,36 @@ function setStatus(user, text, kind) {
 }
 
 // Revisión: textos que TikTok muestra cuando el live terminó y si el video sigue avanzando.
-const ENDED = ['live has ended', 'live ended', 'ha finalizado', 'ha terminado', 'terminó el live', 'no está en live', 'is not live', 'live is over'];
+// Señales de que un live terminó o dejó de verse. Ninguna sola basta para avisar:
+// tiene que repetirse en varias revisiones seguidas (CHECKS_TO_DECIDE) y luego durar ALERT_AFTER.
+const ENDED = [
+  'live has ended', 'this live has ended', 'live ended', 'live is over', 'is not live', 'is currently offline',
+  'el live ha terminado', 'el live terminó', 'live terminó', 'ha terminado el live', 'terminó el live',
+  'ha finalizado', 'finalizó el live', 'el live finalizó', 'transmisión ha finalizado', 'transmisión terminó',
+  'no está en vivo', 'no está en live', 'no está haciendo live',
+];
 const PROBE = `(() => {
   const text = document.body ? document.body.innerText.slice(0, 20000).toLowerCase() : '';
-  const vids = [...document.querySelectorAll('video')].filter((v) => v.clientWidth > 50);
+  const vids = [...document.querySelectorAll('video')].filter((v) => v.clientWidth > 50 && v.clientHeight > 50);
   const v = vids.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
-  return { text, hasVideo: !!v, time: v ? v.currentTime : null, paused: v ? v.paused : null, ended: v ? v.ended : null };
+  let dark = null;
+  if (v) {
+    if (v.readyState < 2 || !v.videoWidth) dark = true; // sin imagen que mostrar
+    else {
+      // Muestra pequeña del cuadro actual para saber si la imagen está en negro.
+      try {
+        const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+        const x = c.getContext('2d', { willReadFrequently: true });
+        x.drawImage(v, 0, 0, 16, 16);
+        const d = x.getImageData(0, 0, 16, 16).data;
+        let sum = 0, max = 0;
+        for (let i = 0; i < d.length; i += 4) { const l = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; sum += l; if (l > max) max = l; }
+        dark = sum / 256 < 10 && max < 32;
+      } catch (e) { dark = null; }
+    }
+  }
+  return { text, href: location.href.toLowerCase(), hasVideo: !!v, time: v ? v.currentTime : null,
+    paused: v ? v.paused : null, ended: v ? v.ended : null, dark };
 })()`;
 async function checkLive(user) {
   const t = tiles.get(user);
@@ -241,22 +265,31 @@ async function checkLive(user) {
   let r;
   try { r = await t.webview.executeJavaScript(PROBE); } catch { return; }
   if (!tiles.has(user) || t.loading) return;
-  const advancing = r.hasVideo && t.lastTime !== null && Math.abs(r.time - t.lastTime) >= 0.05;
+  // Con la app minimizada o la casilla oculta, Windows/Mac pueden frenar el video: ahí no se mide.
+  const visible = !appHidden() && !t.el.classList.contains('hidden');
   const prevTime = t.lastTime;
   t.lastTime = r.hasVideo ? r.time : null;
-  // "Terminado" solo cuenta si además no hay un video transmitiendo
-  // (TikTok muestra textos de otros lives terminados en las recomendaciones).
-  const playing = r.hasVideo && !r.paused && !r.ended;
-  if (ENDED.some((w) => r.text.includes(w)) && !(playing && advancing)) return setStatus(user, 'Live terminado', 'bad');
-  // Video congelado: solo se revisa con la app visible, la casilla a la vista y el video sin pausar.
-  // Con la app minimizada Windows/Mac frenan el video y eso no es una caída.
-  const visible = !appHidden() && !t.el.classList.contains('hidden');
-  if (playing && visible && prevTime !== null && !advancing) {
-    t.stuck++;
-    if (t.stuck >= FREEZE_CHECKS) return setStatus(user, 'Señal detenida', 'bad');
-    return; // todavía no se decide: se vuelve a revisar en la siguiente vuelta
-  }
-  t.stuck = 0;
+  const advancing = r.hasVideo && prevTime !== null && Math.abs(r.time - prevTime) >= 0.05;
+  if (r.hasVideo) t.everVideo = true;
+
+  // 1) TikTok lo dice con texto, o sacó la página del live (por ejemplo, mandó al perfil).
+  const offLive = r.href.includes('tiktok.com') && !r.href.includes(`/@${user}/live`);
+  if (ENDED.some((w) => r.text.includes(w)) || offLive) { t.endedHits = (t.endedHits || 0) + 1; } else t.endedHits = 0;
+  // 2) Ya no hay video en la página.
+  t.noVideo = r.hasVideo ? 0 : (t.noVideo || 0) + 1;
+  // 3) El video no avanza (pausado, terminado o congelado).
+  if (r.hasVideo && prevTime !== null && visible) t.stuck = advancing ? 0 : t.stuck + 1;
+  else if (advancing) t.stuck = 0;
+  // 4) Pantalla en negro.
+  if (visible && r.dark === true) t.dark = (t.dark || 0) + 1;
+  else if (r.dark === false) t.dark = 0;
+
+  if (t.endedHits >= 2 && !advancing) return setStatus(user, 'Live terminado', 'bad');
+  if (t.noVideo >= CHECKS_TO_DECIDE) return setStatus(user, t.everVideo ? 'Live terminado' : 'Sin transmisión', 'bad');
+  if (t.stuck >= CHECKS_TO_DECIDE) return setStatus(user, r.ended || r.paused ? 'Live detenido' : 'Señal detenida', 'bad');
+  if (t.dark >= CHECKS_TO_DECIDE) return setStatus(user, 'Pantalla en negro', 'bad');
+  // Hay alguna señal pero todavía no se confirma: se deja el estado como está.
+  if (t.endedHits || t.noVideo || t.stuck || t.dark) return;
   setStatus(user, 'En vivo', 'ok');
 }
 
@@ -274,7 +307,7 @@ function monitor() {
     if (bad && t.badSince && now - t.badSince >= ALERT_AFTER) {
       // Live caído: se reintenta cada cierto tiempo para saber cuándo vuelve.
       t.retry += MONITOR_EVERY;
-      const every = t.statusEl.textContent === 'Live terminado' ? RETRY_ENDED : RETRY_EVERY;
+      const every = /terminado|sin transmisión/i.test(t.statusEl.textContent) ? RETRY_ENDED : RETRY_EVERY;
       if (t.retry >= every) { t.retry = 0; reloadLive(user); continue; }
     }
     checkLive(user);
@@ -284,7 +317,7 @@ function monitor() {
 // Al volver a mostrar la app (después de minimizarla) se empieza a medir de cero.
 let winHidden = false;
 const appHidden = () => winHidden || document.hidden;
-function resetFreeze() { tiles.forEach((t) => { t.lastTime = null; t.stuck = 0; }); }
+function resetFreeze() { tiles.forEach((t) => { t.lastTime = null; t.stuck = 0; t.dark = 0; }); }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) resetFreeze(); });
 if (window.app && window.app.onWindowHidden) {
   window.app.onWindowHidden((hidden) => {
