@@ -1,0 +1,51 @@
+{
+  "name": "monitor-lives-tiktok",
+  "version": "0.5.0",
+  "description": "RevoLabs MLT - Monitor de Lives de TikTok",
+  "main": "main.js",
+  "author": "Revo Labs",
+  "license": "ISC",
+  "productName": "RevoLabs MLT",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win portable --x64",
+    "dist:mac": "electron-builder --mac zip --arm64 --x64"
+  },
+  "build": {
+    "appId": "com.revolabs.mlt",
+    "productName": "RevoLabs MLT",
+    "copyright": "© 2026 Revo Labs",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "artifactName": "RevoLabs-MLT-${version}.exe",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "RevoLabs-MLT-${version}.exe"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "artifactName": "RevoLabs-MLT-${version}-Mac-${arch}.${ext}"
+    },
+    "afterPack": "scripts/afterPack.js"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "pe-library": "^2.0.1",
+    "resedit": "^2.0.3"
+  }
+}

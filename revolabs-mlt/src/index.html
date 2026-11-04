@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>RevoLabs MLT</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="toolbar">
+    <button id="about" class="brand" title="Acerca de RevoLabs MLT">
+      <span class="dot">●</span> <span class="brand-name">RevoLabs MLT</span> <span id="ver" class="ver"></span>
+    </button>
+    <button id="favToggle" class="fav-toggle" title="Mostrar u ocultar tus cuentas favoritas">⭐ <span class="lbl">Favoritas</span> <span id="favCount" class="count">0</span></button>
+    <form id="addForm" class="add">
+      <div class="at-field">
+        <span class="at">@</span>
+        <input id="userInput" placeholder="usuario o enlace del live" autocomplete="off" spellcheck="false">
+      </div>
+      <button type="submit" class="primary">Agregar</button>
+    </form>
+    <div class="group">
+      <label title="Columnas de la cuadrícula"><span class="lbl">Columnas</span><span class="sh">▦</span>
+        <select id="cols">
+          <option value="auto">Auto</option>
+          <option value="1">1</option><option value="2">2</option>
+          <option value="3">3</option><option value="4">4</option>
+          <option value="5">5</option><option value="6">6</option>
+        </select>
+      </label>
+      <label title="Tamaño del contenido dentro de cada live"><span class="lbl">Zoom</span><span class="sh">🔍</span>
+        <select id="zoom">
+          <option value="auto">Auto</option>
+          <option value="0.5">50%</option><option value="0.67">67%</option>
+          <option value="0.8">80%</option><option value="1">100%</option>
+        </select>
+      </label>
+      <label title="Recargar todos los lives automáticamente"><span class="lbl">Recargar cada</span><span class="sh">⏱</span>
+        <select id="autoReload">
+          <option value="0">Nunca</option><option value="5">5 min</option>
+          <option value="10">10 min</option><option value="30">30 min</option>
+        </select>
+      </label>
+      <label title="Qué hacer cuando un live se desconecta o termina"><span class="lbl">Alertas</span>
+        <select id="alerts">
+          <option value="all">🔔 Sonido y aviso</option>
+          <option value="notify">🔕 Solo aviso</option>
+          <option value="off">Apagadas</option>
+        </select>
+      </label>
+      <button id="muteAll" title="Silenciar o activar el audio de todos (M)">🔊 <span class="lbl">Activar todo</span></button>
+      <button id="reloadAll" title="Recargar todos (R)">⟳ <span class="lbl">Recargar todo</span></button>
+      <button id="login" class="subtle" title="Opcional: inicia sesión una vez y queda guardada">Iniciar sesión</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <aside id="favPanel" class="fav-panel">
+      <div class="fav-head">
+        <h3>⭐ Favoritas</h3>
+        <button id="favClose" class="icon" title="Ocultar panel">✕</button>
+      </div>
+      <p class="fav-help">Clic en una cuenta para abrirla o cerrarla en la cuadrícula. Las marcas con ☆ en cada live.</p>
+      <div class="fav-actions">
+        <button id="favOpenAll" title="Abrir todas las favoritas">Abrir todas</button>
+        <button id="favCloseAll" title="Cerrar todos los lives que no son favoritos">Solo favoritas</button>
+      </div>
+      <ul id="favList" class="fav-list"></ul>
+      <p id="favEmpty" class="fav-empty">Aún no tienes favoritas. Pulsa <b>☆</b> en la barra de un live para guardarlo aquí.</p>
+    </aside>
+
+    <main id="grid" class="grid"></main>
+
+    <div id="empty" class="empty">
+      <h2>Sin lives todavía</h2>
+      <p>Escribe arriba el usuario de TikTok (por ejemplo <b>miempresa</b>, el @ ya está puesto) y pulsa <b>Agregar</b>.</p>
+      <p>O abre tus cuentas guardadas desde <b>⭐ Favoritas</b>.</p>
+      <p class="hint">Atajos: 1–9 escuchar ese live · F ampliar · M silenciar/activar todo · R recargar todo · F11 pantalla completa · Ctrl+K escribir en la barra</p>
+    </div>
+  </div>
+
+  <div id="alertsBox" class="alerts" aria-live="assertive"></div>
+  <div id="dragGhost" class="drag-ghost" hidden></div>
+
+  <template id="tileTpl">
+    <section class="tile">
+      <div class="bar">
+        <span class="handle" title="Arrastra para mover este live">⠿</span>
+        <span class="num"></span>
+        <button class="star" title="Marcar como favorita">☆</button>
+        <span class="name"></span>
+        <span class="status">Cargando…</span>
+        <span class="spacer"></span>
+        <button class="audio" title="Escuchar solo este live (Ctrl+clic: sumarlo a los que suenan)">🔇</button>
+        <button class="reload" title="Volver a este live y recargar">⟳</button>
+        <button class="expand" title="Ampliar">⤢</button>
+        <button class="open" title="Abrir en el navegador">↗</button>
+        <button class="remove" title="Quitar">✕</button>
+      </div>
+      <input class="note" placeholder="Nota rápida (ej. producto, turno, incidencia)…">
+    </section>
+  </template>
+
+  <div id="modal" class="modal" hidden>
+    <div class="box">
+      <p id="modalText"></p>
+      <div class="actions">
+        <button id="modalNo">Cancelar</button>
+        <button id="modalYes" class="primary">Quitar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="aboutModal" class="modal" hidden>
+    <div class="box about">
+      <img src="../build/icon.png" alt="" width="72" height="72">
+      <h2>RevoLabs MLT</h2>
+      <p class="sub">Monitor de Lives de TikTok</p>
+      <p>Versión <b id="aboutVer"></b></p>
+      <p class="sub">© 2026 Revo Labs. Uso interno.</p>
+      <p class="hint">Atajos: 1–9 escuchar un live · F ampliar · M silenciar/activar todo · R recargar todo · F11 pantalla completa · Ctrl+K escribir en la barra · Esc salir</p>
+      <p class="hint">Arrastra un live desde ⠿ para cambiarlo de lugar.</p>
+      <div class="actions"><button id="aboutClose" class="primary">Cerrar</button></div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
