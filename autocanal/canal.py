@@ -45,14 +45,18 @@ def _rehacer(etapa: str, desde: str | None) -> bool:
 
 
 def crear(app_id: str, con_web: bool = True, minutos: int = 6, voz: str | None = None,
-          desde: str | None = None) -> Path:
+          desde: str | None = None, notas: str = "", hook=None) -> Path:
+    """`hook(etapa)` se llama al empezar cada etapa (la oficina visual lo usa para coordinar agentes)."""
     from agentes import blog, editor, graficos, guionista, investigador, voz as voz_mod
+
+    hook = hook or (lambda etapa: None)
 
     carpeta = config.SALIDA / app_id
     carpeta.mkdir(parents=True, exist_ok=True)
     clips = _clips(app_id)
     print(f"\n▶ {app_id}  ({len(clips)} clip(s) tuyos en entrada/{app_id}/)")
 
+    hook("recolectar")
     print("1/7 Recolectando datos de Play Store")
     if (carpeta / "ficha.json").exists() and not _rehacer("recolectar", desde):
         datos = {"ficha": _leer(carpeta / "ficha.json"), "resenas": _leer(carpeta / "resenas.json"),
@@ -61,19 +65,22 @@ def crear(app_id: str, con_web: bool = True, minutos: int = 6, voz: str | None =
         datos = investigador.recolectar(app_id, carpeta)
     ficha, imagenes = datos["ficha"], datos["imagenes"]
 
+    hook("investigar")
     print("2/7 Investigando (expediente de evidencia)")
     expediente = _leer(carpeta / "expediente.json")
     if expediente is None or _rehacer("investigar", desde):
         expediente = investigador.analizar(datos, carpeta, con_web=con_web)
     print(f"    veredicto: {expediente['veredicto']}")
 
+    hook("guion")
     print("3/7 Escribiendo guion")
     guion = _leer(carpeta / "guion.json")
     if guion is None or _rehacer("guion", desde):
         info_clips = [{"indice": i, "archivo": Path(c).name} for i, c in enumerate(clips, 1)]
-        guion = guionista.escribir(ficha, expediente, info_clips, minutos)
+        guion = guionista.escribir(ficha, expediente, info_clips, minutos, notas)
         _guardar(carpeta / "guion.json", guion)
 
+    hook("voz")
     print("4/7 Narrando")
     if _rehacer("voz", desde):
         for f in (carpeta / "audio").glob("*.mp3"):
@@ -81,15 +88,18 @@ def crear(app_id: str, con_web: bool = True, minutos: int = 6, voz: str | None =
     escenas = voz_mod.narrar(guion["escenas"], carpeta, voz)
     _guardar(carpeta / "guion.json", guion)
 
+    hook("miniatura")
     print("5/7 Miniatura")
     caps = imagenes.get("capturas") or []
     mini = graficos.miniatura(guion["texto_miniatura"], guion["sello_miniatura"], imagenes.get("icono"),
                               caps[0] if caps else None, carpeta / "miniatura.jpg")
 
+    hook("video")
     print("6/7 Editando video")
     ctx = {"ficha": ficha, "expediente": expediente, "imagenes": imagenes}
     video = editor.editar(escenas, ctx, carpeta, clips)
 
+    hook("blog")
     print("7/7 Escribiendo entrada del blog")
     entrada = _leer(carpeta / "blog.json")
     if entrada is None or _rehacer("blog", desde):
@@ -99,6 +109,7 @@ def crear(app_id: str, con_web: bool = True, minutos: int = 6, voz: str | None =
         f"<meta charset='utf-8'><h1>{entrada['titulo']}</h1>{entrada['html']}", encoding="utf-8")
 
     _reporte(carpeta, ficha, expediente, guion, entrada, video, mini)
+    hook("fin")
     print(f"\n✔ Listo. Revisa {carpeta / 'REVISAR.md'} antes de publicar.")
     return carpeta
 
@@ -122,7 +133,7 @@ def _reporte(carpeta, ficha, exp, guion, entrada, video, mini) -> None:
     (carpeta / "REVISAR.md").write_text("\n".join(l), encoding="utf-8")
 
 
-def publicar(app_id: str, titulo_n: int = 1) -> None:
+def publicar(app_id: str, titulo_n: int = 1) -> dict:
     from agentes import blog, buscador, youtube
 
     carpeta = config.SALIDA / app_id
@@ -156,6 +167,7 @@ def publicar(app_id: str, titulo_n: int = 1) -> None:
         _guardar(carpeta / "publicado.json", pub)
     buscador.marcar_hecha(app_id)
     print("✔ Publicado.")
+    return pub
 
 
 def demo() -> None:
@@ -214,7 +226,8 @@ def main() -> None:
     if a.cmd == "ideas":
         from agentes import buscador
         for i, c in enumerate(buscador.ideas(a.n), 1):
-            print(f"{i}. [{c['potencial_vistas']}] {c['titulo']}  →  python canal.py crear {c['app_id']}\n   {c['por_que']}")
+            print(f"{i}. [{c['potencial_vistas']}] {c['titulo']}  →  python canal.py crear {c['app_id']}\n"
+                  f"   Video: {c['angulo']}\n   {c['por_que']}")
     elif a.cmd == "crear":
         crear(a.app_id, not a.sin_web, a.minutos, a.voz, a.desde)
     elif a.cmd == "publicar":

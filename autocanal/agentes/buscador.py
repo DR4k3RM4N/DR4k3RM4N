@@ -31,9 +31,10 @@ SCHEMA = {
                     "app_id": {"type": "string"},
                     "titulo": {"type": "string"},
                     "por_que": {"type": "string"},
+                    "angulo": {"type": "string", "description": "Idea de video: título tentativo o enfoque"},
                     "potencial_vistas": {"type": "string", "enum": ["alto", "medio", "bajo"]},
                 },
-                "required": ["app_id", "titulo", "por_que", "potencial_vistas"],
+                "required": ["app_id", "titulo", "por_que", "angulo", "potencial_vistas"],
                 "additionalProperties": False,
             },
         }
@@ -56,7 +57,7 @@ def marcar_hecha(app_id: str) -> None:
         config.HISTORIAL.write_text(json.dumps(h, indent=2), encoding="utf-8")
 
 
-def ideas(cuantas: int = 5) -> list[dict]:
+def ideas(cuantas: int = 5, guia: str = "") -> list[dict]:
     hechas = set(historial())
     encontradas: dict[str, dict] = {}
     for q in CONSULTAS:
@@ -75,7 +76,9 @@ def ideas(cuantas: int = 5) -> list[dict]:
     datos = json.dumps(list(encontradas.values()), ensure_ascii=False)
     res = claude.json_estructurado(
         SYSTEM,
-        f"Apps encontradas hoy en Play Store:\n{datos}\n\nElige las {cuantas} mejores para investigar.",
+        f"Apps encontradas hoy en Play Store:\n{datos}\n\n"
+        + (f"Indicaciones y gustos del jefe (respétalos):\n{guia}\n\n" if guia else "")
+        + f"Elige las {cuantas} mejores para investigar.",
         SCHEMA, effort="medium",
     )
     return res["candidatas"][:cuantas]

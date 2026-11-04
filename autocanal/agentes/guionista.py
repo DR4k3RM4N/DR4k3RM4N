@@ -61,7 +61,7 @@ SCHEMA = {
 }
 
 
-def escribir(ficha: dict, expediente: dict, clips: list[dict], minutos: int = 6) -> dict:
+def escribir(ficha: dict, expediente: dict, clips: list[dict], minutos: int = 6, notas: str = "") -> dict:
     exp = {k: v for k, v in expediente.items() if k not in ("informe_web",)}
     pedido = (
         f"APP: {ficha['title']} — {ficha.get('developer')} — {ficha.get('installs')} descargas, "
@@ -71,4 +71,6 @@ def escribir(ficha: dict, expediente: dict, clips: list[dict], minutos: int = 6)
         f"CLIPS DEL CREADOR: {json.dumps(clips, ensure_ascii=False) if clips else 'ninguno'}\n\n"
         f"Escribe un guion de unos {minutos} minutos."
     )
+    if notas:
+        pedido += f"\n\nCAMBIOS QUE PIDIÓ EL JEFE (prioridad):\n{notas}"
     return claude.json_estructurado(SYSTEM, pedido, SCHEMA, effort="medium")

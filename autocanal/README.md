@@ -33,6 +33,45 @@ Cada "agente" es un archivo en `agentes/`:
 | Blog | `blog.py` | Entrada SEO, sube capturas dentro del texto, pone la imagen destacada de Play Store y deja un hueco para el video. |
 | YouTube | `youtube.py` | Sube el video, la miniatura y los metadatos; enlaza el blog. |
 
+## 🏢 La oficina de agentes (visual)
+
+Tu equipo trabajando en una oficina pixel art que ves en el navegador. Cada agente tiene su
+escritorio, camina a entregarle el trabajo al siguiente, y **Paola, la productora, te trae ideas
+para que opines y des el visto bueno**.
+
+```bash
+python oficina.py --demo
+```
+
+`--demo` simula Claude, Play Store y la publicación (gratis, para conocerla; el video sí se edita de
+verdad). Sin `--demo` usa todo lo real. Se abre en http://localhost:8765.
+
+| Agente | Rol | Qué hace en la oficina |
+|---|---|---|
+| Paola | Productora | Busca apps, **te pregunta qué opinas**, aprende de tus respuestas y coordina al equipo |
+| Iván | Investigador | Reseñas, internet y expediente de evidencia |
+| Gabi | Guionista | Guion, títulos y texto de miniatura (con tus notas) |
+| Leo | Locutor | Narración (se prende la luz "al aire") |
+| Dani | Diseñadora | Miniatura |
+| Edu | Editor | Video |
+| Rosa | Redactora SEO | Entrada del blog |
+| Carla | Community manager | Publica en WordPress y YouTube |
+| Tú | Jefe | Apruebas ideas y das el visto bueno final |
+
+Cómo trabajas con ellos:
+
+1. **Pide ideas** en la bandeja (puedes darle una dirección: "apps de encuestas").
+2. Paola camina a tu escritorio y te deja las ideas. A cada una le puedes dar **👍 Hazlo**,
+   **💬 Opinar** o **👎 No** (con motivo). Lo que opinas se guarda en "Lo que Paola aprendió de ti"
+   y lo usa en las siguientes búsquedas; tus notas también le llegan a Gabi para el guion.
+3. Al aprobar, el proyecto pasa de escritorio en escritorio. Lo sigues en **Proyectos** y en **Chat**.
+4. Cuando el video está listo, Paola te avisa. En **Revisar video** ves el video, la miniatura, el
+   borrador del blog, la evidencia y los títulos. Marcas la lista de comprobación y eliges:
+   **Publicar**, **Pedir cambios** (Gabi rehace el guion con tu nota y el resto del equipo vuelve a
+   trabajar) o **Descartar**.
+
+Si dos proyectos coinciden, cada agente atiende uno a la vez y el otro espera su turno.
+
 ## Instalación (una vez)
 
 1. Instala Python 3.11+ y **ffmpeg** (Windows: `winget install ffmpeg`; Mac: `brew install ffmpeg`).
