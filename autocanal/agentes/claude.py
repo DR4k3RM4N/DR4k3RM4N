@@ -23,6 +23,7 @@ TAREAS = {
     "investigar": ("claude-sonnet-5-5", "medium"),  # evidencia y veredicto: delicado (y la búsqueda web lo pide)
     "guion": ("claude-sonnet-5-5", "medium"),       # lo que se escucha en el video
     "blog": ("claude-haiku-5-5", "low"),            # ordenar la investigación en un post
+    "whatsapp": ("claude-haiku-5-5", "low"),        # entender lo que escribes por WhatsApp
 }
 
 # Precios en USD por millón de tokens: (entrada, salida). Haiku cambia de tarifa arriba de 100K de entrada.

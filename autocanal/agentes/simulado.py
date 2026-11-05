@@ -109,6 +109,8 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None) -> 
     props = schema["properties"]
     texto = contenido if isinstance(contenido, str) else json.dumps(contenido[-1], ensure_ascii=False)
     nombre = next((t for _, t, _ in APPS if t in texto), "esta app")
+    if "acciones" in props:
+        return {"respuesta": "¡Va, jefe! (modo demo: aquí te contestaría Haiku)", "acciones": []}
     if "veredicto" in props:
         return {"veredicto": random.choice(["senales_de_alerta", "estafa_comprobada", "paga_pero_no_vale_la_pena"]),
                 "resumen": "Muchas quejas de que no paga al llegar al mínimo.", "que_promete": "500 pesos al día",

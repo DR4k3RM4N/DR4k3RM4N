@@ -21,11 +21,13 @@ import webbrowser
 from zoneinfo import ZoneInfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import requests
 
+from agentes import chat_jefe
 from agentes import claude as ia
+from agentes import whatsapp as wa
 from agentes import config
 
 WEB = config.BASE / "oficina"
@@ -104,6 +106,8 @@ class Oficina:
         self.proyectos = datos.get("proyectos", {})
         self.preferencias = datos.get("preferencias", [])
         self.log = datos.get("log", [])
+        for i, p in enumerate(sorted([p for p in self.propuestas if p["estado"] == "pendiente"], key=lambda p: p["creado"]), 1):
+            p.setdefault("num", i)
         self.tareas = datos.get("tareas", [])
         for p in self.proyectos.values():  # lo que quedó a medias al cerrar
             if p["estado"] in ("produccion", "publicando"):
@@ -114,6 +118,11 @@ class Oficina:
         self.ultima_busqueda = datos.get("ultima_busqueda", "")
         self.gasto = datos.get("gasto", {})  # USD por día (AAAA-MM-DD)
         ia.al_gastar = self._gasto
+        self.wa = datos.get("whatsapp", {"ultimo_entrante": 0, "numero": "", "vistos": []})
+        self.wa_cola: list[tuple[float, str, bool]] = []
+        self.wa_lock = threading.Lock()
+        if wa.activo():
+            threading.Thread(target=self._wa_despachar, daemon=True).start()
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
 
@@ -127,6 +136,7 @@ class Oficina:
                 "preferencias": self.preferencias[-30:], "log": self.log[-300:],
                 "ultima_busqueda": self.ultima_busqueda, "tareas": self.tareas[-300:],
                 "gasto": dict(sorted(self.gasto.items())[-120:]),
+                "whatsapp": {**self.wa, "vistos": self.wa.get("vistos", [])[-200:]},
             }, ensure_ascii=False, indent=1), encoding="utf-8")
 
     def snapshot(self) -> dict:
@@ -146,11 +156,136 @@ class Oficina:
             if al_log:
                 self.log.append({"t": time.time(), "quien": agente, "texto": texto})
             self._tocar()
+        if al_log and wa.NIVEL == "todo" and agente != "jefe":
+            self.whatsapp(agente, texto)
 
     def poner(self, agente: str, **campos) -> None:
         with self.lock:
             self.agentes[agente].update(campos)
             self._tocar()
+
+    # ---------- WhatsApp ----------
+    EMOJI = {"productora": "📋", "investigador": "🔎", "guionista": "✍️", "locutor": "🎙️", "disenadora": "🎨",
+             "editor": "🎬", "redactora": "📝", "community": "📤"}
+
+    def whatsapp(self, agente: str, texto: str, importante: bool = False) -> None:
+        """Pone un aviso en la cola; se juntan varios en un solo mensaje para gastar menos."""
+        if not wa.activo():
+            return
+        a = self.agentes.get(agente, {})
+        linea = f"{self.EMOJI.get(agente, '💬')} *{a.get('nombre', agente)}*: {texto}"
+        with self.wa_lock:
+            if any(texto in l for _, l, _ in self.wa_cola):
+                return
+            self.wa_cola.append((time.time(), linea, importante))
+
+    def _wa_despachar(self) -> None:
+        while True:
+            time.sleep(3)
+            with self.wa_lock:
+                if not self.wa_cola:
+                    continue
+                primero = self.wa_cola[0][0]
+                urgente = any(imp for _, _, imp in self.wa_cola)
+                if time.time() - primero < (6 if urgente else 60):
+                    continue
+                lineas = [l for _, l, _ in self.wa_cola]
+                self.wa_cola.clear()
+            texto = "\n\n".join(lineas)
+            if URL_PUBLICA:
+                texto += f"\n\n👉 {URL_PUBLICA}"
+            self._wa_enviar(texto)
+
+    def _wa_enviar(self, texto: str) -> None:
+        para = self.wa.get("numero") or wa.JEFE
+        try:
+            if time.time() - self.wa.get("ultimo_entrante", 0) < 23.5 * 3600:
+                wa.enviar_texto(para, texto)
+            else:  # fuera de la ventana de 24 h, WhatsApp solo deja mandar una plantilla aprobada
+                wa.enviar_plantilla(para, texto)
+        except Exception as exc:  # noqa: BLE001
+            print(f"aviso: WhatsApp: {exc}", flush=True)
+            with self.lock:
+                self.log.append({"t": time.time(), "quien": "productora", "texto": f"⚠️ No pude mandarte WhatsApp: {exc}"})
+                self._tocar()
+
+    def _pendientes(self) -> list[dict]:
+        return sorted([p for p in self.propuestas if p["estado"] == "pendiente"], key=lambda p: p["creado"])
+
+    def _lista_ideas(self) -> str:
+        ideas = self._pendientes()
+        if not ideas:
+            return "No hay ideas pendientes."
+        return "\n".join(f"*{p.get('num', i)}.* {p['titulo']} — {p.get('angulo', '')}" for i, p in enumerate(ideas[:12], 1))
+
+    def _resumen_estado(self) -> str:
+        lineas = []
+        with self.lock:
+            activos = [p for p in self.proyectos.values() if p["estado"] in ("produccion", "publicando")]
+            for p in activos:
+                trabajando = [t for t in self.tareas if t["proyecto"] == p["id"] and t["estado"] == "trabajando"]
+                quien = ", ".join(f"{self.agentes[t['agente']]['nombre']} ({t['accion'].lower()})" for t in trabajando)
+                lineas.append(f"🎞️ *{p['titulo']}*: {quien or 'pasando de un escritorio a otro'}")
+            revision = [p["titulo"] for p in self.proyectos.values() if p["estado"] == "revision"]
+            errores = [p["titulo"] for p in self.proyectos.values() if p["estado"] == "error"]
+            ideas = len(self._pendientes())
+            gasto = self._resumen_gasto()
+        if not lineas:
+            lineas.append("Nadie está produciendo ahorita ☕")
+        if revision:
+            lineas.append("👀 Esperan tu revisión: " + ", ".join(revision))
+        if errores:
+            lineas.append("⚠️ Con problema: " + ", ".join(errores))
+        if ideas:
+            lineas.append(f"💡 {ideas} ideas esperan tu opinión (escribe *pendientes*)")
+        lineas.append(f"💰 Hoy van ${gasto['hoy']:.2f} · mes ${gasto['mes']:.2f}")
+        return "\n".join(lineas)
+
+    def recibir_whatsapp(self, mensaje: dict) -> None:
+        """Un mensaje tuyo por WhatsApp: se entiende y se ejecuta."""
+        with self.lock:
+            if mensaje["id"] in self.wa.setdefault("vistos", []):
+                return  # Meta a veces reenvía el mismo aviso
+            self.wa["vistos"] = (self.wa["vistos"] + [mensaje["id"]])[-200:]
+            if not wa.es_el_jefe(mensaje["de"]):
+                return
+            self.wa["ultimo_entrante"], self.wa["numero"] = time.time(), mensaje["de"]
+            self.log.append({"t": time.time(), "quien": "jefe", "texto": f"📱 {mensaje['texto'] or '(' + str(mensaje['tipo']) + ')'}"})
+            self._tocar()
+        if not mensaje["texto"]:
+            return self._wa_enviar("Por ahora solo entiendo mensajes de texto 🙂")
+        ideas = self._pendientes()
+        ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "whatsapp", None
+        try:
+            plan = chat_jefe.interpretar(mensaje["texto"], ideas, sorted(self.proyectos.values(), key=lambda p: -p["creado"]))
+        except Exception as exc:  # noqa: BLE001
+            return self._wa_enviar(f"No te entendí bien ({exc}). Escribe *ayuda* para ver qué puedo hacer.")
+        partes = [plan["respuesta"]] if plan.get("respuesta") else []
+        for acc in plan.get("acciones", []):
+            tipo, n, texto = acc["tipo"], acc.get("numero", 0), acc.get("texto", "")
+            idea = next((p for p in ideas if p.get("num") == n), None)
+            if tipo in ("aprobar", "rechazar", "comentar"):
+                if not idea:
+                    partes.append(f"No encontré la idea {n}. Escribe *pendientes* para ver la lista.")
+                    continue
+                if tipo == "comentar" and not texto:
+                    continue
+                r = self.responder_idea(idea["id"], tipo, texto)
+                verbo = {"aprobar": "✅ Arrancamos con", "rechazar": "🗑️ Descartada:", "comentar": "💬 Anotado sobre"}[tipo]
+                partes.append(f"{verbo} *{idea['titulo']}*" if "error" not in r else f"{idea['titulo']}: {r['error']}")
+            elif tipo == "pedir_ideas":
+                self.pedir_ideas(texto)
+                partes.append("🔍 Voy a buscar ideas" + (f" de {texto}" if texto else "") + ". Te escribo cuando las tenga.")
+            elif tipo == "estado":
+                partes.append(self._resumen_estado())
+            elif tipo == "pendientes":
+                revision = [p["titulo"] for p in self.proyectos.values() if p["estado"] == "revision"]
+                partes.append("💡 *Ideas:*\n" + self._lista_ideas()
+                              + ("\n\n👀 *Para revisar en la oficina:* " + ", ".join(revision) if revision else ""))
+        texto = "\n\n".join(x for x in partes if x) or "👍"
+        if any(a["tipo"] == "pendientes" for a in plan.get("acciones", [])) and URL_PUBLICA:
+            texto += f"\n\n👉 {URL_PUBLICA}"
+        self._wa_enviar(texto)
 
     def _hoy(self) -> str:
         return dt.datetime.now(ZoneInfo(IDEAS_ZONA)).date().isoformat()
@@ -254,8 +389,9 @@ class Oficina:
         self.poner(quien, ubicacion="casa")
         time.sleep(PASEO * 0.4)
 
-    def avisar_jefe(self, texto: str) -> None:
+    def avisar_jefe(self, texto: str, extra_whatsapp: str = "") -> None:
         notificar(texto)
+        self.whatsapp("productora", texto + (f"\n{extra_whatsapp}" if extra_whatsapp else ""), importante=True)
         self.visitar("productora", "jefe", texto)
 
     # ---------- ideas ----------
@@ -290,12 +426,15 @@ class Oficina:
                     continue
                 ya.add(c["app_id"])
                 nuevas.append(c)
+                pendientes = [p.get("num", 0) for p in self.propuestas if p["estado"] == "pendiente"]
                 self.propuestas.append({**c, "id": uuid.uuid4().hex[:8], "estado": "pendiente",
-                                        "creado": time.time(), "comentarios": []})
+                                        "creado": time.time(), "comentarios": [],
+                                        "num": max(pendientes, default=0) + 1})
         self.tarea(t, estado="hecha", fin=time.time(), resultado=f"{len(nuevas)} ideas nuevas")
         self.poner("productora", estado="libre")
         if nuevas:
-            self.avisar_jefe(f"¡Jefe! Te traje {len(nuevas)} ideas. ¿Qué opinas? Están en tu bandeja.")
+            self.avisar_jefe(f"¡Jefe! Te traje {len(nuevas)} ideas. ¿Qué opinas? Están en tu bandeja.",
+                             extra_whatsapp=self._lista_ideas() + "\n\nContéstame *sí 1*, *no 2 (motivo)* u *opino 3 ...*")
         else:
             self.decir("productora", "Jefe, no encontré apps nuevas; las que vi ya están en tu bandeja.")
 
@@ -578,6 +717,72 @@ def telegram_chat_id() -> None:
         print(f"TELEGRAM_CHAT_ID={cid}   ({nombre})")
 
 
+def configurar_whatsapp() -> None:
+    """Asistente: pide los datos de Meta, los guarda en .env y dice qué pegar en Meta."""
+    import getpass
+    import os
+    import re
+    import secrets
+
+    env = config.BASE / ".env"
+    texto = env.read_text(encoding="utf-8") if env.exists() else ""
+
+    def actual(clave):
+        valores = [v.strip() for v in re.findall(rf"^{clave}=(.*)$", texto, flags=re.M) if v.strip()]
+        return valores[-1] if valores else ""
+
+    def pon(clave, valor):
+        nonlocal texto
+        if re.search(rf"^{clave}=", texto, flags=re.M):
+            texto = re.sub(rf"^{clave}=.*$", lambda _: f"{clave}={valor}", texto, flags=re.M)
+        else:
+            texto = texto.rstrip("\n") + f"\n{clave}={valor}\n"
+
+    print("Configurar WhatsApp. Deja vacío y da Enter para conservar lo que ya está.\n")
+    preguntas = [
+        ("WHATSAPP_PHONE_ID", "Identificador del número de teléfono (Phone number ID)", False),
+        ("WHATSAPP_TOKEN", "Token de acceso (no se ve al pegarlo)", True),
+        ("WHATSAPP_APP_SECRET", "Clave secreta de la app (App Secret, no se ve al pegarla)", True),
+        ("WHATSAPP_JEFE", "Tu número de WhatsApp con lada, solo dígitos (ej. 5216641234567)", False),
+    ]
+    for clave, pregunta, oculta in preguntas:
+        tiene = " [ya hay uno]" if actual(clave) else ""
+        valor = (getpass.getpass if oculta else input)(f"{pregunta}{tiene}: ").strip()
+        if valor:
+            pon(clave, re.sub(r"\D", "", valor) if clave == "WHATSAPP_JEFE" else valor)
+    if not actual("WHATSAPP_VERIFY_TOKEN"):
+        pon("WHATSAPP_VERIFY_TOKEN", secrets.token_urlsafe(18))
+    for clave, defecto in [("WHATSAPP_PLANTILLA", "novedad_oficina"), ("WHATSAPP_IDIOMA", "es_MX"), ("WHATSAPP_NIVEL", "importante")]:
+        if not actual(clave):
+            pon(clave, defecto)
+    env.write_text(texto, encoding="utf-8")
+    os.chmod(env, 0o600)
+    url = actual("OFICINA_URL") or "https://TU-DIRECCION"
+    print("\n✔ Guardado en .env\n")
+    print("Ahora en Meta → WhatsApp → Configuración → Webhook, pega esto:")
+    print(f"  URL de devolución de llamada:  {url}/whatsapp/webhook")
+    print(f"  Token de verificación:          {actual('WHATSAPP_VERIFY_TOKEN')}")
+    print("  y suscríbete al campo: messages\n")
+    print("Después reinicia la oficina:  sudo systemctl restart oficina")
+
+
+def probar_whatsapp() -> None:
+    faltan = [n for n, v in [("WHATSAPP_TOKEN", wa.TOKEN), ("WHATSAPP_PHONE_ID", wa.PHONE_ID), ("WHATSAPP_JEFE", wa.JEFE)] if not v]
+    if faltan:
+        raise SystemExit("Faltan en .env: " + ", ".join(faltan))
+    try:
+        r = wa.enviar_plantilla(wa.JEFE, "Prueba: tu oficina ya te puede escribir por WhatsApp ✅")
+        print(f"✔ Enviado con la plantilla '{wa.PLANTILLA}'. Revisa tu WhatsApp. ({r.get('messages', [{}])[0].get('id', '')})")
+    except wa.ErrorWhatsApp as exc:
+        print(f"✖ No se pudo: {exc}")
+        if "132001" in str(exc) or "template" in str(exc).lower():
+            print("  Revisa que la plantilla exista, esté APROBADA y se llame igual que WHATSAPP_PLANTILLA (idioma WHATSAPP_IDIOMA).")
+        if "131030" in str(exc):
+            print("  Con el número de prueba de Meta, tu número debe estar en la lista de destinatarios permitidos.")
+        if "190" in str(exc) or "OAuth" in str(exc):
+            print("  El token no sirve o caducó: usa un token permanente de usuario del sistema.")
+
+
 def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> ThreadingHTTPServer:
     class Manejador(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -652,7 +857,22 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
+        def _texto(self, texto: str, codigo: int = 200):
+            cuerpo = texto.encode()
+            self.send_response(codigo)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(cuerpo)))
+            self.end_headers()
+            self.wfile.write(cuerpo)
+
         def do_GET(self):
+            url = urlparse(self.path)
+            if url.path == "/whatsapp/webhook":  # Meta verifica la dirección al configurarla
+                q = parse_qs(url.query)
+                if q.get("hub.mode") == ["subscribe"] and wa.VERIFY_TOKEN and \
+                        hmac.compare_digest(q.get("hub.verify_token", [""])[0], wa.VERIFY_TOKEN):
+                    return self._texto(q.get("hub.challenge", [""])[0])
+                return self._texto("token inválido", 403)
             if not self._autorizado():
                 return
             ruta = unquote(urlparse(self.path).path)
@@ -692,6 +912,17 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 pass
 
         def do_POST(self):
+            if urlparse(self.path).path == "/whatsapp/webhook":
+                crudo = self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 1_000_000))
+                if not wa.firma_valida(crudo, self.headers.get("X-Hub-Signature-256", "")):
+                    return self._texto("firma inválida", 403)
+                self._texto("ok")  # contestar rápido; el trabajo sigue en otro hilo
+                try:
+                    for m in wa.mensajes_entrantes(json.loads(crudo)):
+                        threading.Thread(target=oficina.recibir_whatsapp, args=(m,), daemon=True).start()
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+                return
             if not self._autorizado():
                 return
             if not self._mismo_origen():
@@ -731,9 +962,15 @@ def main() -> None:
                    help="0.0.0.0 para aceptar conexiones de fuera (exige OFICINA_PASSWORD)")
     p.add_argument("--sin-navegador", action="store_true")
     p.add_argument("--telegram-id", action="store_true", help="muestra tu TELEGRAM_CHAT_ID y sale")
+    p.add_argument("--probar-whatsapp", action="store_true", help="te manda un WhatsApp de prueba y sale")
+    p.add_argument("--configurar-whatsapp", action="store_true", help="asistente para poner los datos de WhatsApp")
     a = p.parse_args()
+    if a.configurar_whatsapp:
+        return configurar_whatsapp()
     if a.telegram_id:
         return telegram_chat_id()
+    if a.probar_whatsapp:
+        return probar_whatsapp()
     a.demo = a.demo or config.env("OFICINA_DEMO") == "1"
     if a.host not in ("127.0.0.1", "localhost") and not PASSWORD:
         raise SystemExit("Para abrir la oficina a internet pon OFICINA_PASSWORD en .env.")
@@ -748,6 +985,7 @@ def main() -> None:
     print(f"🏢 Oficina abierta en {url}" + ("  (modo demo)" if a.demo else "")
           + (f"  · ideas diarias a las {IDEAS_HORA} ({IDEAS_ZONA})" if IDEAS_HORA else "")
           + ("  · avisos por Telegram" if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID else "")
+          + (f"  · WhatsApp ({wa.NIVEL})" if wa.activo() else "")
           + "  — Ctrl+C para cerrar", flush=True)
     if not a.sin_navegador:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()

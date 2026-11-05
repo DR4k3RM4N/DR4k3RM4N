@@ -86,6 +86,12 @@ haciendo ahora, cuánto lleva, qué tiene en fila (y qué está esperando) y lo 
 Sobre cada agente ves un ícono de estado (🔎 trabajando, ⏳ en fila, ☕ en el café, 💤 libre) y una
 barrita de avance aproximado.
 
+### Por WhatsApp
+
+Tu equipo te avisa por WhatsApp (ideas, videos listos, problemas) y tú contestas como en un chat:
+*sí 1*, *no 2 ya la hicimos*, *busca apps de encuestas*, *¿cómo van?*. Usa la API oficial de Meta.
+Paso a paso en [`despliegue/GUIA_WHATSAPP.md`](despliegue/GUIA_WHATSAPP.md).
+
 ### En un servidor (siempre activa)
 
 Para tenerla las 24 horas en un VPS, con contraseña, HTTPS, ideas automáticas cada mañana y avisos
