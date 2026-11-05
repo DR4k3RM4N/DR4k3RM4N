@@ -113,4 +113,7 @@ def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> P
             "-map", "[v]", "-map", "[a]", *VIDEO, *AUDIO, "-movflags", "+faststart", str(final))
     else:
         _ff("-i", str(unido), "-vf", vf, *VIDEO, "-c:a", "copy", "-movflags", "+faststart", str(final))
+    # Los pedazos ya no sirven (se regeneran si se re-edita) y ocupan mucho disco.
+    for f in trabajo.glob("*.mp4"):
+        f.unlink(missing_ok=True)
     return final

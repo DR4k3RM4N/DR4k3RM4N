@@ -221,6 +221,9 @@ def main() -> None:
     s = sub.add_parser("automatico"); s.add_argument("--n", type=int, default=1)
     s.add_argument("--publicar", action="store_true", help="publicar sin revisión humana (no recomendado)")
     sub.add_parser("demo")
+    s = sub.add_parser("autorizar-youtube", help="da permiso a tu canal (crea youtube_token.json)")
+    s.add_argument("--puerto", type=int, default=0, help="en un servidor usa 8090 con un túnel SSH")
+    s.add_argument("--sin-navegador", action="store_true", help="solo muestra el enlace (para servidores)")
     a = p.parse_args()
 
     if a.cmd == "ideas":
@@ -243,6 +246,11 @@ def main() -> None:
                 print(f"✖ {c['app_id']}: {exc}")
     elif a.cmd == "demo":
         demo()
+    elif a.cmd == "autorizar-youtube":
+        from agentes import youtube
+        canal_info = youtube._servicio(a.puerto, not a.sin_navegador).channels().list(part="snippet", mine=True).execute()
+        nombre = (canal_info.get("items") or [{}])[0].get("snippet", {}).get("title", "?")
+        print(f"✔ Listo, autorizado el canal: {nombre}. Se creó youtube_token.json")
 
 
 if __name__ == "__main__":

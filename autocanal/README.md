@@ -72,6 +72,12 @@ Cómo trabajas con ellos:
 
 Si dos proyectos coinciden, cada agente atiende uno a la vez y el otro espera su turno.
 
+### En un servidor (siempre activa)
+
+Para tenerla las 24 horas en un VPS, con contraseña, HTTPS, ideas automáticas cada mañana y avisos
+por Telegram, sigue [`despliegue/GUIA_SERVIDOR.md`](despliegue/GUIA_SERVIDOR.md). Se instala con un
+solo comando (`despliegue/instalar.sh`).
+
 ## Instalación (una vez)
 
 1. Instala Python 3.11+ y **ffmpeg** (Windows: `winget install ffmpeg`; Mac: `brew install ffmpeg`).

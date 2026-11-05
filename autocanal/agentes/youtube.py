@@ -8,7 +8,7 @@ from . import config
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube"]
 
 
-def _servicio():
+def _servicio(puerto: int = 0, abrir_navegador: bool = True):
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -21,7 +21,11 @@ def _servicio():
             creds.refresh(Request())
         else:  # la primera vez abre el navegador para que autorices tu canal
             secretos = config.BASE / config.env("YT_CLIENT_SECRETS", "client_secret.json")
-            creds = InstalledAppFlow.from_client_secrets_file(str(secretos), SCOPES).run_local_server(port=0)
+            if not secretos.exists():
+                raise RuntimeError(f"Falta {secretos.name}: descárgalo de Google Cloud Console y ponlo en {config.BASE}")
+            creds = InstalledAppFlow.from_client_secrets_file(str(secretos), SCOPES).run_local_server(
+                port=puerto, open_browser=abrir_navegador,
+                authorization_prompt_message="Abre este enlace en tu navegador y autoriza tu canal:\n{url}\n")
         token.write_text(creds.to_json(), encoding="utf-8")
     return build("youtube", "v3", credentials=creds)
 

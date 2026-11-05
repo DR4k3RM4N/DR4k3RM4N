@@ -8,6 +8,9 @@ Abre http://localhost:8765
 from __future__ import annotations
 
 import argparse
+import base64
+import datetime as dt
+import hmac
 import json
 import mimetypes
 import random
@@ -15,15 +18,29 @@ import threading
 import time
 import uuid
 import webbrowser
+from zoneinfo import ZoneInfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
+
+import requests
 
 from agentes import config
 
 WEB = config.BASE / "oficina"
 ESTADO = config.BASE / "oficina_estado.json"
 PASEO = 6.0  # segundos que tarda un agente en ir a otro escritorio, hablar y volver
+
+# Acceso y automatización (ver .env.example)
+USUARIO = config.env("OFICINA_USUARIO", "jefe")
+PASSWORD = config.env("OFICINA_PASSWORD")
+URL_PUBLICA = config.env("OFICINA_URL")
+TELEGRAM_TOKEN = config.env("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = config.env("TELEGRAM_CHAT_ID")
+IDEAS_HORA = config.env("IDEAS_HORA")          # ej. 09:00 — vacío = no buscar solas
+IDEAS_ZONA = config.env("IDEAS_ZONA", "America/Mexico_City")
+IDEAS_GUIA = config.env("IDEAS_GUIA")
+LIMPIAR_DIAS = int(config.env("LIMPIAR_DIAS", "30") or 30)
 
 AGENTES = [
     # id, nombre, rol, color de ropa, peinado
@@ -82,7 +99,9 @@ class Oficina:
         for p in self.proyectos.values():  # lo que quedó a medias al cerrar
             if p["estado"] in ("produccion", "publicando"):
                 p["estado"], p["error"] = "error", "Se interrumpió al cerrar la oficina."
+        self.ultima_busqueda = datos.get("ultima_busqueda", "")
         threading.Thread(target=self._ambiente, daemon=True).start()
+        threading.Thread(target=self._agenda, daemon=True).start()
 
     # ---------- estado ----------
     def _tocar(self) -> None:
@@ -92,6 +111,7 @@ class Oficina:
             ESTADO.write_text(json.dumps({
                 "propuestas": self.propuestas[-200:], "proyectos": self.proyectos,
                 "preferencias": self.preferencias[-30:], "log": self.log[-300:],
+                "ultima_busqueda": self.ultima_busqueda,
             }, ensure_ascii=False, indent=1), encoding="utf-8")
 
     def snapshot(self) -> dict:
@@ -125,6 +145,42 @@ class Oficina:
                         a["dice"], a["dice_t"] = random.choice(FRASES[a["id"]]), time.time()
                 self._tocar()
 
+    def _agenda(self) -> None:
+        """Cada minuto: ¿toca la búsqueda diaria de ideas? Cada hora: limpiar videos viejos."""
+        ultima_limpieza = 0.0
+        while True:
+            time.sleep(60)
+            try:
+                if IDEAS_HORA:
+                    ahora = dt.datetime.now(ZoneInfo(IDEAS_ZONA))
+                    hoy = ahora.date().isoformat()
+                    hh, _, mm = IDEAS_HORA.partition(":")
+                    if (ahora.hour, ahora.minute) >= (int(hh), int(mm or 0)) and self.ultima_busqueda != hoy:
+                        self.ultima_busqueda = hoy
+                        self._tocar()
+                        self.pedir_ideas(IDEAS_GUIA)
+                if time.time() - ultima_limpieza > 3600:
+                    ultima_limpieza = time.time()
+                    self.limpiar()
+            except Exception as exc:  # noqa: BLE001 — la agenda nunca debe morir
+                print(f"aviso: agenda: {exc}")
+
+    def limpiar(self) -> None:
+        """Borra el video de los proyectos publicados hace más de LIMPIAR_DIAS (ya está en YouTube).
+        Se conservan miniatura, guion, expediente y blog, que pesan poco."""
+        limite = time.time() - LIMPIAR_DIAS * 86400
+        for p in list(self.proyectos.values()):
+            if p["estado"] == "publicado" and p.get("publicado_t", time.time()) < limite and not p.get("video_borrado"):
+                carpeta = config.SALIDA / p["id"]
+                for nombre in ("video.mp4", "subtitulos.srt"):
+                    (carpeta / nombre).unlink(missing_ok=True)
+                for sub in ("edicion", "audio"):
+                    for f in (carpeta / sub).glob("*") if (carpeta / sub).exists() else []:
+                        f.unlink(missing_ok=True)
+                with self.lock:
+                    p["video_borrado"] = True
+                    self._tocar()
+
     def visitar(self, quien: str, a_quien: str, texto: str) -> None:
         """`quien` camina al escritorio de `a_quien`, le dice algo y regresa."""
         self.poner(quien, ubicacion=f"visita:{a_quien}")
@@ -134,6 +190,7 @@ class Oficina:
         self.poner(quien, ubicacion="casa")
 
     def avisar_jefe(self, texto: str) -> None:
+        notificar(texto)
         self.visitar("productora", "jefe", texto)
 
     # ---------- ideas ----------
@@ -255,6 +312,7 @@ class Oficina:
         with self.lock:
             p = self.proyectos[app_id]
             p["estado"], p["etapa"], p["publicado"] = "publicado", "publicado", pub
+            p["publicado_t"] = time.time()
             self._tocar()
         self.avisar_jefe(f"¡Publicado! {self.proyectos[app_id]['titulo']} ya está en YouTube y en el blog 🎉")
 
@@ -277,6 +335,34 @@ class Oficina:
             "titulos": guion.get("titulos", []), "escenas": [e["narracion"] for e in guion.get("escenas", [])],
             "blog_titulo": blog.get("titulo"),
         }
+
+
+def notificar(texto: str) -> None:
+    """Manda un aviso a tu Telegram (si está configurado), sin frenar a los agentes."""
+    if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
+        return
+    mensaje = texto + (f"\n\n👉 {URL_PUBLICA}" if URL_PUBLICA else "")
+
+    def enviar():
+        try:
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                          json={"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}, timeout=20)
+        except requests.RequestException as exc:
+            print(f"aviso: Telegram: {exc}")
+    threading.Thread(target=enviar, daemon=True).start()
+
+
+def telegram_chat_id() -> None:
+    """Ayuda para configurar Telegram: muestra el chat_id de quien le escribió al bot."""
+    if not TELEGRAM_TOKEN:
+        raise SystemExit("Primero pon TELEGRAM_TOKEN en .env (te lo da @BotFather).")
+    r = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates", timeout=20).json()
+    chats = {m["message"]["chat"]["id"]: m["message"]["chat"].get("first_name", "")
+             for m in r.get("result", []) if "message" in m}
+    if not chats:
+        raise SystemExit("No hay mensajes. Mándale cualquier mensaje a tu bot en Telegram y vuelve a correr esto.")
+    for cid, nombre in chats.items():
+        print(f"TELEGRAM_CHAT_ID={cid}   ({nombre})")
 
 
 class Coordinador:
@@ -327,10 +413,37 @@ class Coordinador:
         self.o.avisar_jefe(f"Jefe, {p['titulo']} tuvo un problema. Está en tu bandeja.")
 
 
-def crear_servidor(oficina: Oficina, puerto: int) -> ThreadingHTTPServer:
+def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> ThreadingHTTPServer:
     class Manejador(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
+
+        def _autorizado(self) -> bool:
+            """Usuario y contraseña (HTTP Basic). Sin OFICINA_PASSWORD no se pide (solo uso local)."""
+            if not PASSWORD:
+                return True
+            cabecera = self.headers.get("Authorization", "")
+            if cabecera.startswith("Basic "):
+                try:
+                    usuario, _, clave = base64.b64decode(cabecera[6:]).decode().partition(":")
+                except (ValueError, UnicodeDecodeError):
+                    usuario, clave = "", ""
+                if hmac.compare_digest(usuario.encode(), USUARIO.encode()) and \
+                        hmac.compare_digest(clave.encode(), PASSWORD.encode()):
+                    return True
+            time.sleep(1)  # frena intentos de adivinar la contraseña
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="Oficina AutoCanal", charset="UTF-8"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return False
+
+        def _mismo_origen(self) -> bool:
+            """Evita que otra página use tu sesión para aprobar o publicar (CSRF)."""
+            if "application/json" not in self.headers.get("Content-Type", ""):
+                return False
+            origen = self.headers.get("Origin")
+            return not origen or urlparse(origen).netloc == self.headers.get("Host")
 
         def _json(self, datos, codigo=200):
             cuerpo = json.dumps(datos, ensure_ascii=False).encode()
@@ -375,6 +488,8 @@ def crear_servidor(oficina: Oficina, puerto: int) -> ThreadingHTTPServer:
                     pass
 
         def do_GET(self):
+            if not self._autorizado():
+                return
             ruta = unquote(urlparse(self.path).path)
             if ruta == "/":
                 return self._archivo(WEB / "index.html", WEB)
@@ -412,6 +527,10 @@ def crear_servidor(oficina: Oficina, puerto: int) -> ThreadingHTTPServer:
                 pass
 
         def do_POST(self):
+            if not self._autorizado():
+                return
+            if not self._mismo_origen():
+                return self._json({"error": "origen no permitido"}, 403)
             largo = int(self.headers.get("Content-Length") or 0)
             try:
                 datos = json.loads(self.rfile.read(largo) or b"{}")
@@ -433,7 +552,7 @@ def crear_servidor(oficina: Oficina, puerto: int) -> ThreadingHTTPServer:
                 return self._json(r, 400 if "error" in r else 200)
             self._json({"error": "no encontrado"}, 404)
 
-    return ThreadingHTTPServer(("127.0.0.1", puerto), Manejador)
+    return ThreadingHTTPServer((host, puerto), Manejador)
 
 
 def main() -> None:
@@ -441,17 +560,28 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Oficina visual de agentes")
     p.add_argument("--demo", action="store_true", help="simula Claude, Play Store y la publicación")
     p.add_argument("--puerto", type=int, default=8765)
+    p.add_argument("--host", default="127.0.0.1",
+                   help="0.0.0.0 para aceptar conexiones de fuera (exige OFICINA_PASSWORD)")
     p.add_argument("--sin-navegador", action="store_true")
+    p.add_argument("--telegram-id", action="store_true", help="muestra tu TELEGRAM_CHAT_ID y sale")
     a = p.parse_args()
+    if a.telegram_id:
+        return telegram_chat_id()
+    a.demo = a.demo or config.env("OFICINA_DEMO") == "1"
+    if a.host not in ("127.0.0.1", "localhost") and not PASSWORD:
+        raise SystemExit("Para abrir la oficina a internet pon OFICINA_PASSWORD en .env.")
     if a.demo:
         from agentes import simulado
 
         simulado.activar()
         ESTADO = config.BASE / "oficina_estado_demo.json"
     oficina = Oficina(a.demo)
-    servidor = crear_servidor(oficina, a.puerto)
+    servidor = crear_servidor(oficina, a.puerto, a.host)
     url = f"http://localhost:{a.puerto}"
-    print(f"🏢 Oficina abierta en {url}" + ("  (modo demo)" if a.demo else "") + "  — Ctrl+C para cerrar")
+    print(f"🏢 Oficina abierta en {url}" + ("  (modo demo)" if a.demo else "")
+          + (f"  · ideas diarias a las {IDEAS_HORA} ({IDEAS_ZONA})" if IDEAS_HORA else "")
+          + ("  · avisos por Telegram" if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID else "")
+          + "  — Ctrl+C para cerrar", flush=True)
     if not a.sin_navegador:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     try:
