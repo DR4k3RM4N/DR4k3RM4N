@@ -13,6 +13,7 @@ AYUDA = (
     "Puedes escribirme normal, como en un chat. Por ejemplo:\n"
     "• *ideas* o *busca apps de encuestas* → busco ideas nuevas (en Google y Play Store)\n"
     "• *busca la app Cash Gato* → busco esa app en Play Store\n"
+    "• *video: por qué no recomiendo Plata Card* → preparo tu idea con ese enfoque\n"
     "• *pendientes* → te paso las ideas y videos que esperan tu respuesta\n"
     "• *sí 1* / *dale a la 2* → arranco ese video\n"
     "• *no 3 ya la hicimos* → la descarto (y aprendo por qué)\n"
@@ -30,7 +31,8 @@ Reglas:
 - "aprobar" = hacer el video de esa idea. "rechazar" = descartarla (pon el motivo en "texto" si lo dio).
   "comentar" = darle una opinión o indicación sobre una idea sin decidir todavía.
 - "pedir_ideas" = buscar apps nuevas; pon el tema en "texto" si lo dio. Si pidió una app concreta,
-  pon "la app <nombre>" en "texto".
+  pon "la app <nombre>" en "texto". Si propone una IDEA DE VIDEO concreta (ej. "haz un video de por qué no
+  recomiendo Plata Card"), pon su idea completa, tal cual, en "texto".
 - "estado" = quiere saber cómo va el trabajo. "pendientes" = quiere ver lo que espera su respuesta.
 - Publicar un video NO se hace por chat: dile que entre a la oficina para revisarlo.
 - Si solo saluda o platica, contesta breve y amable, sin acciones.

@@ -93,6 +93,7 @@
       const abierto = abiertos.has(i.id);
       html += `
         <article class="tarjeta" data-idea="${esc(i.id)}">
+          ${i.personalizada ? `<div class="tuya">💡 Tu idea</div>` : ""}
           <div class="cabeza"><h4>${i.num ? `<span class="num">${i.num}</span>` : ""}${esc(i.titulo)}</h4><span class="chip chip-${esc(i.potencial_vistas)}">${esc(i.potencial_vistas)}</span></div>
           <p class="angulo">🎬 ${esc(i.angulo || "")}</p>
           <p class="porque">${esc(i.por_que)}</p>

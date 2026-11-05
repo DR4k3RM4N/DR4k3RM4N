@@ -74,7 +74,8 @@ def escribir(ficha: dict, expediente: dict, clips: list[dict], minutos: int = 6,
         f"Escribe un guion de unos {minutos} minutos."
     )
     if notas:
-        pedido += f"\n\nCAMBIOS QUE PIDIÓ EL JEFE (prioridad):\n{notas}"
+        pedido += (f"\n\nINDICACIONES DEL JEFE (prioridad: el video debe seguir este enfoque; "
+                   f"los títulos y el gancho van con esta idea):\n{notas}")
     from . import estilo
     mini = estilo.cargar().get("miniaturas")
     if mini:

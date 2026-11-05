@@ -61,11 +61,29 @@ def marcar_hecha(app_id: str) -> None:
 PEDIDO = {
     "type": "object",
     "properties": {
-        "tipo": {"type": "string", "enum": ["app", "tema"],
-                 "description": "app = pidió una app concreta por su nombre; tema = un tipo de apps o un asunto"},
-        "texto": {"type": "string", "description": "El nombre de la app, o el tema en pocas palabras"},
+        "tipo": {"type": "string", "enum": ["idea", "app", "tema"],
+                 "description": "idea = propone un video concreto sobre una app o servicio, con un enfoque; "
+                                "app = solo nombra una app para investigar; tema = un tipo de apps o un asunto"},
+        "texto": {"type": "string", "description": "El nombre de la app o servicio (idea/app), o el tema en pocas palabras"},
+        "angulo": {"type": "string", "description": "Solo si es idea: el enfoque del video en sus palabras, como título tentativo"},
     },
-    "required": ["tipo", "texto"],
+    "required": ["tipo", "texto", "angulo"],
+    "additionalProperties": False,
+}
+
+SISTEMA_PEDIDO = """Clasificas lo que pide el jefe de un canal de YouTube que analiza apps (que prometen pagar dinero, \
+tarjetas, préstamos, inversiones, etc.).
+- "idea": propone un video concreto sobre una app o servicio con un enfoque. Ej.: "video, por qué no recomiendas \
+Plata Card" → texto "Plata Card", angulo "¿Por qué no recomiendo Plata Card?"; "haz uno de Temu diciendo si paga \
+por referidos" → texto "Temu", angulo "¿Temu sí paga por referidos?".
+- "app": solo nombra una app para investigar, sin enfoque. Ej.: "Cash Gato".
+- "tema": un tipo de apps o un asunto. Ej.: "apps de encuestas", "préstamos rápidos"."""
+
+ELEGIR_APP = {
+    "type": "object",
+    "properties": {"app_id": {"type": "string", "description": "El app_id que es esa app; vacío si ninguna lo es"},
+                   "razon": {"type": "string"}},
+    "required": ["app_id", "razon"],
     "additionalProperties": False,
 }
 
@@ -86,20 +104,39 @@ APPS_EN_WEB = {
 }
 
 
-def entender_pedido(pedido: str) -> tuple[str, str]:
-    """¿Pidió una app concreta o un tema? Devuelve ("app"|"tema"|"general", texto)."""
+def entender_pedido(pedido: str) -> tuple[str, str, str]:
+    """¿Qué pidió? Devuelve (tipo, texto, ángulo); tipo: "idea" | "app" | "tema" | "general"."""
     p = (pedido or "").strip()
     if not p:
-        return "general", ""
+        return "general", "", ""
     if re.fullmatch(r"[a-z][\w]*(\.[\w]+){1,}", p, flags=re.I):  # com.empresa.app
-        return "app", p
+        return "app", p, ""
     if m := re.match(r"^(?:la\s+)?app\s+(?!(?:de|del|para|que|sobre|con)\b)(?:llamada\s+)?[\"“']?(.+?)[\"”']?$", p, flags=re.I):
-        return "app", m.group(1)
+        return "app", m.group(1), ""
     if m := re.fullmatch(r"[\"“'](.+)[\"”']", p):
-        return "app", m.group(1)
-    r = claude.json_estructurado("Clasificas lo que pide el jefe de un canal sobre apps que prometen pagar dinero.",
-                                 f"Pedido: {p}", PEDIDO, tarea="ideas", que="entender pedido")
-    return r["tipo"], r["texto"] or p
+        return "app", m.group(1), ""
+    r = claude.json_estructurado(SISTEMA_PEDIDO, f"Pedido: {p}", PEDIDO, tarea="ideas", que="entender pedido")
+    return r["tipo"], (r["texto"] or p).strip(), (r.get("angulo") or "").strip()
+
+
+def encontrar_app(nombre: str, hechas: set) -> dict | None:
+    """Busca una app concreta en Play Store (también por id exacto) y confirma cuál es."""
+    encontradas = _de_play([nombre], hechas, n=8, incluir_hechas=True)
+    if re.fullmatch(r"[a-z][\w]*(\.[\w]+){1,}", nombre, flags=re.I) and nombre not in encontradas:
+        try:
+            f = playstore.ficha(nombre)
+            encontradas[nombre] = {"app_id": nombre, "titulo": f.get("title"), "dev": f.get("developer"),
+                                   "score": f.get("score"), "instalaciones": f.get("installs"),
+                                   "resumen": (f.get("summary") or "")[:160]}
+        except Exception as exc:  # noqa: BLE001
+            print(f"  aviso: no encontré {nombre} en Play Store: {exc}")
+    if not encontradas:
+        return None
+    r = claude.json_estructurado(
+        "Identificas apps en resultados de Play Store.",
+        f"¿Cuál de estas es la app oficial de «{nombre}»? Si ninguna lo es, deja app_id vacío.\n"
+        + json.dumps(list(encontradas.values()), ensure_ascii=False), ELEGIR_APP, tarea="ideas", que="identificar app")
+    return encontradas.get(r["app_id"])
 
 
 def _de_play(consultas: list[str], hechas: set, n: int = 20, incluir_hechas: bool = False) -> dict[str, dict]:
@@ -156,8 +193,16 @@ def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
     - Pidió una app concreta → se busca solo en Play Store.
     - Pidió un tema (o nada) → Play Store + lo que se dice en Google (si hay SERPER/TAVILY)."""
     hechas = set(historial())
-    tipo, texto = entender_pedido(pedido)
-    print(f"  · pedido: {tipo}" + (f" ({texto})" if texto else ""))
+    tipo, texto, angulo = entender_pedido(pedido)
+    print(f"  · pedido: {tipo}" + (f" ({texto})" if texto else "") + (f" — {angulo}" if angulo else ""))
+    if tipo == "idea":  # tu idea de video: se respeta tal cual, sin filtrar como "app nueva"
+        app = encontrar_app(texto, hechas)
+        if not app:
+            raise claude.ErrorIA(f"No encontré «{texto}» en Play Store. Si no tiene app (es una página o tarjeta "
+                                 "sin app), por ahora no la puedo investigar.")
+        return [{"app_id": app["app_id"], "titulo": app["titulo"], "angulo": angulo or pedido,
+                 "por_que": f"💡 Idea tuya: {pedido}" + (" (ya hiciste un video de esta app)" if app.get("ya_la_hiciste") else ""),
+                 "potencial_vistas": "alto", "personalizada": True, "idea_jefe": pedido}]
     if tipo == "app":
         encontradas = _de_play([texto], hechas, n=8, incluir_hechas=True)
         if re.fullmatch(r"[a-z][\w]*(\.[\w]+){1,}", texto, flags=re.I) and texto not in encontradas:
@@ -200,4 +245,7 @@ def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
         SCHEMA, tarea="ideas",
     )
     validas = [c for c in res["candidatas"] if c["app_id"] in encontradas]  # nada de ids inventados
+    if tipo == "app":  # la pidió el jefe: no se descarta aunque ya esté en la bandeja o ya se haya hecho
+        for c in validas:
+            c["personalizada"] = True
     return validas[:cuantas]

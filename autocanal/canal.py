@@ -68,11 +68,12 @@ class Produccion:
 
     def __init__(self, app_id: str, con_web: bool = True, minutos: int = 6, voz: str | None = None,
                  desde: str | None = None, notas: str = ""):
-        self.app_id, self.con_web, self.minutos, self.voz, self.notas = app_id, con_web, minutos, voz, notas
+        # "com.app~2" = segundo video de la misma app: misma app en Play Store, otra carpeta
+        self.app_id, self.con_web, self.minutos, self.voz, self.notas = app_id.split("~")[0], con_web, minutos, voz, notas
         self.rehacer = afectadas(desde)
         self.carpeta = config.SALIDA / app_id
         self.carpeta.mkdir(parents=True, exist_ok=True)
-        self.clips = _clips(app_id)
+        self.clips = _clips(app_id) or _clips(self.app_id)
         self.ficha = self.imagenes = self.expediente = self.guion = self.entrada = None
         self.video = self.mini = None
 
@@ -282,7 +283,7 @@ def publicar(app_id: str, titulo_n: int = 1) -> dict:
         blog.WordPress().insertar_video(pub["blog"]["id"], pub["youtube"])
         pub["video_en_blog"] = True
         _guardar(carpeta / "publicado.json", pub)
-    buscador.marcar_hecha(app_id)
+    buscador.marcar_hecha(app_id.split("~")[0])
     print("✔ Publicado.")
     return pub
 

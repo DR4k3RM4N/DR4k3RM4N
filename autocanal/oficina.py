@@ -459,7 +459,7 @@ class Oficina:
         ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "ideas", t
         self.tarea(t, estado="trabajando", inicio=time.time())
         self.poner("productora", estado="trabajando")
-        self.decir("productora", "¡Voy! Busco apps nuevas en Play Store" + (f" ({guia})" if guia else ""))
+        self.decir("productora", f"¡Voy con tu pedido! «{guia[:80]}»" if guia else "¡Voy! Busco apps nuevas en Play Store")
         try:
             gustos = "\n".join(f"- {p}" for p in self.preferencias[-15:])
             candidatas = buscador.ideas(5, gustos, pedido=guia)
@@ -469,26 +469,42 @@ class Oficina:
             self.decir("productora", f"Uy, no pude buscar ideas: {exc}")
             return
         with self.lock:
-            # no repetir apps que ya están en la bandeja o que ya son proyecto
-            ya = {p["app_id"] for p in self.propuestas if p["estado"] == "pendiente"} | set(self.proyectos)
-            nuevas = []
+            # no repetir apps que ya están en la bandeja o que ya son proyecto (salvo las que pediste tú)
+            pend = {p["app_id"]: p for p in self.propuestas if p["estado"] == "pendiente"}
+            ya = set(pend) | {k.split("~")[0] for k in self.proyectos}
+            nuevas, actualizadas = [], []
             for c in candidatas:
-                if c["app_id"] in ya:
+                notas = [f"Idea del jefe: {c['idea_jefe']}"] if c.get("idea_jefe") else []
+                if c.get("personalizada") and c["app_id"] in pend:  # ya estaba: se le pone tu enfoque
+                    p = pend[c["app_id"]]
+                    p.update({"angulo": c.get("angulo", p.get("angulo")), "por_que": c.get("por_que", p.get("por_que")),
+                              "personalizada": True})
+                    p["comentarios"] = list(dict.fromkeys(p.get("comentarios", []) + notas))
+                    actualizadas.append(c)
+                    continue
+                if c["app_id"] in ya and not c.get("personalizada"):
                     continue
                 ya.add(c["app_id"])
                 nuevas.append(c)
                 pendientes = [p.get("num", 0) for p in self.propuestas if p["estado"] == "pendiente"]
                 self.propuestas.append({**c, "id": uuid.uuid4().hex[:8], "estado": "pendiente",
-                                        "creado": time.time(), "comentarios": [],
+                                        "creado": time.time(), "comentarios": notas,
                                         "num": max(pendientes, default=0) + 1})
-        self.tarea(t, estado="hecha", fin=time.time(), resultado=f"{len(nuevas)} ideas nuevas")
+            self._tocar()
+        self.tarea(t, estado="hecha", fin=time.time(), resultado=f"{len(nuevas) + len(actualizadas)} ideas")
         self.poner("productora", estado="libre")
-        if nuevas:
+        tuyas = [c for c in nuevas + actualizadas if c.get("idea_jefe")]
+        if tuyas:
+            c = tuyas[0]
+            self.avisar_jefe(f"¡Jefe! Para tu idea encontré {c['titulo']}. Video: «{c['angulo']}». ¿La hago?",
+                             extra_whatsapp=self._lista_ideas() + "\n\nContéstame *sí N* para arrancar.", botones=True)
+        elif nuevas or actualizadas:
             self.avisar_jefe(f"¡Jefe! Te traje {len(nuevas)} ideas. ¿Qué opinas? Están en tu bandeja.",
                              extra_whatsapp=self._lista_ideas() + "\n\nContéstame *sí 1*, *no 2 (motivo)* u *opino 3 ...*",
                              botones=True)
         else:
-            self.decir("productora", "Jefe, no encontré apps nuevas; las que vi ya están en tu bandeja.")
+            self.decir("productora", "Jefe, busqué pero todas las que encontré ya están en tu bandeja o ya las hicimos. "
+                                     "Si tienes una idea concreta, dime cuál y la hago.")
 
     def descartar_ideas(self) -> dict:
         """Limpia la bandeja de ideas sin contarlo como 'no me gustó' (no afecta lo que Paola aprende)."""
@@ -530,6 +546,11 @@ class Oficina:
     def iniciar_proyecto(self, propuesta: dict, notas: str = "") -> None:
         app_id = propuesta["app_id"]
         with self.lock:
+            # otro video de una app que ya tiene proyecto: carpeta nueva (com.app~2) para no pisar el anterior
+            n = 2
+            while app_id in self.proyectos:
+                app_id = f"{propuesta['app_id']}~{n}"
+                n += 1
             self.proyectos[app_id] = {"id": app_id, "titulo": propuesta["titulo"], "angulo": propuesta.get("angulo", ""),
                                       "estado": "produccion", "etapa": "investigar", "etapas": {},
                                       "creado": time.time(), "error": None, "notas": notas, "publicado": None}

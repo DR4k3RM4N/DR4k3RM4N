@@ -42,6 +42,10 @@ def _datos(app_id: str):
 
 def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
     _pausa(4, 7)
+    if pedido and ("video" in pedido.lower() or "?" in pedido or "por qu" in pedido.lower()):
+        app_id, titulo, _ = random.choice(APPS)
+        return [{"app_id": app_id, "titulo": titulo, "angulo": f"Tu idea: {pedido}", "por_que": f"💡 Idea tuya: {pedido}",
+                 "potencial_vistas": "alto", "personalizada": True, "idea_jefe": pedido}]
     hechas = set(buscador.historial())
     pool = [a for a in APPS if a[0] not in hechas] or APPS
     salida = []
@@ -135,7 +139,7 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                 "pendiente_de_probar": ["Intentar retirar", "Contar anuncios en 10 minutos"],
                 "alternativas_reales": ["Encuestas con pago mínimo bajo"]}
     if "escenas" in props:
-        cambio = "CAMBIOS QUE PIDIÓ EL JEFE" in texto
+        cambio = "INDICACIONES DEL JEFE" in texto
         return {"titulos": [f"¿{nombre} paga? Lo probé", f"{nombre}: la verdad", f"No descargues {nombre} sin ver esto"],
                 "descripcion": "Análisis completo en el blog: {{BLOG_URL}}", "etiquetas": ["apps", "ganar dinero"],
                 "texto_miniatura": "¿Te paga?" if not cambio else "¡No paga!",
