@@ -6,6 +6,8 @@ APP="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$APP/.." && pwd)"
 sudo -u canal git -C "$REPO" pull --ff-only
 sudo -u canal "$APP/.venv/bin/pip" install -q -r "$APP/requirements.txt"
+# La voz gratis de Microsoft cambia seguido: edge-tts siempre en su última versión.
+sudo -u canal "$APP/.venv/bin/pip" install -q --upgrade edge-tts
 # Aplica cambios de configuración del servidor que vengan en la nueva versión.
 URL="$(grep '^OFICINA_URL=' "$APP/.env" | cut -d= -f2- || true)"
 DOMINIO="${URL#https://}"

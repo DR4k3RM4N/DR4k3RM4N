@@ -25,7 +25,8 @@ Reglas:
 digas "es una estafa"; di "tiene señales de alerta", "no te la recomiendo", etc. Es opinión basada \
 en evidencia.
 - Frases cortas, fáciles de leer en voz alta. Números escritos como se dicen.
-- Cada escena dura entre 4 y 20 segundos de narración.
+- Cada escena dura entre 4 y 20 segundos de narración. TODAS las escenas llevan narración (nunca vacía).
+- La narración es solo texto para leer en voz alta: sin emojis, sin hashtags, sin símbolos.
 - Visual de cada escena:
   * "titulo": tarjeta con texto grande (campo texto, máx 6 palabras).
   * "captura": captura de Play Store (indice empieza en 1).

@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import re
 import subprocess
+import time
 from pathlib import Path
 
 import requests
@@ -48,6 +51,63 @@ def _silencio(texto: str, destino: Path) -> None:
 
 
 MOTORES = {"edge": _edge, "elevenlabs": _elevenlabs, "silencio": _silencio}
+VOZ_RESPALDO = "es-MX-DaliaNeural"  # si la voz principal de Edge no responde
+
+
+def limpiar(texto: str) -> str:
+    """Deja solo lo que se puede leer en voz alta (sin emojis ni símbolos raros)."""
+    t = (texto or "").replace("&", " y ").replace("%", " por ciento").replace("#", " ")
+    t = re.sub(r"[^\w\s.,;:¿?¡!'\"()\-$/áéíóúüñÁÉÍÓÚÜÑ]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t if re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]", t) else ""
+
+
+def _valido(ruta: Path) -> bool:
+    """¿El audio existe y tiene sonido? (un intento fallido puede dejar un archivo vacío)."""
+    if not ruta.exists() or ruta.stat().st_size < 1000:
+        return False
+    try:
+        return duracion(ruta) > 0.3
+    except (subprocess.CalledProcessError, ValueError):
+        return False
+
+
+def _silencio_fijo(destino: Path, segundos: float = 1.5) -> None:
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
+                    "-t", f"{segundos:.2f}", "-q:a", "4", str(destino)], check=True)
+
+
+def _narrar_una(fn, motor: str, texto: str, destino: Path, i: int) -> None:
+    ultimo = None
+    for intento in range(3):
+        try:
+            fn(texto, destino)
+            if _valido(destino):
+                return
+            ultimo = "no llegó audio"
+        except Exception as exc:  # noqa: BLE001 — se reintenta
+            ultimo = exc
+        destino.unlink(missing_ok=True)
+        print(f"    voz: escena {i} falló ({ultimo}); reintento {intento + 1}/3", flush=True)
+        time.sleep(2 * 2 ** intento)
+    if motor == "edge":  # última opción: otra voz de Edge
+        anterior = os.environ.get("VOZ_EDGE")
+        os.environ["VOZ_EDGE"] = VOZ_RESPALDO
+        try:
+            _edge(texto, destino)
+            if _valido(destino):
+                print(f"    voz: escena {i} salió con la voz de respaldo ({VOZ_RESPALDO})", flush=True)
+                return
+        except Exception as exc:  # noqa: BLE001
+            ultimo = exc
+        finally:
+            if anterior is None:
+                os.environ.pop("VOZ_EDGE", None)
+            else:
+                os.environ["VOZ_EDGE"] = anterior
+        destino.unlink(missing_ok=True)
+    raise RuntimeError(f"La voz falló en la escena {i} («{texto[:60]}…»): {ultimo}. Dale Reintentar en unos minutos; "
+                       "si sigue, puede que el servicio gratis de Microsoft esté fallando y conviene usar ElevenLabs.")
 
 
 def narrar(escenas: list[dict], carpeta: Path, motor: str | None = None) -> list[dict]:
@@ -57,8 +117,14 @@ def narrar(escenas: list[dict], carpeta: Path, motor: str | None = None) -> list
     audio.mkdir(parents=True, exist_ok=True)
     for i, esc in enumerate(escenas, 1):
         destino = audio / f"escena_{i:02d}.mp3"
-        if not destino.exists():
-            fn(esc["narracion"], destino)
+        if not _valido(destino):
+            destino.unlink(missing_ok=True)
+            texto = limpiar(esc.get("narracion", ""))
+            if not texto:
+                print(f"    voz: la escena {i} no tiene texto para leer; va un silencio corto", flush=True)
+                _silencio_fijo(destino)
+            else:
+                _narrar_una(fn, motor, texto, destino, i)
         esc["audio"] = str(destino)
         esc["duracion"] = duracion(destino)
         print(f"  · escena {i}/{len(escenas)} ({esc['duracion']:.1f}s)")
