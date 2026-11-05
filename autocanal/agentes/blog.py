@@ -44,10 +44,10 @@ def escribir(ficha: dict, expediente: dict, n_capturas: int) -> dict:
     exp = {k: v for k, v in expediente.items() if k != "informe_web"}
     return claude.json_estructurado(
         SYSTEM,
-        f"APP: {json.dumps({k: v for k, v in ficha.items() if k not in ('description', 'screenshots')}, ensure_ascii=False, default=str)}\n\n"
+        f"APP: {json.dumps({k: v for k, v in ficha.items() if k not in ('description', 'screenshots', 'icon', 'headerImage', 'histogram')}, ensure_ascii=False, default=str)}\n\n"
         f"EXPEDIENTE:\n{json.dumps(exp, ensure_ascii=False, default=str)}\n\n"
         f"Hay {n_capturas} capturas disponibles. Escribe la entrada (1200-1800 palabras).",
-        SCHEMA, effort="medium",
+        SCHEMA, tarea="blog",
     )
 
 

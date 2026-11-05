@@ -1,8 +1,13 @@
-"""Llamadas a Claude compartidas por todos los agentes."""
+"""Llamadas a Claude compartidas por todos los agentes.
+
+Cada tarea usa su propio modelo (lo más barato que da buen resultado) y se mide lo que cuesta.
+Se cambia por tarea en .env: MODELO_IDEAS, MODELO_INVESTIGAR, MODELO_GUION, MODELO_BLOG.
+"""
 from __future__ import annotations
 
 import json
 import logging
+import threading
 
 import anthropic
 
@@ -11,15 +16,71 @@ from . import config
 log = logging.getLogger(__name__)
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
-WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 8}
+
+# Modelo y esfuerzo de pensamiento por tarea. El esfuerzo bajo gasta menos tokens.
+TAREAS = {
+    "ideas": ("claude-haiku-5-5", "low"),          # elegir apps de una lista: sencillo
+    "investigar": ("claude-sonnet-5-5", "medium"),  # evidencia y veredicto: delicado (y la búsqueda web lo pide)
+    "guion": ("claude-sonnet-5-5", "medium"),       # lo que se escucha en el video
+    "blog": ("claude-haiku-5-5", "low"),            # ordenar la investigación en un post
+}
+
+# Precios en USD por millón de tokens: (entrada, salida). Haiku cambia de tarifa arriba de 100K de entrada.
+PRECIOS = {
+    "claude-opus-5-5": (4.0, 20.0), "claude-opus-5": (5.0, 25.0), "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-sonnet-5": (2.0, 10.0), "claude-haiku-5-5": (0.10, 0.50), "claude-fable-5-1": (10.0, 50.0),
+}
+PRECIO_BUSQUEDA = 10.0 / 1000  # USD por búsqueda web
+
+# Quién está gastando (la oficina lo pone en cada hilo de trabajo) y a quién avisar del gasto.
+contexto = threading.local()
+al_gastar = None  # función(proyecto, etapa, modelo, costo_usd, tokens_entrada, tokens_salida)
 
 
 class ErrorIA(Exception):
     pass
 
 
+def modelo_de(tarea: str) -> tuple[str, str]:
+    modelo, esfuerzo = TAREAS.get(tarea, (config.AI_MODEL, "medium"))
+    return config.env(f"MODELO_{tarea.upper()}", modelo) or modelo, esfuerzo
+
+
+def costo(modelo: str, usage) -> float:
+    base_in, base_out = PRECIOS.get(modelo, PRECIOS.get(config.AI_MODEL, (4.0, 20.0)))
+    entrada = getattr(usage, "input_tokens", 0) or 0
+    escribe = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    lee = getattr(usage, "cache_read_input_tokens", 0) or 0
+    salida = getattr(usage, "output_tokens", 0) or 0
+    if modelo.startswith("claude-haiku-5-5") and entrada + escribe + lee > 100_000:
+        base_in, base_out = 0.50, 2.50
+    stu = getattr(usage, "server_tool_use", None)
+    busquedas = getattr(stu, "web_search_requests", 0) or 0
+    return ((entrada + escribe * 1.25 + lee * 0.1) * base_in + salida * base_out) / 1e6 + busquedas * PRECIO_BUSQUEDA
+
+
+def _registrar(response, modelo_pedido: str) -> None:
+    modelo = getattr(response, "model", None) or modelo_pedido
+    usd = costo(modelo, response.usage)
+    entrada = response.usage.input_tokens or 0
+    salida = response.usage.output_tokens or 0
+    print(f"    [{modelo}] {entrada:,} tokens de entrada, {salida:,} de salida ≈ ${usd:.4f}")
+    if al_gastar:
+        try:
+            al_gastar(getattr(contexto, "proyecto", None), getattr(contexto, "etapa", None), modelo, usd, entrada, salida)
+        except Exception:  # noqa: BLE001 — medir nunca debe romper el trabajo
+            log.exception("al registrar gasto")
+
+
 def _cliente() -> anthropic.Anthropic:
     return anthropic.Anthropic(max_retries=3, timeout=900)
+
+
+def _extras(modelo: str) -> dict:
+    """Respaldo automático si el modelo rechaza la petición (Haiku no lo admite)."""
+    if "haiku" in modelo:
+        return {}
+    return {"betas": [FALLBACK_BETA], "fallbacks": "default"}
 
 
 def _revisar(response) -> None:
@@ -33,23 +94,24 @@ def _texto(response) -> str:
     return "\n".join(b.text for b in response.content if b.type == "text").strip()
 
 
-def json_estructurado(system: str, contenido, schema: dict, effort: str = "medium") -> dict:
+def json_estructurado(system: str, contenido, schema: dict, tarea: str = "guion", effort: str | None = None) -> dict:
     """Pide a Claude un JSON que cumple `schema`. `contenido` puede ser texto o bloques (imágenes)."""
+    modelo, esfuerzo = modelo_de(tarea)
     try:
         with _cliente().beta.messages.stream(
-            model=config.AI_MODEL,
-            max_tokens=64000,
-            betas=[FALLBACK_BETA],
-            fallbacks="default",
+            model=modelo,
+            max_tokens=32000,
             system=system,
-            output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
+            output_config={"effort": effort or esfuerzo, "format": {"type": "json_schema", "schema": schema}},
             messages=[{"role": "user", "content": contenido}],
+            **_extras(modelo),
         ) as stream:
             response = stream.get_final_message()
     except anthropic.APIStatusError as exc:
         raise ErrorIA(f"Error de la API de Claude {exc.status_code}: {exc.message}") from exc
     except anthropic.APIConnectionError as exc:
         raise ErrorIA("No hubo conexión con la API de Claude.") from exc
+    _registrar(response, modelo)
     _revisar(response)
     try:
         return json.loads(_texto(response))
@@ -57,23 +119,27 @@ def json_estructurado(system: str, contenido, schema: dict, effort: str = "mediu
         raise ErrorIA("Claude devolvió un JSON inválido.") from exc
 
 
-def investigar_web(system: str, pregunta: str, effort: str = "high") -> tuple[str, list[dict]]:
+def investigar_web(system: str, pregunta: str, tarea: str = "investigar", max_busquedas: int = 5) -> tuple[str, list[dict]]:
     """Investiga con búsqueda web. Devuelve (informe en texto, fuentes citadas)."""
+    modelo, esfuerzo = modelo_de(tarea)
+    # La búsqueda con filtrado dinámico es de Sonnet/Opus; otros modelos usan la versión básica.
+    tipo = "web_search_20250305" if "haiku" in modelo else "web_search_20260209"
+    herramienta = {"type": tipo, "name": "web_search", "max_uses": max_busquedas}
     messages = [{"role": "user", "content": pregunta}]
     cliente = _cliente()
     try:
-        for _ in range(6):  # pause_turn: el servidor pide continuar búsquedas largas
+        for _ in range(4):  # pause_turn: el servidor pide continuar búsquedas largas
             with cliente.beta.messages.stream(
-                model=config.AI_MODEL,
-                max_tokens=64000,
-                betas=[FALLBACK_BETA],
-                fallbacks="default",
+                model=modelo,
+                max_tokens=16000,
                 system=system,
-                output_config={"effort": effort},
-                tools=[WEB_SEARCH],
+                output_config={"effort": esfuerzo},
+                tools=[herramienta],
                 messages=messages,
+                **_extras(modelo),
             ) as stream:
                 response = stream.get_final_message()
+            _registrar(response, modelo)
             if response.stop_reason != "pause_turn":
                 break
             messages.append({"role": "assistant", "content": response.content})
@@ -97,4 +163,4 @@ def investigar_web(system: str, pregunta: str, effort: str = "high") -> tuple[st
                 if url and url not in vistas:
                     vistas.add(url)
                     fuentes.append({"titulo": getattr(r, "title", "") or url, "url": url})
-    return _texto(response), fuentes
+    return _texto(response), fuentes[:12]

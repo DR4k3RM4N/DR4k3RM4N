@@ -73,4 +73,4 @@ def escribir(ficha: dict, expediente: dict, clips: list[dict], minutos: int = 6,
     )
     if notas:
         pedido += f"\n\nCAMBIOS QUE PIDIÓ EL JEFE (prioridad):\n{notas}"
-    return claude.json_estructurado(SYSTEM, pedido, SCHEMA, effort="medium")
+    return claude.json_estructurado(SYSTEM, pedido, SCHEMA, tarea="guion")

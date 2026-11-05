@@ -93,8 +93,19 @@ def descargar_imagenes(datos: dict, carpeta: Path, max_capturas: int = 8) -> dic
     return {"icono": str(img / "icono.png"), "portada": None, "capturas": caps}
 
 
-def json_estructurado(system, contenido, schema, effort="medium") -> dict:
+COSTO_DEMO = {"ideas": 0.002, "investigar": 0.06, "guion": 0.05, "blog": 0.004}
+
+
+def _gasto_demo(tarea: str) -> None:
+    if claude.al_gastar:
+        modelo, _ = claude.modelo_de(tarea)
+        claude.al_gastar(getattr(claude.contexto, "proyecto", None), getattr(claude.contexto, "etapa", None),
+                         modelo, COSTO_DEMO.get(tarea, 0.01) * random.uniform(0.7, 1.3), 0, 0)
+
+
+def json_estructurado(system, contenido, schema, tarea="guion", effort=None) -> dict:
     _pausa()
+    _gasto_demo(tarea)
     props = schema["properties"]
     texto = contenido if isinstance(contenido, str) else json.dumps(contenido[-1], ensure_ascii=False)
     nombre = next((t for _, t, _ in APPS if t in texto), "esta app")
@@ -127,8 +138,9 @@ def json_estructurado(system, contenido, schema, effort="medium") -> dict:
             "etiquetas": ["apps"], "alt_capturas": ["inicio"]}
 
 
-def investigar_web(system, pregunta, effort="high"):
+def investigar_web(system, pregunta, tarea="investigar", max_busquedas=5):
     _pausa(5, 8)
+    _gasto_demo("investigar")
     return "Usuarios en foros reportan que no paga.", [{"titulo": "Reddit: ¿alguien cobró?", "url": "https://reddit.com/r/ejemplo"}]
 
 

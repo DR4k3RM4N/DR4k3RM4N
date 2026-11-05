@@ -16,6 +16,7 @@
                         publicado: "Publicado", error: "Con problema", descartado: "Descartado" };
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const dinero = (usd) => (usd > 0 && usd < 0.01 ? "<$0.01" : `$${(usd || 0).toFixed(2)}`);
   const hora = (t) => new Date(t * 1000).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 
   async function api(ruta, datos) {
@@ -42,6 +43,10 @@
     estado = nuevo;
     window.Oficina.actualizar(nuevo);
     $("#modo").hidden = !nuevo.demo;
+    if (nuevo.gasto) {
+      $("#gasto").hidden = false;
+      $("#gasto").innerHTML = `💰 Hoy <b>${dinero(nuevo.gasto.hoy)}</b> <span>· mes ${dinero(nuevo.gasto.mes)}</span>`;
+    }
     pintarBandeja();
     pintarProyectos();
     pintarEquipo();
@@ -189,6 +194,7 @@
       return `<article class="tarjeta">
         <div class="cabeza"><h4>${esc(p.titulo)}</h4><span class="chip chip-estado-${esc(p.estado)}">${esc(ESTADO_PROY[p.estado] || p.estado)}</span></div>
         <ol class="pasos">${pasos}</ol>${pub}
+        ${p.costo ? `<div class="costo">💰 ${dinero(p.costo)} <span>${Object.entries(p.costos || {}).map(([e, v]) => `${esc(ETIQUETA_ETAPA[e] || e)} ${dinero(v)}`).join(" · ")}</span></div>` : ""}
         ${["revision", "publicado"].includes(p.estado) ? `<button class="btn ancho" data-revisar="${esc(p.id)}">Ver video</button>` : ""}
       </article>`;
     }).join("");
@@ -363,6 +369,7 @@
           ${viva ? `<div class="tarea-tiempo">⏱ ${duracion(reloj() - t.inicio)}</div><div class="barra-tarea"><b></b></div>` : ""}
           ${t.fin && t.inicio ? `<div class="tarea-tiempo">${t.estado === "hecha" ? "✔" : "✖"} en ${duracion(t.fin - t.inicio)} · ${haceCuanto(t.fin)}</div>` : ""}
           ${t.resultado ? `<div class="tarea-sub">${esc(t.resultado)}</div>` : ""}
+          ${t.costo ? `<div class="tarea-tiempo">💰 ${dinero(t.costo)} · ${esc((t.modelo || "").replace("claude-", ""))}</div>` : ""}
           ${t.error ? `<div class="tarea-error">${esc(t.error)}</div>` : ""}
         </li>`;
       cont.innerHTML = `<button class="btn btn-mini volver" data-volver>← Todo el equipo</button>

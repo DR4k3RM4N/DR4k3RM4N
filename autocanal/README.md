@@ -163,10 +163,23 @@ Busca ideas y crea los 2 mejores videos (sin publicar). Puedes programarlo con e
 tareas de Windows o `cron` para que cada mañana tengas videos listos para revisar.
 Existe `--publicar` para saltarte la revisión, pero no lo recomiendo (ver abajo).
 
-## Costo aproximado por video
+## Costo por video
 
-- Claude (investigación con búsqueda web + guion + blog): del orden de 1–2 USD con `claude-opus-5-5`.
-  Puedes bajarlo con `--sin-web` o usando `AI_MODEL=claude-sonnet-5-5` en `.env`.
+Cada agente usa el modelo más barato que da buen resultado para su trabajo:
+
+| Agente | Modelo | Por qué |
+|---|---|---|
+| Paola (ideas) | Haiku 5.5 | Elegir apps de una lista es sencillo |
+| Iván (investigación) | Sonnet 5.5 | El veredicto es delicado y la búsqueda web lo requiere |
+| Gabi (guion) | Sonnet 5.5 | Es lo que se escucha en el video |
+| Rosa (blog) | Haiku 5.5 | Ordenar la investigación en un post |
+
+Además se recortó lo que se le manda a Iván (5 búsquedas, 3 capturas reducidas, 40 reseñas) y
+piensan menos en las tareas fáciles. Estimado: **unos $0.15–0.35 USD por video**.
+
+**El costo real se ve en la oficina:** arriba, lo gastado hoy y en el mes; en Proyectos, lo que
+costó cada video por etapa; en Equipo, cada tarea con su modelo. Si una parte sale floja, sube
+solo ese agente de modelo en `.env` (por ejemplo `MODELO_BLOG=claude-sonnet-5-5`).
 - Voz: gratis con Edge; ElevenLabs según tu plan.
 - WordPress y YouTube: gratis.
 

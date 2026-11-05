@@ -67,7 +67,7 @@ def ideas(cuantas: int = 5, guia: str = "") -> list[dict]:
                     encontradas.setdefault(r["appId"], {
                         "app_id": r["appId"], "titulo": r.get("title"), "dev": r.get("developer"),
                         "score": r.get("score"), "instalaciones": r.get("installs"),
-                        "resumen": r.get("summary") or (r.get("description") or "")[:300],
+                        "resumen": (r.get("summary") or r.get("description") or "")[:160],
                     })
         except Exception as exc:  # noqa: BLE001 — una consulta fallida no detiene la búsqueda
             print(f"  aviso: búsqueda '{q}' falló: {exc}")
@@ -79,6 +79,6 @@ def ideas(cuantas: int = 5, guia: str = "") -> list[dict]:
         f"Apps encontradas hoy en Play Store:\n{datos}\n\n"
         + (f"Indicaciones y gustos del jefe (respétalos):\n{guia}\n\n" if guia else "")
         + f"Elige las {cuantas} mejores para investigar.",
-        SCHEMA, effort="medium",
+        SCHEMA, tarea="ideas",
     )
     return res["candidatas"][:cuantas]

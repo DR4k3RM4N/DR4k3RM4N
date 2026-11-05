@@ -72,12 +72,20 @@ SCHEMA = {
 
 
 def _imagen(ruta: str) -> dict:
-    datos = base64.standard_b64encode(Path(ruta).read_bytes()).decode()
-    tipo = "image/png"
-    if datos.startswith("/9j/"):
-        tipo = "image/jpeg"
-    elif datos.startswith("UklGR"):
-        tipo = "image/webp"
+    """Captura reducida (lado mayor 900 px, JPEG): se ve igual de clara y cuesta muchos menos tokens."""
+    import io
+
+    from PIL import Image
+
+    try:
+        img = Image.open(ruta).convert("RGB")
+        img.thumbnail((900, 900))
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=80)
+        crudo, tipo = buf.getvalue(), "image/jpeg"
+    except Exception:  # noqa: BLE001 — si no se puede abrir, se manda tal cual
+        crudo, tipo = Path(ruta).read_bytes(), "image/png"
+    datos = base64.standard_b64encode(crudo).decode()
     return {"type": "image", "source": {"type": "base64", "media_type": tipo, "data": datos}}
 
 
@@ -106,26 +114,29 @@ def analizar(datos: dict, carpeta: Path, con_web: bool = True) -> dict:
             f"App: {ficha['title']} ({ficha['appId']}) de {ficha.get('developer')}.\n"
             f"Sitio del desarrollador: {ficha.get('developerWebsite')}\n"
             f"Qué promete: {ficha.get('summary')}\n"
-            "¿Paga de verdad? ¿Qué reportan los usuarios? ¿Quién está detrás?",
+            "¿Paga de verdad? ¿Qué reportan los usuarios? ¿Quién está detrás?\n"
+            "Responde en máximo 250 palabras, solo hechos con su fuente.",
         )
 
     # Reseñas: priorizamos las de 1-2 estrellas con más likes, más una muestra del resto.
-    malas = sorted([r for r in resenas if (r["estrellas"] or 5) <= 2], key=lambda r: -r["likes"])[:60]
-    buenas = sorted([r for r in resenas if (r["estrellas"] or 0) >= 4], key=lambda r: -r["likes"])[:25]
+    malas = sorted([r for r in resenas if (r["estrellas"] or 5) <= 2], key=lambda r: -r["likes"])[:30]
+    buenas = sorted([r for r in resenas if (r["estrellas"] or 0) >= 4], key=lambda r: -r["likes"])[:10]
     muestra = malas + buenas
-    lista = "\n".join(f"[{i}] {r['estrellas']}★ ({r['likes']} likes, {r['fecha']}) {r['texto'][:400]}"
+    lista = "\n".join(f"[{i}] {r['estrellas']}★ ({r['likes']} likes, {r['fecha']}) {r['texto'][:300]}"
                       for i, r in enumerate(muestra))
 
-    contenido = [_imagen(p) for p in imagenes["capturas"][:6]]
+    contenido = [_imagen(p) for p in imagenes["capturas"][:3]]
+    datos_ficha = {k: v for k, v in ficha.items() if k not in ("screenshots", "icon", "headerImage")}
+    datos_ficha["description"] = (datos_ficha.get("description") or "")[:1500]
     contenido.append({"type": "text", "text": (
-        f"FICHA DE PLAY STORE:\n{json.dumps({k: v for k, v in ficha.items() if k != 'screenshots'}, ensure_ascii=False, default=str)}\n\n"
+        f"FICHA DE PLAY STORE:\n{json.dumps(datos_ficha, ensure_ascii=False, default=str)}\n\n"
         f"RESEÑAS (índice entre corchetes):\n{lista}\n\n"
         f"INVESTIGACIÓN WEB:\n{informe_web or '(no se hizo)'}\n\n"
         f"FUENTES WEB:\n{json.dumps(fuentes, ensure_ascii=False)}\n\n"
         f"Las imágenes de arriba son las capturas 1 a {len(contenido)} en orden. Arma el expediente."
     )})
     print("  · armando expediente")
-    exp = claude.json_estructurado(SYSTEM_EXPEDIENTE, contenido, SCHEMA, effort="high")
+    exp = claude.json_estructurado(SYSTEM_EXPEDIENTE, contenido, SCHEMA, tarea="investigar")
     exp["resenas_citadas"] = [muestra[i] for i in exp["resenas_destacadas"] if 0 <= i < len(muestra)][:6]
     exp["fuentes_web"] = fuentes
     exp["informe_web"] = informe_web

@@ -25,6 +25,7 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
+from agentes import claude as ia
 from agentes import config
 
 WEB = config.BASE / "oficina"
@@ -111,6 +112,8 @@ class Oficina:
             if t["estado"] in ACTIVAS:
                 t["estado"], t["error"] = "cancelada", "Se interrumpió al cerrar la oficina."
         self.ultima_busqueda = datos.get("ultima_busqueda", "")
+        self.gasto = datos.get("gasto", {})  # USD por día (AAAA-MM-DD)
+        ia.al_gastar = self._gasto
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
 
@@ -123,6 +126,7 @@ class Oficina:
                 "propuestas": self.propuestas[-200:], "proyectos": self.proyectos,
                 "preferencias": self.preferencias[-30:], "log": self.log[-300:],
                 "ultima_busqueda": self.ultima_busqueda, "tareas": self.tareas[-300:],
+                "gasto": dict(sorted(self.gasto.items())[-120:]),
             }, ensure_ascii=False, indent=1), encoding="utf-8")
 
     def snapshot(self) -> dict:
@@ -131,7 +135,7 @@ class Oficina:
                     "propuestas": [p for p in self.propuestas if p["estado"] == "pendiente"],
                     "proyectos": sorted(self.proyectos.values(), key=lambda p: -p["creado"]),
                     "preferencias": self.preferencias[-10:], "log": self.log[-60:],
-                    "etapas": ETAPAS_PROYECTO, "ahora": time.time(),
+                    "etapas": ETAPAS_PROYECTO, "ahora": time.time(), "gasto": self._resumen_gasto(),
                     "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
                               + [t for t in self.tareas[-250:] if t["estado"] not in ACTIVAS][-120:]}
 
@@ -147,6 +151,31 @@ class Oficina:
         with self.lock:
             self.agentes[agente].update(campos)
             self._tocar()
+
+    def _hoy(self) -> str:
+        return dt.datetime.now(ZoneInfo(IDEAS_ZONA)).date().isoformat()
+
+    def _gasto(self, proyecto, etapa, modelo, usd, entrada, salida) -> None:
+        """Lo llama agentes/claude.py después de cada llamada: suma al video, a la tarea y al día."""
+        with self.lock:
+            dia = self._hoy()
+            self.gasto[dia] = self.gasto.get(dia, 0) + usd
+            t = getattr(ia.contexto, "tarea", None)
+            if t is not None:
+                t["costo"] = t.get("costo", 0) + usd
+                t["modelo"] = modelo
+            p = self.proyectos.get(proyecto) if proyecto else None
+            if p is not None:
+                p["costo"] = p.get("costo", 0) + usd
+                costos = p.setdefault("costos", {})
+                costos[etapa or "otro"] = costos.get(etapa or "otro", 0) + usd
+            self._tocar()
+
+    def _resumen_gasto(self) -> dict:
+        hoy = self._hoy()
+        mes = hoy[:7]
+        return {"hoy": round(self.gasto.get(hoy, 0), 4),
+                "mes": round(sum(v for k, v in self.gasto.items() if k.startswith(mes)), 4)}
 
     def nueva_tarea(self, agente: str, etapa: str, proyecto: str | None = None, titulo: str = "") -> dict:
         t = {"id": uuid.uuid4().hex[:8], "agente": agente, "etapa": etapa, "accion": ACCION.get(etapa, etapa),
@@ -240,6 +269,7 @@ class Oficina:
             with self.lock:
                 self.preferencias.append(f"Pidió: {guia}")
         t = self.nueva_tarea("productora", "ideas", titulo=guia or "Búsqueda general")
+        ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "ideas", t
         self.tarea(t, estado="trabajando", inicio=time.time())
         self.poner("productora", estado="trabajando")
         self.decir("productora", "¡Voy! Busco apps nuevas en Play Store" + (f" ({guia})" if guia else ""))
@@ -351,6 +381,8 @@ class Oficina:
 
         self.decir("productora", f"¡Perfecto! Arrancamos con {titulo}")
         primeras = [e for e in etapas if all(d in saltar for d in canal.DEPENDE[e])]
+        for e in primeras:
+            self.tarea(tareas[e], espera="Paola le está trayendo el encargo")
         encargos = []
         for e in primeras:
             ag = ETAPA_AGENTE[e]
@@ -408,6 +440,7 @@ class Oficina:
             self._marcar(app_id, etapa, "trabajando")
             self.poner(agente, estado="trabajando", proyecto=app_id)
             self.decir(agente, random.choice(FRASES[agente]), al_log=False)
+            ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = app_id, etapa, t
             try:
                 prod.etapa(etapa)
             except Exception as exc:  # noqa: BLE001
