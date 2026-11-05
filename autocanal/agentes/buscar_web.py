@@ -14,7 +14,8 @@ from . import config
 SERPER = config.env("SERPER_API_KEY")
 TAVILY = config.env("TAVILY_API_KEY")
 # Costo aproximado por búsqueda para el contador (Tavily trae 1,000 gratis al mes; Serper ~$0.001 después de las gratis).
-PRECIO = {"serper": float(config.env("PRECIO_SERPER", "0.001") or 0), "tavily": float(config.env("PRECIO_TAVILY", "0") or 0)}
+# Mientras uses las búsquedas gratis cuentan $0; cuando se acaben pon PRECIO_SERPER=0.001 en .env.
+PRECIO = {"serper": float(config.env("PRECIO_SERPER", "0") or 0), "tavily": float(config.env("PRECIO_TAVILY", "0") or 0)}
 
 
 def disponible() -> bool:

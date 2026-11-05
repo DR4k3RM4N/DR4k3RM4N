@@ -1125,7 +1125,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 datos = json.loads(self.rfile.read(largo) or b"{}")
             except json.JSONDecodeError:
                 return self._json({"error": "JSON inválido"}, 400)
-            ruta = urlparse(self.path).path
+            ruta = unquote(urlparse(self.path).path)  # ids como "web:app" llegan codificados
             if ruta == "/api/ideas/descartar":
                 return self._json(oficina.descartar_ideas())
             if ruta == "/api/estilo/estudiar":

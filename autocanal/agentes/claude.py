@@ -20,8 +20,8 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 # Modelo y esfuerzo de pensamiento por tarea. El esfuerzo bajo gasta menos tokens.
 TAREAS = {
     "ideas": ("claude-haiku-5-5", "low"),          # elegir apps de una lista: sencillo
-    "investigar": ("claude-sonnet-5-5", "low"),     # evidencia y veredicto: delicado (y la búsqueda web lo pide)
-    "guion": ("claude-sonnet-5-5", "medium"),       # lo que se escucha en el video
+    "investigar": ("claude-haiku-5-5", "low"),      # armar el expediente con la evidencia ya juntada
+    "guion": ("claude-haiku-5-5", "medium"),        # lo que se escucha en el video (súbelo a Sonnet si sale flojo)
     "blog": ("claude-haiku-5-5", "low"),            # ordenar la investigación en un post
     "whatsapp": ("claude-haiku-5-5", "low"),        # entender lo que escribes por WhatsApp
     "leer_web": ("claude-haiku-5-5", "low"),        # leer resultados de Google y sacar hechos con fuente

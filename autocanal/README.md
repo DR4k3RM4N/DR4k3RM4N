@@ -196,8 +196,8 @@ Cada agente usa el modelo más barato que da buen resultado para su trabajo:
 | Agente | Modelo | Por qué |
 |---|---|---|
 | Paola (ideas) | Haiku 5.5 | Elegir apps de una lista es sencillo |
-| Iván (investigación) | Sonnet 5.5 | El veredicto es delicado y la búsqueda web lo requiere |
-| Gabi (guion) | Sonnet 5.5 | Es lo que se escucha en el video |
+| Iván (investigación) | Haiku 5.5 | Busca con Serper/Tavily y Haiku lee y arma el expediente |
+| Gabi (guion) | Haiku 5.5 | Si el guion sale flojo, súbelo a Sonnet: `MODELO_GUION=claude-sonnet-5-5` |
 | Rosa (blog) | Haiku 5.5 | Ordenar la investigación en un post |
 
 **Búsqueda en Google casi gratis:** con `SERPER_API_KEY` (resultados de Google) y/o `TAVILY_API_KEY`
