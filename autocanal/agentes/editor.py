@@ -54,14 +54,25 @@ def _imagen_escena(esc: dict, i: int, ctx: dict, carpeta: Path) -> Path:
     return graficos.tarjeta_titulo(esc.get("texto") or ctx["ficha"]["title"], icono, destino)
 
 
-def _segmento_imagen(png: Path, audio: str, dur: float, destino: Path, i: int, extra: float) -> None:
-    """`extra`: segundos de más al final para que la transición no corte la voz."""
+ZOOM = {"suave": (0.0006, 1.08), "medio": (0.0010, 1.12), "fuerte": (0.0016, 1.18)}
+
+
+def _segmento_imagen(png: Path, audio: str, dur: float, destino: Path, i: int, extra: float,
+                     zoom: str = "suave", corte_cada: float = 0) -> None:
+    """`extra`: segundos de más al final para que la transición no corte la voz.
+    `corte_cada`: cada cuántos segundos hay un "golpe" de zoom y cambio de encuadre (ritmo de cortes)."""
     total = dur + extra
     frames = int(total * FPS) + 1
-    z = "min(1+0.0006*on,1.08)" if i % 2 else "max(1.08-0.0006*on,1)"
+    inc, zmax = ZOOM.get(zoom, ZOOM["suave"])
+    z = f"min(1+{inc}*on,{zmax})" if i % 2 else f"max({zmax}-{inc}*on,1)"
+    x = "iw/2-(iw/zoom/2)"
+    if corte_cada and corte_cada < total:
+        P = max(15, int(corte_cada * FPS))
+        z += f"+if(lt(mod(on,{P}),4),0.06*(1-mod(on,{P})/4),0)"
+        x += f"+if(mod(floor(on/{P}),2),iw*0.02,-iw*0.02)"
     _ff("-loop", "1", "-framerate", str(FPS), "-i", str(png), "-i", audio,
         "-filter_complex",
-        f"[0]scale=2880:-2,zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        f"[0]scale=2880:-2,zoompan=z='{z}':x='{x}':y='ih/2-(ih/zoom/2)'"
         f":d={frames}:s=1920x1080:fps={FPS},setsar=1[v];[1:a]apad,aformat=sample_rates=44100:channel_layouts=stereo[a]",
         "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}", *VIDEO, *AUDIO, str(destino))
 
@@ -83,7 +94,7 @@ def _tiempo(s: float) -> str:
     return f"{int(h):02d}:{int(m):02d}:{int(s):02d},{int((s % 1) * 1000):03d}"
 
 
-def subtitulos(escenas: list[dict], destino: Path, palabras_por_linea: int = 7) -> Path:
+def subtitulos(escenas: list[dict], destino: Path, palabras_por_linea: int = 7, mayusculas: bool = False) -> Path:
     """SRT a partir de la narración, repartiendo el tiempo de cada escena por palabras."""
     bloques, t, n = [], 0.0, 1
     for esc in escenas:
@@ -93,7 +104,8 @@ def subtitulos(escenas: list[dict], destino: Path, palabras_por_linea: int = 7) 
             trozo = palabras[k:k + palabras_por_linea]
             ini = t + esc["duracion"] * k / total
             fin = t + esc["duracion"] * min(k + len(trozo), total) / total
-            bloques.append(f"{n}\n{_tiempo(ini)} --> {_tiempo(fin)}\n{' '.join(trozo)}\n")
+            linea = " ".join(trozo)
+            bloques.append(f"{n}\n{_tiempo(ini)} --> {_tiempo(fin)}\n{linea.upper() if mayusculas else linea}\n")
             n += 1
         t += esc["duracion"]
     destino.write_text("\n".join(bloques), encoding="utf-8")
@@ -160,7 +172,8 @@ def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> P
             _segmento_clip(clips[(max(esc.get("indice", 1), 1) - 1) % len(clips)], esc["audio"], esc["duracion"], seg, extra)
         else:
             png = _imagen_escena(esc, i, ctx, trabajo)
-            _segmento_imagen(png, esc["audio"], esc["duracion"], seg, i, extra)
+            _segmento_imagen(png, esc["audio"], esc["duracion"], seg, i, extra,
+                             ajustes.get("zoom", "suave"), float(ajustes.get("corte_cada") or 0))
         partes.append(seg)
         duraciones.append(esc["duracion"])
         print(f"  · escena {i}/{len(escenas)} lista")
@@ -171,7 +184,11 @@ def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> P
 
     # subtítulos
     grande = ajustes["subtitulos"] == "grande"
-    srt = subtitulos(escenas, carpeta / "subtitulos.srt", 3 if grande else 7)
+    palabras = int(ajustes.get("palabras_subtitulo") or 0) or (3 if grande else 7)
+    srt = subtitulos(escenas, carpeta / "subtitulos.srt", palabras, bool(ajustes.get("mayusculas_subtitulo")))
+    color_sub = ajustes.get("color_subtitulo") or spec["color_texto"]
+    borde_sub = ajustes.get("color_borde_subtitulo") or "#000000"
+    centro = ajustes.get("posicion_subtitulo") == "centro"
     fuente_propia = estilo.archivo("fuente")
     nombre_fuente = "DejaVu Sans"
     if fuente_propia:
@@ -180,11 +197,13 @@ def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> P
         except OSError:
             fuente_propia = None
     if grande:
-        sub = (f"FontName={nombre_fuente},Bold=1,FontSize=24,PrimaryColour={_ass_color(spec['color_texto'])},"
-               "OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=70")
+        sub = (f"FontName={nombre_fuente},Bold=1,FontSize=24,PrimaryColour={_ass_color(color_sub)},"
+               f"OutlineColour={_ass_color(borde_sub)},BorderStyle=1,Outline=3,Shadow=1,"
+               f"Alignment=2,MarginV={125 if centro else 70}")
     else:
-        sub = (f"FontName={nombre_fuente},Bold=1,FontSize=13,PrimaryColour=&H00FFFFFF,"
-               "OutlineColour=&H00000000,BackColour=&H99000000,BorderStyle=3,Outline=6,Shadow=0,MarginV=24")
+        sub = (f"FontName={nombre_fuente},Bold=1,FontSize=13,PrimaryColour={_ass_color(ajustes.get('color_subtitulo') or '#FFFFFF')},"
+               f"OutlineColour=&H00000000,BackColour=&H99000000,BorderStyle=3,Outline=6,Shadow=0,"
+               f"Alignment=2,MarginV={125 if centro else 24}")
     srt_filtro = srt.resolve().as_posix().replace(":", r"\:")
     vf = f"subtitles='{srt_filtro}':force_style='{sub}'"
     if fuente_propia:

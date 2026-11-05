@@ -123,6 +123,11 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
         return {"resumen": "Escribe directo, de tú, con humor y mucha prueba (demo).", "tono": "cercano", "estructura": ["Gancho", "Qué es", "Prueba", "Veredicto"],
                 "longitud_palabras": 1100, "como_empieza": "Con una pregunta", "como_cierra": "Con recomendación", "recursos": ["listas", "tablas"],
                 "frases_tipicas": ["No te dejes engañar"], "mejoras_seo": ["Poner la palabra clave en el título", "Agregar preguntas frecuentes"]}
+    if "palabras_subtitulo" in props:
+        return {"descripcion": "Edición rápida, subtítulos amarillos en mayúsculas de 2 palabras al centro, zoom fuerte (demo).",
+                "subtitulos": "grande", "mayusculas_subtitulo": True, "palabras_subtitulo": 2, "posicion_subtitulo": "centro",
+                "color_subtitulo": "#FFE600", "color_borde_subtitulo": "#000000", "transicion": "corte", "zoom": "fuerte",
+                "barra_progreso": False, "consejos": ["Usa memes y b-roll entre explicaciones", "Cámara en mano en las pruebas"]}
     if "opcion" in props:
         return {"opcion": random.randint(1, 3), "razon": "Se parece más a tus referencias (demo)."}
     if "acciones" in props:

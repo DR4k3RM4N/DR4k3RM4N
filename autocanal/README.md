@@ -93,8 +93,11 @@ Desde la oficina, sin terminal:
 - **Miniaturas (Dani):** sube de 3 a 10 miniaturas que te gusten, tu cara (PNG sin fondo) y tu
   tipografía. Dani estudia el estilo (fondo, colores, posición del texto, flechas, marcos) y cada
   video sale con **3 opciones**; elige la más parecida a tus referencias y tú la cambias en la revisión.
-- **Edición (Edu):** subtítulos grandes estilo shorts o clásicos, transiciones (variadas, deslizar,
-  fundido o corte), barra de progreso, sonido en los cambios de escena, música, intro y outro.
+- **Edición (Edu):** sube un **video de referencia** con la edición que te gusta y Edu lo estudia: mide
+  su ritmo (cortes por minuto) y revisa cuadros con visión (subtítulos, colores, zoom, transiciones) para
+  ajustar todo solo. También a mano: subtítulos grandes o clásicos, palabras por línea, mayúsculas,
+  posición, transiciones, movimiento (suave/medio/fuerte), golpes de zoom al ritmo, barra de progreso,
+  sonido en los cambios de escena, música, intro y outro.
 - **Blog (Rosa):** pega enlaces a tus mejores entradas; Rosa aprende cómo escribes. Cada post usa
   investigación SEO de Google (lo que pregunta la gente, búsquedas relacionadas, competencia), elige
   palabra clave y secundarias, y enlaza 2–3 de tus otras entradas.

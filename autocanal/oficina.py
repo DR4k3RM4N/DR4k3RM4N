@@ -87,6 +87,7 @@ ACCION = {
     "guion": "Escribir el guion", "voz": "Narrar el guion", "miniatura": "Diseñar la miniatura",
     "video": "Editar el video", "blog": "Escribir el post del blog", "publicar": "Publicar en YouTube y el blog",
     "estilo_miniaturas": "Estudiar tus miniaturas", "estilo_blog": "Estudiar tus entradas del blog",
+    "estilo_video": "Estudiar tu video de referencia",
 }
 QUE_ES = {"investigar": "el expediente de Iván", "guion": "el guion de Gabi", "voz": "la narración de Leo"}
 ACTIVAS = ("esperando", "en_cola", "trabajando")
@@ -754,7 +755,8 @@ class Oficina:
 
     # ---------- estilo ----------
     def estudiar(self, que: str, urls: list[str] | None = None) -> None:
-        agente, etapa = ("disenadora", "estilo_miniaturas") if que == "miniaturas" else ("redactora", "estilo_blog")
+        agente, etapa = {"miniaturas": ("disenadora", "estilo_miniaturas"), "video": ("editor", "estilo_video")}.get(
+            que, ("redactora", "estilo_blog"))
         threading.Thread(target=self._estudiar, args=(agente, etapa, urls or []), daemon=True).start()
 
     def _estudiar(self, agente: str, etapa: str, urls: list[str]) -> None:
@@ -762,12 +764,16 @@ class Oficina:
         with self.turnos[agente]:
             self.tarea(t, estado="trabajando", inicio=time.time())
             self.poner(agente, estado="trabajando")
-            self.decir(agente, "¡Déjame ver tus miniaturas!" if agente == "disenadora" else "Voy a leer tus entradas…")
+            self.decir(agente, {"disenadora": "¡Déjame ver tus miniaturas!", "editor": "A ver cómo está editado ese video…"}
+                       .get(agente, "Voy a leer tus entradas…"))
             ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, etapa, t
             try:
                 if agente == "disenadora":
                     r = estilo.estudiar_miniaturas()
                     resumen = r["descripcion"]
+                elif agente == "editor":
+                    r = estilo.estudiar_video()
+                    resumen = f"{r['descripcion']} (≈{r['cortes_por_minuto']:.0f} cortes por minuto)"
                 else:
                     r = estilo.estudiar_blog(urls)
                     resumen = f"Leí {r['leidas']} entradas. {r['resumen']}"
@@ -1130,8 +1136,10 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json(oficina.descartar_ideas())
             if ruta == "/api/estilo/estudiar":
                 que = datos.get("que")
-                if que not in ("miniaturas", "blog"):
+                if que not in ("miniaturas", "blog", "video"):
                     return self._json({"error": "¿qué estudio?"}, 400)
+                if que == "video" and not estilo.archivo("referencia"):
+                    return self._json({"error": "Primero sube un video de referencia."}, 400)
                 if que == "miniaturas" and not estilo.referencias():
                     return self._json({"error": "Primero sube ejemplos de miniaturas."}, 400)
                 urls = [str(u)[:500] for u in datos.get("urls", [])][:6]

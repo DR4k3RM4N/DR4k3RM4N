@@ -442,6 +442,7 @@
     cara: ["Tu cara (PNG sin fondo)", ".png"], fuente: ["Tu tipografía (.ttf)", ".ttf,.otf"],
     musica: ["Música de fondo", ".mp3,.m4a,.wav"], whoosh: ["Sonido en cambios de escena", ".mp3,.wav,.m4a"],
     intro: ["Intro de tu canal", ".mp4,.mov,.webm"], outro: ["Cierre / outro", ".mp4,.mov,.webm"],
+    referencia: ["Video de referencia (cómo te gusta la edición)", ".mp4,.mov,.webm,.mkv"],
   };
 
   function subida(tipo, tiene) {
@@ -472,9 +473,21 @@
       </section>
       <section class="tarjeta estilo-sec" style="--c:#ef4444">
         <h4>🎬 Edición · Edu</h4>
+        <p class="pista">Sube un video (tuyo o de otro canal) con la edición que te gusta. Edu mide su ritmo, revisa sus
+          subtítulos y movimientos, y ajusta todo esto solo. Hasta 300 MB; con 1 o 2 minutos basta.</p>
+        ${subida("referencia", e.archivos.referencia)}
+        <div class="acciones"><button class="btn btn-primario" data-estudiar="video" ${e.archivos.referencia ? "" : "disabled"}>🎞️ Que Edu estudie la edición</button></div>
+        ${e.edicion ? `<div class="aprendido"><b>Lo que aprendió:</b> ${esc(e.edicion.descripcion)}
+          <br><small>Ritmo: ≈${esc(e.edicion.cortes_por_minuto)} cortes por minuto</small>
+          ${(e.edicion.consejos || []).length ? `<details><summary>Lo que tendrías que agregar tú</summary><ul>${e.edicion.consejos.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}</div>` : ""}
         <div class="ajustes">
           <label>Subtítulos ${sel("subtitulos", [["grande", "Grandes (estilo shorts)"], ["clasico", "Clásicos"]])}</label>
           <label>Transiciones ${sel("transicion", [["variado", "Variadas"], ["deslizar", "Deslizar"], ["fundido", "Fundido"], ["corte", "Corte directo"]])}</label>
+          <label>Palabras por subtítulo ${sel("palabras_subtitulo", [[0, "Auto"], [1, "1"], [2, "2"], [3, "3"], [4, "4"], [5, "5"], [7, "7"]])}</label>
+          <label>Posición ${sel("posicion_subtitulo", [["abajo", "Abajo"], ["centro", "Centro"]])}</label>
+          <label>Movimiento ${sel("zoom", [["suave", "Suave"], ["medio", "Medio"], ["fuerte", "Fuerte"]])}</label>
+          <label>Ritmo (golpes de zoom) ${sel("corte_cada", [[0, "Sin golpes"], [1.5, "Cada 1.5 s"], [2, "Cada 2 s"], [3, "Cada 3 s"], [4, "Cada 4 s"], [6, "Cada 6 s"]])}</label>
+          ${chk("mayusculas_subtitulo", "Subtítulos en MAYÚSCULAS")}
           ${chk("barra_progreso", "Barra de progreso")}${chk("sonido_cambios", "Sonido en cada cambio de escena")}
         </div>
         ${subida("musica", e.archivos.musica)}${subida("whoosh", e.archivos.whoosh)}${subida("intro", e.archivos.intro)}${subida("outro", e.archivos.outro)}
@@ -514,7 +527,8 @@
       return pintarEstilo();
     }
     if (el.dataset.ajuste) {
-      const v = el.type === "checkbox" ? el.checked : el.dataset.ajuste === "opciones_miniatura" ? Number(el.value) : el.value;
+      const numericos = ["opciones_miniatura", "palabras_subtitulo", "corte_cada"];
+      const v = el.type === "checkbox" ? el.checked : numericos.includes(el.dataset.ajuste) ? Number(el.value) : el.value;
       try { await api("/api/estilo/ajustes", { [el.dataset.ajuste]: v }); } catch (err) { alert(err.message); }
     }
   });
@@ -531,7 +545,8 @@
       const urls = $("#blog-urls").value.split(/\s+/).filter((u) => u.startsWith("http"));
       try {
         await api("/api/estilo/estudiar", { que: b.dataset.estudiar, urls });
-        b.textContent = b.dataset.estudiar === "miniaturas" ? "Dani está estudiando… (míralo en la oficina)" : "Rosa está leyendo… (míralo en la oficina)";
+        b.textContent = { miniaturas: "Dani está estudiando…", video: "Edu está viendo el video…" }[b.dataset.estudiar] || "Rosa está leyendo…";
+        b.textContent += " (míralo en la oficina)";
         b.disabled = true;
         setTimeout(pintarEstilo, 45000);
       } catch (err) { alert(err.message); }
