@@ -185,6 +185,12 @@ Cada agente usa el modelo más barato que da buen resultado para su trabajo:
 | Gabi (guion) | Sonnet 5.5 | Es lo que se escucha en el video |
 | Rosa (blog) | Haiku 5.5 | Ordenar la investigación en un post |
 
+**Búsqueda en Google casi gratis:** con `SERPER_API_KEY` (resultados de Google) y/o `TAVILY_API_KEY`
+(texto de las páginas), Iván hace 8 búsquedas por app (¿paga?, estafa, Reddit, retiros, desarrollador…)
+y Haiku las lee y saca hechos con su fuente; solo se aceptan URLs que de verdad salieron en la búsqueda.
+Paola también busca en Google cuando le pides un **tema**; si le pides **una app concreta**
+(*la app Cash Gato*), la busca solo en Play Store.
+
 Además se recortó lo que se le manda a Iván (5 búsquedas, 3 capturas reducidas, 40 reseñas) y
 piensan menos en las tareas fáciles. Estimado: **unos $0.15–0.35 USD por video**.
 

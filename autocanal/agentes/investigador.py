@@ -10,7 +10,7 @@ import json
 import re
 from pathlib import Path
 
-from . import claude, config, playstore
+from . import buscar_web, claude, config, playstore
 
 SYSTEM_WEB = """Eres investigador de fraudes en apps móviles para un canal de YouTube en español.
 Busca en internet información verificable sobre la app que te pidan: reportes de usuarios \
@@ -18,6 +18,81 @@ Busca en internet información verificable sobre la app que te pidan: reportes d
 pruebas de pago reales, el pago mínimo y cuánto tarda en alcanzarse, cambios de nombre o clones.
 Reporta hechos con su fuente. Distingue claramente entre lo comprobado y lo que solo dicen usuarios. \
 Si no encuentras nada, dilo; no rellenes."""
+
+SYSTEM_LEER_WEB = """Eres investigador de fraudes en apps móviles para un canal de YouTube en español.
+Te paso resultados de búsquedas en Google y otros sitios sobre una app. Léelos y saca solo hechos útiles para saber si la app paga o engaña: reportes de usuarios (Reddit, foros, Trustpilot, YouTube), noticias, quién es el desarrollador, pruebas de pago, pago mínimo y cuánto tarda, cambios de nombre o clones.
+
+Reglas:
+- Cada hallazgo lleva la URL exacta del resultado de donde sale. No inventes URLs ni datos.
+- Distingue lo comprobado (noticia, documento) de lo que solo dicen usuarios.
+- Ignora resultados que hablan de otra app con nombre parecido, y la publicidad de la propia app.
+- Si casi no hay nada útil, dilo en el informe; no rellenes."""
+
+SCHEMA_WEB = {
+    "type": "object",
+    "properties": {
+        "informe": {"type": "string", "description": "Resumen de lo encontrado, máximo 200 palabras"},
+        "hallazgos": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "hecho": {"type": "string"},
+                "tipo": {"type": "string", "enum": ["comprobado", "reporte_de_usuarios", "dato_del_desarrollador"]},
+                "url": {"type": "string"},
+            },
+            "required": ["hecho", "tipo", "url"],
+            "additionalProperties": False,
+        }},
+    },
+    "required": ["informe", "hallazgos"],
+    "additionalProperties": False,
+}
+
+
+def consultas_para(ficha: dict) -> list[str]:
+    """Qué buscar en Google sobre la app. Como cada búsqueda cuesta casi nada, se busca de varios ángulos."""
+    app, dev = ficha["title"].split(":")[0].split(" - ")[0].strip(), (ficha.get("developer") or "").strip()
+    consultas = [
+        f'"{app}" app paga o es estafa',
+        f'"{app}" no paga retiro',
+        f'"{app}" reddit',
+        f'"{app}" opiniones pago mínimo',
+        f'"{app}" scam payout proof',
+        f'"{app}" trustpilot OR reclamos OR denuncia',
+        f'"{app}" youtube prueba de pago',
+    ]
+    if dev:
+        consultas.append(f'"{dev}" desarrollador apps')
+    extra = int(config.env("BUSQUEDAS_INVESTIGACION", str(len(consultas))) or len(consultas))
+    return consultas[:max(1, extra)]
+
+
+def investigar_google(ficha: dict) -> tuple[str, list[dict], int]:
+    """Busca en Google/Tavily y Haiku lee los resultados. Devuelve (informe, fuentes, búsquedas)."""
+    consultas = consultas_para(ficha)
+    print(f"  · buscando en internet ({', '.join(buscar_web.proveedores())}): {len(consultas)} búsquedas")
+    resultados, conteo = buscar_web.buscar(consultas)
+    gasto = buscar_web.costo(conteo)
+    if claude.al_gastar and gasto:
+        claude.al_gastar(getattr(claude.contexto, "proyecto", None), getattr(claude.contexto, "etapa", None),
+                         "búsqueda", gasto, 0, 0, f"Google ({sum(conteo.values())} búsquedas)")
+    if not resultados:
+        return "No se encontró nada en internet sobre esta app.", [], sum(conteo.values())
+    lista = "\n\n".join(f"[{i}] {r['titulo']} — {r['url']}\n{r.get('fecha', '')} {r['texto']}"
+                         for i, r in enumerate(resultados[:60]))
+    leido = claude.json_estructurado(
+        SYSTEM_LEER_WEB,
+        f"APP: {ficha['title']} ({ficha['appId']}) de {ficha.get('developer')}\n"
+        f"Qué promete: {ficha.get('summary')}\n\nRESULTADOS DE BÚSQUEDA:\n{lista}",
+        SCHEMA_WEB, tarea="leer_web", que="leer resultados")
+    urls = {r["url"]: r["titulo"] for r in resultados}
+    fuentes, vistas = [], set()
+    for h in leido["hallazgos"]:
+        if h["url"] in urls and h["url"] not in vistas:  # solo URLs que de verdad salieron en la búsqueda
+            vistas.add(h["url"])
+            fuentes.append({"titulo": urls[h["url"]] or h["url"], "url": h["url"]})
+    hallazgos = "\n".join(f"- [{h['tipo']}] {h['hecho']} ({h['url']})" for h in leido["hallazgos"] if h["url"] in urls)
+    return f"{leido['informe']}\n\nHALLAZGOS:\n{hallazgos}", fuentes[:15], sum(conteo.values())
+
 
 SYSTEM_EXPEDIENTE = """Eres el editor de investigación de un canal que analiza apps que prometen \
 pagar dinero. Con la evidencia que te dan, armas un expediente para el video.
@@ -129,9 +204,15 @@ def analizar(datos: dict, carpeta: Path, con_web: bool = True) -> dict:
     ficha, resenas, imagenes = datos["ficha"], datos["resenas"], datos["imagenes"]
 
     informe_web, fuentes = "", []
-    usar_web, motivo = necesita_web(resenas) if con_web else (False, "sin búsqueda web")
+    modo = config.env("INVESTIGACION_WEB", "auto").lower()
+    if con_web and modo != "nunca" and buscar_web.disponible():
+        # Búsqueda barata (Serper/Tavily + Haiku): siempre vale la pena
+        informe_web, fuentes, n = investigar_google(ficha)
+        usar_web, motivo = True, f"{n} búsquedas en Google/Tavily"
+    else:
+        usar_web, motivo = necesita_web(resenas) if con_web else (False, "sin búsqueda web")
     print(f"  · internet: {'sí' if usar_web else 'no'} ({motivo})")
-    if usar_web:
+    if usar_web and not informe_web:
         print("  · investigando en internet (Claude + búsqueda web)")
         informe_web, fuentes = claude.investigar_web(
             SYSTEM_WEB,

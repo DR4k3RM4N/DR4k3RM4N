@@ -40,7 +40,7 @@ def _datos(app_id: str):
     return (app_id, app_id.split(".")[-1].title(), (200, 120, 60))
 
 
-def ideas(cuantas: int = 5, guia: str = "") -> list[dict]:
+def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
     _pausa(4, 7)
     hechas = set(buscador.historial())
     pool = [a for a in APPS if a[0] not in hechas] or APPS

@@ -460,7 +460,7 @@ class Oficina:
         self.decir("productora", "¡Voy! Busco apps nuevas en Play Store" + (f" ({guia})" if guia else ""))
         try:
             gustos = "\n".join(f"- {p}" for p in self.preferencias[-15:])
-            candidatas = buscador.ideas(5, gustos)
+            candidatas = buscador.ideas(5, gustos, pedido=guia)
         except Exception as exc:  # noqa: BLE001
             self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
             self.poner("productora", estado="libre")
