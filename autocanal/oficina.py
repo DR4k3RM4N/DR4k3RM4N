@@ -213,11 +213,33 @@ class Oficina:
             self.decir("productora", f"Uy, no pude buscar ideas: {exc}")
             return
         with self.lock:
+            # no repetir apps que ya están en la bandeja o que ya son proyecto
+            ya = {p["app_id"] for p in self.propuestas if p["estado"] == "pendiente"} | set(self.proyectos)
+            nuevas = []
             for c in candidatas:
+                if c["app_id"] in ya:
+                    continue
+                ya.add(c["app_id"])
+                nuevas.append(c)
                 self.propuestas.append({**c, "id": uuid.uuid4().hex[:8], "estado": "pendiente",
                                         "creado": time.time(), "comentarios": []})
         self.poner("productora", estado="libre")
-        self.avisar_jefe(f"¡Jefe! Te traje {len(candidatas)} ideas. ¿Qué opinas? Están en tu bandeja.")
+        if nuevas:
+            self.avisar_jefe(f"¡Jefe! Te traje {len(nuevas)} ideas. ¿Qué opinas? Están en tu bandeja.")
+        else:
+            self.decir("productora", "Jefe, no encontré apps nuevas; las que vi ya están en tu bandeja.")
+
+    def descartar_ideas(self) -> dict:
+        """Limpia la bandeja de ideas sin contarlo como 'no me gustó' (no afecta lo que Paola aprende)."""
+        with self.lock:
+            n = 0
+            for p in self.propuestas:
+                if p["estado"] == "pendiente":
+                    p["estado"], n = "descartada", n + 1
+            self.log.append({"t": time.time(), "quien": "jefe", "texto": f"🧹 Limpió la bandeja ({n} ideas)"})
+            self._tocar()
+        threading.Thread(target=self.decir, args=("productora", "Listo jefe, bandeja limpia."), daemon=True).start()
+        return {"ok": True, "descartadas": n}
 
     def responder_idea(self, pid: str, accion: str, texto: str = "") -> dict:
         with self.lock:
@@ -537,6 +559,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             except json.JSONDecodeError:
                 return self._json({"error": "JSON inválido"}, 400)
             ruta = urlparse(self.path).path
+            if ruta == "/api/ideas/descartar":
+                return self._json(oficina.descartar_ideas())
             if ruta == "/api/ideas":
                 oficina.pedir_ideas(str(datos.get("guia", ""))[:500])
                 return self._json({"ok": True})

@@ -74,7 +74,8 @@
           </div>
         </article>`;
     }
-    html += `<h3 class="seccion">Ideas de Paola ${ideas.length ? `<span class="sub">¿qué opinas?</span>` : ""}</h3>`;
+    html += `<h3 class="seccion">Ideas de Paola ${ideas.length ? `<span class="sub">¿qué opinas?</span>` : ""}
+      ${ideas.length > 1 ? `<button class="btn btn-mini" id="b-limpiar">🧹 Descartar todas</button>` : ""}</h3>`;
     if (!ideas.length) {
       html += `<p class="vacio">No hay ideas pendientes. Pídele a Paola que busque apps nuevas.</p>`;
     }
@@ -116,6 +117,12 @@
   $("#bandeja").addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b) return;
+    if (b.id === "b-limpiar") {
+      if (!confirm(`¿Descartar las ${estado.propuestas.length} ideas de la bandeja? Paola no lo tomará como que no te gustaron.`)) return;
+      b.disabled = true;
+      try { await api("/api/ideas/descartar", {}); } catch (err) { alert(err.message); b.disabled = false; }
+      return;
+    }
     if (b.dataset.abrir) {
       abiertos.add(b.dataset.abrir);
       const caja = b.closest(".tarjeta").querySelector(".opinion");
