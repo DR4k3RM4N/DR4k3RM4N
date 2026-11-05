@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from pathlib import Path
 
 from . import claude, config, playstore
@@ -103,11 +104,34 @@ def recolectar(app_id: str, carpeta: Path) -> dict:
     return {"ficha": ficha, "resenas": resenas, "imagenes": imagenes}
 
 
+QUEJAS = re.compile(r"no pag|nunca pag|no me pag|no me han pag|estafa|fraude|scam|enga[ñn]|mentira|no deja (retirar|cobrar)|"
+                    r"no puedo (retirar|cobrar)|retir|no llega|nunca llega|pura publicidad|demasiados anuncios", re.I)
+
+
+def necesita_web(resenas: list[dict]) -> tuple[bool, str]:
+    """Las reseñas son gratis; internet cuesta. Si ya hay muchas quejas claras, con eso basta.
+
+    INVESTIGACION_WEB en .env: auto (por defecto) · siempre · nunca."""
+    modo = config.env("INVESTIGACION_WEB", "auto").lower()
+    if modo == "siempre":
+        return True, "siempre activada en .env"
+    if modo == "nunca":
+        return False, "desactivada en .env"
+    malas = [r for r in resenas if (r.get("estrellas") or 5) <= 2]
+    quejas = [r for r in malas if QUEJAS.search(r.get("texto") or "")]
+    minimo = int(config.env("QUEJAS_SUFICIENTES", "8") or 8)
+    if len(quejas) >= minimo:
+        return False, f"{len(quejas)} reseñas ya reportan que no paga o engaña"
+    return True, f"solo {len(quejas)} quejas claras en reseñas; falta evidencia"
+
+
 def analizar(datos: dict, carpeta: Path, con_web: bool = True) -> dict:
     ficha, resenas, imagenes = datos["ficha"], datos["resenas"], datos["imagenes"]
 
     informe_web, fuentes = "", []
-    if con_web:
+    usar_web, motivo = necesita_web(resenas) if con_web else (False, "sin búsqueda web")
+    print(f"  · internet: {'sí' if usar_web else 'no'} ({motivo})")
+    if usar_web:
         print("  · investigando en internet (Claude + búsqueda web)")
         informe_web, fuentes = claude.investigar_web(
             SYSTEM_WEB,
@@ -136,9 +160,10 @@ def analizar(datos: dict, carpeta: Path, con_web: bool = True) -> dict:
         f"Las imágenes de arriba son las capturas 1 a {len(contenido)} en orden. Arma el expediente."
     )})
     print("  · armando expediente")
-    exp = claude.json_estructurado(SYSTEM_EXPEDIENTE, contenido, SCHEMA, tarea="investigar")
+    exp = claude.json_estructurado(SYSTEM_EXPEDIENTE, contenido, SCHEMA, tarea="investigar", que="expediente")
     exp["resenas_citadas"] = [muestra[i] for i in exp["resenas_destacadas"] if 0 <= i < len(muestra)][:6]
     exp["fuentes_web"] = fuentes
     exp["informe_web"] = informe_web
+    exp["investigacion_web"] = ("hecha" if usar_web else "omitida") + f": {motivo}"
     playstore.guardar(carpeta, "expediente.json", exp)
     return exp

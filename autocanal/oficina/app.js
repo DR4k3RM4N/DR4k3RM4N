@@ -370,6 +370,7 @@
           ${t.fin && t.inicio ? `<div class="tarea-tiempo">${t.estado === "hecha" ? "✔" : "✖"} en ${duracion(t.fin - t.inicio)} · ${haceCuanto(t.fin)}</div>` : ""}
           ${t.resultado ? `<div class="tarea-sub">${esc(t.resultado)}</div>` : ""}
           ${t.costo ? `<div class="tarea-tiempo">💰 ${dinero(t.costo)} · ${esc((t.modelo || "").replace("claude-", ""))}</div>` : ""}
+          ${(t.llamadas || []).length > 1 ? `<ul class="desglose">${t.llamadas.map((l) => `<li>${esc(l.que)} <b>${dinero(l.costo)}</b> <small>${(l.entrada / 1000).toFixed(1)}k entrada · ${(l.salida / 1000).toFixed(1)}k salida</small></li>`).join("")}</ul>` : ""}
           ${t.error ? `<div class="tarea-error">${esc(t.error)}</div>` : ""}
         </li>`;
       cont.innerHTML = `<button class="btn btn-mini volver" data-volver>← Todo el equipo</button>

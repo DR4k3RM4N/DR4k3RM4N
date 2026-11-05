@@ -337,7 +337,7 @@ class Oficina:
     def _hoy(self) -> str:
         return dt.datetime.now(ZoneInfo(IDEAS_ZONA)).date().isoformat()
 
-    def _gasto(self, proyecto, etapa, modelo, usd, entrada, salida) -> None:
+    def _gasto(self, proyecto, etapa, modelo, usd, entrada, salida, que: str = "") -> None:
         """Lo llama agentes/claude.py después de cada llamada: suma al video, a la tarea y al día."""
         with self.lock:
             dia = self._hoy()
@@ -346,6 +346,9 @@ class Oficina:
             if t is not None:
                 t["costo"] = t.get("costo", 0) + usd
                 t["modelo"] = modelo
+                t.setdefault("llamadas", []).append({"que": que or etapa, "modelo": modelo, "costo": usd,
+                                                     "entrada": entrada, "salida": salida})
+                t["llamadas"] = t["llamadas"][-8:]
             p = self.proyectos.get(proyecto) if proyecto else None
             if p is not None:
                 p["costo"] = p.get("costo", 0) + usd

@@ -20,7 +20,7 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 # Modelo y esfuerzo de pensamiento por tarea. El esfuerzo bajo gasta menos tokens.
 TAREAS = {
     "ideas": ("claude-haiku-5-5", "low"),          # elegir apps de una lista: sencillo
-    "investigar": ("claude-sonnet-5-5", "medium"),  # evidencia y veredicto: delicado (y la búsqueda web lo pide)
+    "investigar": ("claude-sonnet-5-5", "low"),     # evidencia y veredicto: delicado (y la búsqueda web lo pide)
     "guion": ("claude-sonnet-5-5", "medium"),       # lo que se escucha en el video
     "blog": ("claude-haiku-5-5", "low"),            # ordenar la investigación en un post
     "whatsapp": ("claude-haiku-5-5", "low"),        # entender lo que escribes por WhatsApp
@@ -35,7 +35,7 @@ PRECIO_BUSQUEDA = 10.0 / 1000  # USD por búsqueda web
 
 # Quién está gastando (la oficina lo pone en cada hilo de trabajo) y a quién avisar del gasto.
 contexto = threading.local()
-al_gastar = None  # función(proyecto, etapa, modelo, costo_usd, tokens_entrada, tokens_salida)
+al_gastar = None  # función(proyecto, etapa, modelo, costo_usd, tokens_entrada, tokens_salida, que)
 
 
 class ErrorIA(Exception):
@@ -60,15 +60,18 @@ def costo(modelo: str, usage) -> float:
     return ((entrada + escribe * 1.25 + lee * 0.1) * base_in + salida * base_out) / 1e6 + busquedas * PRECIO_BUSQUEDA
 
 
-def _registrar(response, modelo_pedido: str) -> None:
+def _registrar(response, modelo_pedido: str, que: str = "") -> None:
     modelo = getattr(response, "model", None) or modelo_pedido
     usd = costo(modelo, response.usage)
     entrada = response.usage.input_tokens or 0
     salida = response.usage.output_tokens or 0
-    print(f"    [{modelo}] {entrada:,} tokens de entrada, {salida:,} de salida ≈ ${usd:.4f}")
+    busquedas = getattr(getattr(response.usage, "server_tool_use", None), "web_search_requests", 0) or 0
+    print(f"    [{modelo}] {que}: {entrada:,} tokens de entrada, {salida:,} de salida"
+          + (f", {busquedas} búsquedas" if busquedas else "") + f" ≈ ${usd:.4f}", flush=True)
     if al_gastar:
         try:
-            al_gastar(getattr(contexto, "proyecto", None), getattr(contexto, "etapa", None), modelo, usd, entrada, salida)
+            al_gastar(getattr(contexto, "proyecto", None), getattr(contexto, "etapa", None), modelo, usd, entrada, salida,
+                      que + (f" ({busquedas} búsquedas)" if busquedas else ""))
         except Exception:  # noqa: BLE001 — medir nunca debe romper el trabajo
             log.exception("al registrar gasto")
 
@@ -95,7 +98,8 @@ def _texto(response) -> str:
     return "\n".join(b.text for b in response.content if b.type == "text").strip()
 
 
-def json_estructurado(system: str, contenido, schema: dict, tarea: str = "guion", effort: str | None = None) -> dict:
+def json_estructurado(system: str, contenido, schema: dict, tarea: str = "guion", effort: str | None = None,
+                      que: str | None = None) -> dict:
     """Pide a Claude un JSON que cumple `schema`. `contenido` puede ser texto o bloques (imágenes)."""
     modelo, esfuerzo = modelo_de(tarea)
     try:
@@ -112,7 +116,7 @@ def json_estructurado(system: str, contenido, schema: dict, tarea: str = "guion"
         raise ErrorIA(f"Error de la API de Claude {exc.status_code}: {exc.message}") from exc
     except anthropic.APIConnectionError as exc:
         raise ErrorIA("No hubo conexión con la API de Claude.") from exc
-    _registrar(response, modelo)
+    _registrar(response, modelo, que or tarea)
     _revisar(response)
     try:
         return json.loads(_texto(response))
@@ -120,7 +124,7 @@ def json_estructurado(system: str, contenido, schema: dict, tarea: str = "guion"
         raise ErrorIA("Claude devolvió un JSON inválido.") from exc
 
 
-def investigar_web(system: str, pregunta: str, tarea: str = "investigar", max_busquedas: int = 5) -> tuple[str, list[dict]]:
+def investigar_web(system: str, pregunta: str, tarea: str = "investigar", max_busquedas: int = 3) -> tuple[str, list[dict]]:
     """Investiga con búsqueda web. Devuelve (informe en texto, fuentes citadas)."""
     modelo, esfuerzo = modelo_de(tarea)
     # La búsqueda con filtrado dinámico es de Sonnet/Opus; otros modelos usan la versión básica.
@@ -140,7 +144,7 @@ def investigar_web(system: str, pregunta: str, tarea: str = "investigar", max_bu
                 **_extras(modelo),
             ) as stream:
                 response = stream.get_final_message()
-            _registrar(response, modelo)
+            _registrar(response, modelo, "búsqueda web")
             if response.stop_reason != "pause_turn":
                 break
             messages.append({"role": "assistant", "content": response.content})

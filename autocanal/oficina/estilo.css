@@ -236,6 +236,9 @@ details a { color: var(--acento); }
 .tarea-espera { color: #fde68a; font-size: 12px; margin-top: 3px; }
 .tarea-tiempo { font-size: 11.5px; color: var(--suave); margin-top: 3px; font-family: ui-monospace, monospace; }
 .tarea-error { color: #fca5a5; font-size: 12px; margin-top: 3px; }
+.desglose { list-style: none; padding: 0; margin: 4px 0 0; font-size: 11.5px; color: var(--suave); }
+.desglose li { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.desglose b { color: var(--texto); }
 .barra-tarea { height: 5px; background: rgba(255,255,255,.1); border-radius: 3px; overflow: hidden; margin-top: 5px; }
 .barra-tarea b { display: block; height: 100%; background: var(--verde); }
 .frases { list-style: none; padding: 0; margin: 0; font-size: 12.5px; color: var(--suave); }

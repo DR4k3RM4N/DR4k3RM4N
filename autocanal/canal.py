@@ -178,7 +178,8 @@ def _reporte(carpeta, ficha, exp, guion, entrada, video, mini) -> None:
     dur = sum(e.get("duracion", 0) for e in guion["escenas"])
     l = [f"# Revisión: {ficha['title']}", "",
          f"- Video: `{video.name}` ({dur / 60:.1f} min) · Miniatura: `{mini.name}` · Blog: `blog_preview.html`",
-         f"- **Veredicto:** {exp['veredicto']}", f"- {exp['resumen']}", "",
+         f"- **Veredicto:** {exp['veredicto']}", f"- {exp['resumen']}",
+         f"- Búsqueda en internet: {exp.get('investigacion_web', 'hecha')}", "",
          "## Antes de publicar, comprueba tú mismo", *[f"- [ ] {p}" for p in exp["pendiente_de_probar"]],
          "- [ ] Cada afirmación del guion está respaldada abajo", "",
          "## Señales y evidencia"]
