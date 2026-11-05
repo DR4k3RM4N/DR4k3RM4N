@@ -39,7 +39,8 @@ const PIN_SCRIPT = `(() => {
       const p = window.__mltPin;
       if (!p.st.isConnected && document.head) document.head.appendChild(p.st);
       const vids = [...document.querySelectorAll('video')].filter((x) => x.clientWidth > 30);
-      const v = vids.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+      const sc = (e) => (e.readyState >= 2 && !e.paused && e.videoWidth ? 1e9 : 0) + e.clientWidth * e.clientHeight;
+      const v = vids.sort((a, b) => sc(b) - sc(a))[0];
       document.querySelectorAll('[data-mlt-pin]').forEach((x) => { if (x !== v) x.removeAttribute('data-mlt-pin'); });
       if (v) v.setAttribute('data-mlt-pin', '');
       p.st.textContent = p.on ? 'html,body{overflow:hidden!important;background:#000!important}' +

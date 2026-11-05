@@ -5,7 +5,8 @@ const MONITOR_EVERY = 15000; // cada cuánto se revisa que cada live siga transm
 const ALERT_AFTER = 30000;   // un live debe seguir mal este tiempo antes de avisar (ms)
 const CHECKS_TO_DECIDE = 3;  // revisiones seguidas con la misma falla para darla por buena (~30-45 s)
 const RETRY_EVERY = 60000;   // cada cuánto se reintenta un live caído (ms)
-const RETRY_ENDED = 120000;  // cada cuánto se revisa si un live terminado volvió (ms)
+const MAX_AUTO_RELOADS = 2;  // recargas automáticas como máximo por una falla de imagen
+const RETRY_ENDED = 180000;  // cada cuánto se revisa si un live terminado volvió (ms)
 
 const $ = (id) => document.getElementById(id);
 const grid = $('grid');
@@ -213,10 +214,14 @@ function setStatus(user, text, kind) {
   const t = tiles.get(user);
   if (!t) return;
   t.statusEl.textContent = text;
-  t.statusEl.title = text;
+  // Al pasar el mouse por el estado se ven detalles técnicos (útiles para reportar fallas).
+  const dg = t.diag;
+  t.statusEl.title = text + (dg ? `\nVideos en la página: ${dg.videos} · imagen: ${dg.size || 'sin video'} · listo: ${dg.ready}` : '')
+    + (t.autoReloads ? `\nRecargas automáticas: ${t.autoReloads}` : '');
   t.statusEl.dataset.kind = kind;
   if (kind === 'ok') {
     t.retry = 0;
+    t.autoReloads = 0;
     t.badSince = null;
     t.stuck = 0;
     if (t.alerted) { t.alerted = false; t.el.classList.remove('alert'); recovered(user); }
@@ -238,8 +243,16 @@ const ENDED = [
 ];
 const PROBE = `(() => {
   const text = document.body ? document.body.innerText.slice(0, 20000).toLowerCase() : '';
-  const vids = [...document.querySelectorAll('video')].filter((v) => v.clientWidth > 50 && v.clientHeight > 50);
-  const v = vids.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+  // TikTok puede tener más de un video en la página (por ejemplo, el fondo difuminado o una vista previa).
+  // Se elige el que de verdad se está reproduciendo; entre esos, el más grande.
+  const pick = () => {
+    const vs = [...document.querySelectorAll('video')].filter((e) => e.clientWidth > 50 && e.clientHeight > 50);
+    const score = (e) => (e.readyState >= 2 && !e.paused && e.videoWidth ? 1e9 : 0) + e.clientWidth * e.clientHeight;
+    return vs.sort((a, b) => score(b) - score(a))[0];
+  };
+  window.__mltPick = pick;
+  const allVids = document.querySelectorAll('video').length;
+  const v = pick();
   let dark = null;
   if (v) {
     if (v.readyState < 2 || !v.videoWidth) dark = true; // sin imagen que mostrar
@@ -263,9 +276,9 @@ const PROBE = `(() => {
     const c = document.createElement('canvas'); c.width = 64; c.height = 36;
     const x = c.getContext('2d', { willReadFrequently: true });
     setInterval(() => {
-      const vs = [...document.querySelectorAll('video')].filter((e) => e.clientWidth > 50 && e.clientHeight > 50);
-      const cur = vs.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+      const cur = window.__mltPick();
       if (!cur || cur.readyState < 2 || !cur.videoWidth) { F.last = null; F.lastChange = Date.now(); return; }
+      if (F.el !== cur) { F.el = cur; F.last = null; } // cambió el video que se mide: se empieza de cero
       try {
         x.drawImage(cur, 0, 0, 64, 36);
         const d = x.getImageData(0, 0, 64, 36).data;
@@ -285,7 +298,8 @@ const PROBE = `(() => {
   const F = window.__mltFrame;
   const still = F.ok ? (Date.now() - F.lastChange) / 1000 : null;
   return { text, href: location.href.toLowerCase(), hasVideo: !!v, time: v ? v.currentTime : null,
-    paused: v ? v.paused : null, ended: v ? v.ended : null, dark, still };
+    paused: v ? v.paused : null, ended: v ? v.ended : null, dark, still,
+    diag: { videos: allVids, ready: v ? v.readyState : null, size: v ? v.videoWidth + 'x' + v.videoHeight : null } };
 })()`;
 async function checkLive(user) {
   const t = tiles.get(user);
@@ -299,6 +313,7 @@ async function checkLive(user) {
   t.lastTime = r.hasVideo ? r.time : null;
   const advancing = r.hasVideo && prevTime !== null && Math.abs(r.time - prevTime) >= 0.05;
   if (r.hasVideo) t.everVideo = true;
+  t.diag = r.diag;
 
   // 1) TikTok lo dice con texto, o sacó la página del live (por ejemplo, mandó al perfil).
   const offLive = r.href.includes('tiktok.com') && !r.href.includes(`/@${user}/live`);
@@ -338,9 +353,17 @@ function monitor() {
     if (offline || t.loading) continue;
     if (bad && t.badSince && now - t.badSince >= ALERT_AFTER) {
       // Live caído: se reintenta cada cierto tiempo para saber cuándo vuelve.
+      // Para no dejar un live recargándose sin fin (se vería en negro), las fallas de imagen
+      // se reintentan como máximo MAX_AUTO_RELOADS veces; los lives terminados se revisan con más calma.
       t.retry += MONITOR_EVERY;
-      const every = /terminado|sin transmisión/i.test(t.statusEl.textContent) ? RETRY_ENDED : RETRY_EVERY;
-      if (t.retry >= every) { t.retry = 0; reloadLive(user); continue; }
+      const ended = /terminado|sin transmisión/i.test(t.statusEl.textContent);
+      const every = ended ? RETRY_ENDED : RETRY_EVERY;
+      if (t.retry >= every && (ended || (t.autoReloads || 0) < MAX_AUTO_RELOADS)) {
+        t.retry = 0;
+        t.autoReloads = (t.autoReloads || 0) + 1;
+        reloadLive(user);
+        continue;
+      }
     }
     checkLive(user);
   }
@@ -728,7 +751,8 @@ const GUIDES_SCRIPT = `(() => {
   const place = () => {
     if (mode === 'off') { box.style.display = 'none'; return; }
     const vids = [...document.querySelectorAll('video')].filter((x) => x.clientWidth > 50);
-    const vid = vids.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+    const sc = (e) => (e.readyState >= 2 && !e.paused && e.videoWidth ? 1e9 : 0) + e.clientWidth * e.clientHeight;
+    const vid = vids.sort((a, b) => sc(b) - sc(a))[0];
     if (!vid) { box.style.display = 'none'; return; }
     const r = vid.getBoundingClientRect();
     let x = r.left, y = r.top, w = r.width, hh = r.height;
