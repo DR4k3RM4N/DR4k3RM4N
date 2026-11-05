@@ -111,5 +111,47 @@ def seo(consulta: str) -> dict:
     return salida
 
 
+def imagenes(consulta: str, n: int = 8) -> list[dict]:
+    """Imágenes de Google (Serper) o, si no hay Serper, de Tavily."""
+    salida = []
+    if SERPER:
+        try:
+            r = requests.post("https://google.serper.dev/images", timeout=30,
+                              headers={"X-API-KEY": SERPER, "Content-Type": "application/json"},
+                              json={"q": consulta, "gl": config.CANAL_PAIS, "hl": config.CANAL_IDIOMA, "num": n})
+            r.raise_for_status()
+            salida = [{"url": x.get("imageUrl"), "titulo": x.get("title", ""), "fuente": x.get("link", ""),
+                       "ancho": x.get("imageWidth", 0), "alto": x.get("imageHeight", 0)}
+                      for x in r.json().get("images", []) if x.get("imageUrl")]
+        except (requests.RequestException, ValueError) as exc:
+            print(f"    aviso imágenes: {exc}", flush=True)
+    if not salida and TAVILY:
+        try:
+            r = requests.post("https://api.tavily.com/search", timeout=40,
+                              headers={"Authorization": f"Bearer {TAVILY}", "Content-Type": "application/json"},
+                              json={"query": consulta, "max_results": 5, "include_images": True})
+            r.raise_for_status()
+            salida = [{"url": u if isinstance(u, str) else u.get("url"), "titulo": "", "fuente": "", "ancho": 0, "alto": 0}
+                      for u in r.json().get("images", [])]
+        except (requests.RequestException, ValueError) as exc:
+            print(f"    aviso imágenes: {exc}", flush=True)
+    return [x for x in salida if x["url"]][:n]
+
+
+def ids_play_store(nombre: str) -> list[str]:
+    """Busca en Google el enlace de Play Store de una app (cuando la búsqueda de Play Store no la encuentra)."""
+    import re as _re
+
+    if not disponible():
+        return []
+    resultados, _ = buscar([f"{nombre} app play.google.com", f"{nombre} google play store"], por_consulta=8)
+    ids = []
+    for r in resultados:
+        m = _re.search(r"play\.google\.com/store/apps/details\?(?:[^#]*&)?id=([\w.]+)", r.get("url", ""))
+        if m and m.group(1) not in ids:
+            ids.append(m.group(1))
+    return ids
+
+
 def costo(conteo: dict) -> float:
     return sum(PRECIO.get(p, 0) * n for p, n in conteo.items())

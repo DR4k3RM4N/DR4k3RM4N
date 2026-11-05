@@ -137,8 +137,11 @@ def tarjeta_resena(resena: dict, icono_ruta: str | None, destino: Path) -> Path:
     fi = fuente(56)
     d.text((x0 + 110 - d.textlength(inicial, font=fi) / 2, y0 + 70), inicial, font=fi, fill=BLANCO)
     d.text((x0 + 190, y0 + 60), (resena.get("usuario") or "Usuario")[:40], font=fuente(44), fill=(30, 30, 30))
-    estrellas = int(resena.get("estrellas") or 1)
-    d.text((x0 + 190, y0 + 115), "★" * estrellas + "☆" * (5 - estrellas), font=fuente(40), fill=(251, 188, 4))
+    if resena.get("estrellas"):
+        estrellas = int(resena["estrellas"])
+        d.text((x0 + 190, y0 + 115), "★" * estrellas + "☆" * (5 - estrellas), font=fuente(40), fill=(251, 188, 4))
+    else:  # comentario de internet: se dice de dónde salió
+        d.text((x0 + 190, y0 + 118), f"Comentario en {resena.get('fuente', 'internet')}", font=fuente(34, False), fill=(90, 90, 90))
     d.text((x0 + 420, y0 + 122), resena.get("fecha", ""), font=fuente(30, False), fill=(120, 120, 120))
     texto = resena.get("texto", "")
     if len(texto) > 330:

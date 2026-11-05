@@ -130,6 +130,18 @@ def encontrar_app(nombre: str, hechas: set) -> dict | None:
                                    "resumen": (f.get("summary") or "")[:160]}
         except Exception as exc:  # noqa: BLE001
             print(f"  aviso: no encontré {nombre} en Play Store: {exc}")
+    if buscar_web.disponible():  # la búsqueda de Play Store falla seguido: buscar el enlace en Google
+        for app_id in buscar_web.ids_play_store(nombre)[:3]:
+            if app_id in encontradas:
+                continue
+            try:
+                f = playstore.ficha(app_id)
+                encontradas[app_id] = {"app_id": app_id, "titulo": f.get("title"), "dev": f.get("developer"),
+                                       "score": f.get("score"), "instalaciones": f.get("installs"),
+                                       "resumen": (f.get("summary") or "")[:160],
+                                       **({"ya_la_hiciste": True} if app_id in hechas else {})}
+            except Exception as exc:  # noqa: BLE001
+                print(f"  aviso: {app_id} no se pudo abrir en Play Store: {exc}")
     if not encontradas:
         return None
     r = claude.json_estructurado(
@@ -187,6 +199,15 @@ def _de_internet(consultas: list[str], hechas: set) -> dict[str, dict]:
     return salida
 
 
+def fuera_de_play(nombre: str) -> dict | None:
+    """La app no está en Play Store (se baja por APK o es una página): se investiga solo con Google."""
+    if not buscar_web.disponible():
+        return None
+    slug = re.sub(r"[^a-z0-9]+", "-", nombre.lower()).strip("-")[:50]
+    print(f"  · «{nombre}» no está en Play Store: la investigo con Google")
+    return {"app_id": f"web:{slug}", "titulo": nombre, "fuera_de_play": True, "resumen": "Fuera de Play Store"}
+
+
 def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
     """`guia` = gustos del jefe que Paola aprendió; `pedido` = lo que pidió esta vez.
 
@@ -196,27 +217,22 @@ def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
     tipo, texto, angulo = entender_pedido(pedido)
     print(f"  · pedido: {tipo}" + (f" ({texto})" if texto else "") + (f" — {angulo}" if angulo else ""))
     if tipo == "idea":  # tu idea de video: se respeta tal cual, sin filtrar como "app nueva"
-        app = encontrar_app(texto, hechas)
+        app = encontrar_app(texto, hechas) or fuera_de_play(texto)
         if not app:
-            raise claude.ErrorIA(f"No encontré «{texto}» en Play Store. Si no tiene app (es una página o tarjeta "
-                                 "sin app), por ahora no la puedo investigar.")
+            raise claude.ErrorIA(f"No encontré «{texto}» ni en Play Store ni en Google. ¿Me pasas el nombre exacto?")
         return [{"app_id": app["app_id"], "titulo": app["titulo"], "angulo": angulo or pedido,
-                 "por_que": f"💡 Idea tuya: {pedido}" + (" (ya hiciste un video de esta app)" if app.get("ya_la_hiciste") else ""),
+                 "por_que": f"💡 Idea tuya: {pedido}" + (" (ya hiciste un video de esta app)" if app.get("ya_la_hiciste") else "")
+                 + (" · No está en Play Store: la investigo solo con Google." if app.get("fuera_de_play") else ""),
+                 "fuera_de_play": bool(app.get("fuera_de_play")),
                  "potencial_vistas": "alto", "personalizada": True, "idea_jefe": pedido}]
     if tipo == "app":
-        encontradas = _de_play([texto], hechas, n=8, incluir_hechas=True)
-        if re.fullmatch(r"[a-z][\w]*(\.[\w]+){1,}", texto, flags=re.I) and texto not in encontradas:
-            try:  # nos dio el id exacto (com.empresa.app)
-                f = playstore.ficha(texto)
-                encontradas[texto] = {"app_id": texto, "titulo": f.get("title"), "dev": f.get("developer"),
-                                      "score": f.get("score"), "instalaciones": f.get("installs"),
-                                      "resumen": (f.get("summary") or "")[:160]}
-            except Exception as exc:  # noqa: BLE001
-                print(f"  aviso: no encontré {texto} en Play Store: {exc}")
-        instruccion = (f"El jefe pidió esta app concreta: «{texto}». Devuelve solo las que sean esa app "
-                       f"(máximo 3; si hay varias parecidas, la más probable primero). Si ya la hizo, dilo en 'por_que'.")
-        cuantas = min(cuantas, 3)
-    else:
+        app = encontrar_app(texto, hechas) or fuera_de_play(texto)
+        if not app:
+            raise claude.ErrorIA(f"No encontré «{texto}» ni en Play Store ni en Google.")
+        return [{"app_id": app["app_id"], "titulo": app["titulo"], "angulo": f"¿{app['titulo']} paga o es estafa?",
+                 "por_que": "La pediste tú." + (" No está en Play Store: la investigo solo con Google." if app.get("fuera_de_play") else ""),
+                 "fuera_de_play": bool(app.get("fuera_de_play")), "potencial_vistas": "alto", "personalizada": True}]
+    if True:  # un tema o búsqueda general
         consultas_play = ([texto, f"{texto} ganar dinero", f"{texto} que pagan", f"gana dinero {texto}"]
                           if tipo == "tema" else CONSULTAS)
         encontradas = _de_play(consultas_play, hechas)

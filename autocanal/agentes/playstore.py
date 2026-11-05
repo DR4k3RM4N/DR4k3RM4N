@@ -12,7 +12,10 @@ from . import config
 def ficha(app_id: str) -> dict:
     from google_play_scraper import app
 
-    d = app(app_id, lang=config.CANAL_IDIOMA, country=config.CANAL_PAIS)
+    try:
+        d = app(app_id, lang=config.CANAL_IDIOMA, country=config.CANAL_PAIS)
+    except Exception:  # noqa: BLE001 — algunas apps (casinos, préstamos) no se ven en México
+        d = app(app_id, lang=config.CANAL_IDIOMA, country="us")
     campos = [
         "appId", "title", "summary", "description", "installs", "realInstalls", "score",
         "ratings", "histogram", "developer", "developerEmail", "developerWebsite",

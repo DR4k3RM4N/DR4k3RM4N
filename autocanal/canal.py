@@ -85,8 +85,9 @@ class Produccion:
             datos = {"ficha": _leer(c / "ficha.json"), "resenas": _leer(c / "resenas.json"),
                      "imagenes": _leer(c / "imagenes.json")}
         else:
-            print("  · recolectando datos de Play Store")
-            datos = investigador.recolectar(self.app_id, c)
+            print("  · recolectando datos")
+            origen = _leer(c / "origen.json") or {}
+            datos = investigador.recolectar(self.app_id, c, origen.get("nombre", ""))
         self.ficha, self.imagenes = datos["ficha"], datos["imagenes"]
         self.expediente = _leer(c / "expediente.json")
         if self.expediente is None or "investigar" in self.rehacer:

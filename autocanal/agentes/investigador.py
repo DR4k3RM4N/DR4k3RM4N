@@ -32,6 +32,10 @@ SCHEMA_WEB = {
     "type": "object",
     "properties": {
         "informe": {"type": "string", "description": "Resumen de lo encontrado, máximo 200 palabras"},
+        "comentarios": {"type": "array", "description": "Comentarios de usuarios copiados TAL CUAL de los resultados (máx. 6)",
+                        "items": {"type": "object",
+                                  "properties": {"autor": {"type": "string"}, "texto": {"type": "string"}, "url": {"type": "string"}},
+                                  "required": ["autor", "texto", "url"], "additionalProperties": False}},
         "hallazgos": {"type": "array", "items": {
             "type": "object",
             "properties": {
@@ -43,7 +47,7 @@ SCHEMA_WEB = {
             "additionalProperties": False,
         }},
     },
-    "required": ["informe", "hallazgos"],
+    "required": ["informe", "comentarios", "hallazgos"],
     "additionalProperties": False,
 }
 
@@ -68,6 +72,7 @@ def consultas_para(ficha: dict) -> list[str]:
 
 def investigar_google(ficha: dict) -> tuple[str, list[dict], int]:
     """Busca en Google/Tavily y Haiku lee los resultados. Devuelve (informe, fuentes, búsquedas)."""
+    investigar_google.comentarios = []
     consultas = consultas_para(ficha)
     print(f"  · buscando en internet ({', '.join(buscar_web.proveedores())}): {len(consultas)} búsquedas")
     resultados, conteo = buscar_web.buscar(consultas)
@@ -91,6 +96,16 @@ def investigar_google(ficha: dict) -> tuple[str, list[dict], int]:
             vistas.add(h["url"])
             fuentes.append({"titulo": urls[h["url"]] or h["url"], "url": h["url"]})
     hallazgos = "\n".join(f"- [{h['tipo']}] {h['hecho']} ({h['url']})" for h in leido["hallazgos"] if h["url"] in urls)
+    # comentarios de usuarios: solo si de verdad aparecen en los resultados (nada inventado)
+    textos = {r["url"]: (r.get("texto") or "").lower() for r in resultados}
+    comentarios = []
+    for c in leido.get("comentarios", []):
+        frag = c["texto"].lower()[:60]
+        if c["url"] in urls and frag and frag in textos.get(c["url"], ""):
+            from urllib.parse import urlparse
+            comentarios.append({"usuario": c["autor"] or "Usuario", "estrellas": None, "texto": c["texto"], "likes": 0,
+                                "fecha": "", "fuente": urlparse(c["url"]).netloc.replace("www.", ""), "url": c["url"]})
+    investigar_google.comentarios = comentarios[:6]
     return f"{leido['informe']}\n\nHALLAZGOS:\n{hallazgos}", fuentes[:15], sum(conteo.values())
 
 
@@ -165,8 +180,67 @@ def _imagen(ruta: str) -> dict:
     return {"type": "image", "source": {"type": "base64", "media_type": tipo, "data": datos}}
 
 
-def recolectar(app_id: str, carpeta: Path) -> dict:
-    """Paso sin IA: baja ficha, reseñas e imágenes de Play Store."""
+def recolectar_web(app_id: str, nombre: str, carpeta: Path) -> dict:
+    """Sin Play Store: arma la ficha con Google (sitio oficial, de qué se trata) e imágenes de Google Imágenes."""
+    from io import BytesIO
+    from urllib.parse import urlparse
+
+    import requests
+    from PIL import Image
+
+    print(f"  · {nombre} no está en Play Store: datos desde Google")
+    resultados, conteo = buscar_web.buscar([f'"{nombre}"', f'"{nombre}" app descargar apk', f'"{nombre}" sitio oficial'], por_consulta=6)
+    grandes = ("youtube.", "reddit.", "facebook.", "tiktok.", "instagram.", "play.google.", "x.com", "twitter.", "wikipedia.")
+    oficial = next((r for r in resultados if not any(g in r["url"] for g in grandes)), resultados[0] if resultados else {})
+    dominio = urlparse(oficial.get("url", "")).netloc.replace("www.", "")
+    img = carpeta / "img"
+    img.mkdir(parents=True, exist_ok=True)
+    capturas, icono = [], None
+    candidatas = buscar_web.imagenes(f"{nombre} app", 12)
+    gasto = buscar_web.costo(conteo) + buscar_web.PRECIO.get("serper", 0)
+    if claude.al_gastar and gasto:
+        claude.al_gastar(getattr(claude.contexto, "proyecto", None), "investigar", "búsqueda", gasto, 0, 0,
+                         f"Google ({sum(conteo.values()) + 1} búsquedas e imágenes)")
+    for x in candidatas:
+        if len(capturas) >= 6:
+            break
+        try:
+            r = requests.get(x["url"], timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            im = Image.open(BytesIO(r.content)).convert("RGB")
+        except Exception:  # noqa: BLE001 — imagen rota o protegida: se salta
+            continue
+        if min(im.size) < 200:
+            continue
+        p = img / f"captura_{len(capturas) + 1}.png"
+        im.save(p)
+        capturas.append(str(p))
+        if icono is None and 0.85 < im.width / im.height < 1.18:  # la primera cuadrada sirve de icono
+            icono = img / "icono.png"
+            im.resize((512, 512)).save(icono)
+    if icono is None and dominio:
+        try:
+            r = requests.get(f"https://www.google.com/s2/favicons?domain={dominio}&sz=256", timeout=20)
+            r.raise_for_status()
+            icono = img / "icono.png"
+            Image.open(BytesIO(r.content)).convert("RGBA").resize((512, 512)).save(icono)
+        except Exception:  # noqa: BLE001
+            icono = None
+    ficha = {"appId": app_id, "title": nombre, "summary": oficial.get("texto", "")[:300], "description": "",
+             "developer": dominio or "desconocido", "developerWebsite": oficial.get("url"), "installs": "N/D (fuera de Play Store)",
+             "score": None, "url": oficial.get("url"), "screenshots": capturas, "icon": None, "headerImage": None,
+             "fuera_de_play_store": True}
+    imagenes = {"icono": str(icono) if icono else None, "portada": None, "capturas": capturas}
+    playstore.guardar(carpeta, "ficha.json", ficha)
+    playstore.guardar(carpeta, "resenas.json", [])
+    playstore.guardar(carpeta, "imagenes.json", imagenes)
+    return {"ficha": ficha, "resenas": [], "imagenes": imagenes}
+
+
+def recolectar(app_id: str, carpeta: Path, nombre: str = "") -> dict:
+    """Paso sin IA: baja ficha, reseñas e imágenes de Play Store (o de Google si no está en Play Store)."""
+    if app_id.startswith("web:"):
+        return recolectar_web(app_id, nombre or app_id[4:].replace("-", " "), carpeta)
     print("  · ficha de Play Store")
     ficha = playstore.ficha(app_id)
     print("  · reseñas")
@@ -208,6 +282,8 @@ def analizar(datos: dict, carpeta: Path, con_web: bool = True) -> dict:
     if con_web and modo != "nunca" and buscar_web.disponible():
         # Búsqueda barata (Serper/Tavily + Haiku): siempre vale la pena
         informe_web, fuentes, n = investigar_google(ficha)
+        if ficha.get("fuera_de_play_store") and getattr(investigar_google, "comentarios", None):
+            resenas = list(investigar_google.comentarios)  # comentarios reales de la web, con su fuente
         usar_web, motivo = True, f"{n} búsquedas en Google/Tavily"
     else:
         usar_web, motivo = necesita_web(resenas) if con_web else (False, "sin búsqueda web")
@@ -227,7 +303,10 @@ def analizar(datos: dict, carpeta: Path, con_web: bool = True) -> dict:
     malas = sorted([r for r in resenas if (r["estrellas"] or 5) <= 2], key=lambda r: -r["likes"])[:30]
     buenas = sorted([r for r in resenas if (r["estrellas"] or 0) >= 4], key=lambda r: -r["likes"])[:10]
     muestra = malas + buenas
-    lista = "\n".join(f"[{i}] {r['estrellas']}★ ({r['likes']} likes, {r['fecha']}) {r['texto'][:300]}"
+    if ficha.get("fuera_de_play_store"):  # comentarios de internet (sin estrellas)
+        muestra = resenas[:20]
+    lista = "\n".join((f"[{i}] {r['estrellas']}★ ({r['likes']} likes, {r['fecha']}) " if r.get("estrellas")
+                       else f"[{i}] (comentario en {r.get('fuente', 'internet')}) ") + r["texto"][:300]
                       for i, r in enumerate(muestra))
 
     contenido = [_imagen(p) for p in imagenes["capturas"][:3]]
@@ -241,6 +320,10 @@ def analizar(datos: dict, carpeta: Path, con_web: bool = True) -> dict:
         f"Las imágenes de arriba son las capturas 1 a {len(contenido)} en orden. Arma el expediente."
     )})
     print("  · armando expediente")
+    if ficha.get("fuera_de_play_store"):
+        contenido[-1]["text"] += ("\n\nOJO: esta app NO está en Play Store (se descarga por fuera, APK o página web). "
+                                  "Las 'reseñas' son comentarios de usuarios en internet, con su sitio. No estar en Play Store "
+                                  "es un dato relevante para el usuario (menos controles, riesgo al instalar APK).")
     exp = claude.json_estructurado(SYSTEM_EXPEDIENTE, contenido, SCHEMA, tarea="investigar", que="expediente")
     exp["resenas_citadas"] = [muestra[i] for i in exp["resenas_destacadas"] if 0 <= i < len(muestra)][:6]
     exp["fuentes_web"] = fuentes

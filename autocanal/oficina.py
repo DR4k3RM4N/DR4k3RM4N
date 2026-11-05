@@ -551,6 +551,11 @@ class Oficina:
             while app_id in self.proyectos:
                 app_id = f"{propuesta['app_id']}~{n}"
                 n += 1
+            carpeta = config.SALIDA / app_id  # de dónde salió la idea (nombre real si no está en Play Store)
+            carpeta.mkdir(parents=True, exist_ok=True)
+            (carpeta / "origen.json").write_text(json.dumps(
+                {"nombre": propuesta["titulo"], "angulo": propuesta.get("angulo", ""), "fuera_de_play": propuesta.get("fuera_de_play", False)},
+                ensure_ascii=False), encoding="utf-8")
             self.proyectos[app_id] = {"id": app_id, "titulo": propuesta["titulo"], "angulo": propuesta.get("angulo", ""),
                                       "estado": "produccion", "etapa": "investigar", "etapas": {},
                                       "creado": time.time(), "error": None, "notas": notas, "publicado": None}
