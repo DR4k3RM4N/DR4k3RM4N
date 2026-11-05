@@ -78,12 +78,7 @@ WantedBy=multi-user.target
 UNIT
 
 paso "Configurando HTTPS para $DOMINIO"
-cat > /etc/caddy/Caddyfile <<CADDY
-$DOMINIO {
-	encode gzip
-	reverse_proxy 127.0.0.1:8765
-}
-CADDY
+bash "$APP/despliegue/caddy.sh" "$DOMINIO"
 
 paso "Firewall: solo SSH y web"
 ufw allow OpenSSH >/dev/null
@@ -95,7 +90,6 @@ systemctl daemon-reload
 systemctl enable --now oficina >/dev/null 2>&1
 systemctl restart oficina
 systemctl enable caddy >/dev/null 2>&1
-systemctl restart caddy
 
 sleep 3
 CLAVE="$(grep '^OFICINA_PASSWORD=' "$ENV" | cut -d= -f2-)"

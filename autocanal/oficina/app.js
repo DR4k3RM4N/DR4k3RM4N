@@ -23,7 +23,11 @@
                                   body: datos ? JSON.stringify(datos) : undefined });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || "Algo salió mal");
+    if (datos) refrescar(); // ver el cambio de inmediato, sin esperar la actualización en vivo
     return j;
+  }
+  function refrescar() {
+    fetch("/api/estado").then((r) => r.json()).then((n) => { if (!estado || n.version >= estado.version) pintar(n); }).catch(() => {});
   }
 
   // ---------- conexión en vivo ----------
