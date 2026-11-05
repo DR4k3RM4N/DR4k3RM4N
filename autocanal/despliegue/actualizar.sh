@@ -13,4 +13,13 @@ URL="$(grep '^OFICINA_URL=' "$APP/.env" | cut -d= -f2- || true)"
 DOMINIO="${URL#https://}"
 if [ -n "$DOMINIO" ] && [ -f "$APP/despliegue/caddy.sh" ]; then bash "$APP/despliegue/caddy.sh" "$DOMINIO"; fi
 systemctl restart oficina
+# Revisar que todo quedó prendido (la oficina y Caddy, que la deja entrar desde internet).
+sleep 3
+for servicio in oficina caddy; do
+  if ! systemctl is-active --quiet "$servicio"; then
+    echo "  $servicio no quedó prendido; lo vuelvo a arrancar…"
+    systemctl restart "$servicio"; sleep 3
+  fi
+  systemctl is-active --quiet "$servicio" && echo "  ✔ $servicio funcionando" || echo "  ✖ $servicio NO arrancó: sudo journalctl -u $servicio -n 30"
+done
 echo "✔ Actualizado y reiniciado."

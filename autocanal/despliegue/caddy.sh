@@ -18,6 +18,8 @@ if caddy validate --adapter caddyfile --config "$NUEVO" >/dev/null 2>&1; then
   [ -f /etc/caddy/Caddyfile ] && cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.anterior
   install -m 644 "$NUEVO" /etc/caddy/Caddyfile
   systemctl reload caddy 2>/dev/null || systemctl restart caddy
+  sleep 2
+  systemctl is-active --quiet caddy || systemctl restart caddy
   echo "  Caddy: configuración aplicada para $DOMINIO"
 else
   echo "  Caddy: la configuración nueva no es válida, dejo la anterior:"
