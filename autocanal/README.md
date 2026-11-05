@@ -70,7 +70,21 @@ Cómo trabajas con ellos:
    **Publicar**, **Pedir cambios** (Gabi rehace el guion con tu nota y el resto del equipo vuelve a
    trabajar) o **Descartar**.
 
-Si dos proyectos coinciden, cada agente atiende uno a la vez y el otro espera su turno.
+**Trabajan en paralelo.** Cada etapa arranca en cuanto tiene lo que necesita:
+
+```
+Investigación ──┬──▶ Guion ──┬──▶ Voz ──▶ Video
+                │            └──▶ Miniatura
+                └──▶ Blog
+```
+
+Rosa escribe el blog mientras Gabi hace el guion; Leo y Dani arrancan juntos con el guion. Si
+apruebas varias ideas, cada agente atiende una tarea a la vez y las demás quedan **en fila**.
+
+**Pestaña Equipo:** pícale a cualquier agente (en la oficina o en la lista) para ver qué está
+haciendo ahora, cuánto lleva, qué tiene en fila (y qué está esperando) y lo que ya terminó.
+Sobre cada agente ves un ícono de estado (🔎 trabajando, ⏳ en fila, ☕ en el café, 💤 libre) y una
+barrita de avance aproximado.
 
 ### En un servidor (siempre activa)
 

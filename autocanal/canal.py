@@ -12,12 +12,21 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
 
 from agentes import config
 
-ETAPAS = ["recolectar", "investigar", "guion", "voz", "miniatura", "video", "blog"]
+# Qué necesita cada etapa para empezar. Las que no dependen entre sí corren al mismo tiempo
+# en la oficina (por ejemplo, el blog se escribe mientras se hace el guion).
+DEPENDE = {
+    "investigar": [],
+    "guion": ["investigar"],
+    "blog": ["investigar"],
+    "voz": ["guion"],
+    "miniatura": ["guion"],
+    "video": ["voz"],
+}
+ETAPAS = ["investigar", "guion", "voz", "miniatura", "video", "blog"]  # orden si se hace de una en una
 
 
 def _leer(p: Path):
@@ -39,79 +48,130 @@ def _slug(texto: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", texto.lower()).strip("-")[:60] or "app"
 
 
-def _rehacer(etapa: str, desde: str | None) -> bool:
-    """True si la etapa va en o después de --desde (se rehace aunque ya exista)."""
-    return desde is not None and ETAPAS.index(etapa) >= ETAPAS.index(desde)
+def afectadas(desde: str | None) -> set[str]:
+    """Etapas que hay que rehacer si se pide rehacer desde `desde` (ella y todo lo que depende de ella)."""
+    if desde is None:
+        return set()
+    if desde == "recolectar":
+        desde = "investigar"
+    salida, pendientes = set(), [desde]
+    while pendientes:
+        e = pendientes.pop()
+        if e not in salida:
+            salida.add(e)
+            pendientes += [k for k, deps in DEPENDE.items() if e in deps]
+    return salida
+
+
+class Produccion:
+    """Todo lo que se va armando de un video. Cada método es una etapa (un agente)."""
+
+    def __init__(self, app_id: str, con_web: bool = True, minutos: int = 6, voz: str | None = None,
+                 desde: str | None = None, notas: str = ""):
+        self.app_id, self.con_web, self.minutos, self.voz, self.notas = app_id, con_web, minutos, voz, notas
+        self.rehacer = afectadas(desde)
+        self.carpeta = config.SALIDA / app_id
+        self.carpeta.mkdir(parents=True, exist_ok=True)
+        self.clips = _clips(app_id)
+        self.ficha = self.imagenes = self.expediente = self.guion = self.entrada = None
+        self.video = self.mini = None
+
+    def investigar(self) -> None:
+        from agentes import investigador
+
+        c = self.carpeta
+        if (c / "ficha.json").exists() and "investigar" not in self.rehacer:
+            datos = {"ficha": _leer(c / "ficha.json"), "resenas": _leer(c / "resenas.json"),
+                     "imagenes": _leer(c / "imagenes.json")}
+        else:
+            print("  · recolectando datos de Play Store")
+            datos = investigador.recolectar(self.app_id, c)
+        self.ficha, self.imagenes = datos["ficha"], datos["imagenes"]
+        self.expediente = _leer(c / "expediente.json")
+        if self.expediente is None or "investigar" in self.rehacer:
+            self.expediente = investigador.analizar(datos, c, con_web=self.con_web)
+        print(f"    veredicto: {self.expediente['veredicto']}")
+
+    def guionizar(self) -> None:
+        from agentes import guionista
+
+        self.guion = _leer(self.carpeta / "guion.json")
+        if self.guion is None or "guion" in self.rehacer:
+            info = [{"indice": i, "archivo": Path(x).name} for i, x in enumerate(self.clips, 1)]
+            self.guion = guionista.escribir(self.ficha, self.expediente, info, self.minutos, self.notas)
+            _guardar(self.carpeta / "guion.json", self.guion)
+
+    def narrar(self) -> None:
+        from agentes import voz as voz_mod
+
+        if "voz" in self.rehacer:
+            for f in (self.carpeta / "audio").glob("*.mp3"):
+                f.unlink()
+        voz_mod.narrar(self.guion["escenas"], self.carpeta, self.voz)
+        _guardar(self.carpeta / "guion.json", self.guion)
+
+    def miniatura(self) -> None:
+        from agentes import graficos
+
+        caps = self.imagenes.get("capturas") or []
+        self.mini = graficos.miniatura(self.guion["texto_miniatura"], self.guion["sello_miniatura"],
+                                       self.imagenes.get("icono"), caps[0] if caps else None,
+                                       self.carpeta / "miniatura.jpg")
+
+    def editar(self) -> None:
+        from agentes import editor
+
+        ctx = {"ficha": self.ficha, "expediente": self.expediente, "imagenes": self.imagenes}
+        self.video = editor.editar(self.guion["escenas"], ctx, self.carpeta, self.clips)
+
+    def redactar(self) -> None:
+        from agentes import blog
+
+        self.entrada = _leer(self.carpeta / "blog.json")
+        if self.entrada is None or "blog" in self.rehacer:
+            self.entrada = blog.escribir(self.ficha, self.expediente, len(self.imagenes.get("capturas") or []))
+            _guardar(self.carpeta / "blog.json", self.entrada)
+        (self.carpeta / "blog_preview.html").write_text(
+            f"<meta charset='utf-8'><h1>{self.entrada['titulo']}</h1>{self.entrada['html']}", encoding="utf-8")
+
+    def cargar(self, nombre: str) -> None:
+        """Toma lo que ya se hizo antes en esa etapa, sin rehacerlo (para reintentos y cambios)."""
+        c = self.carpeta
+        if nombre == "investigar":
+            self.ficha, self.imagenes = _leer(c / "ficha.json"), _leer(c / "imagenes.json")
+            self.expediente = _leer(c / "expediente.json")
+        elif nombre == "guion":
+            self.guion = _leer(c / "guion.json")
+        elif nombre == "miniatura":
+            self.mini = c / "miniatura.jpg"
+        elif nombre == "video":
+            self.video = c / "video.mp4"
+        elif nombre == "blog":
+            self.entrada = _leer(c / "blog.json")
+        faltan = {"investigar": self.expediente, "guion": self.guion, "blog": self.entrada}.get(nombre, True)
+        if faltan is None:
+            raise RuntimeError(f"No encontré lo que ya se había hecho en la etapa '{nombre}'.")
+
+    def etapa(self, nombre: str) -> None:
+        {"investigar": self.investigar, "guion": self.guionizar, "voz": self.narrar,
+         "miniatura": self.miniatura, "video": self.editar, "blog": self.redactar}[nombre]()
+
+    def cerrar(self) -> Path:
+        _reporte(self.carpeta, self.ficha, self.expediente, self.guion, self.entrada, self.video, self.mini)
+        return self.carpeta
 
 
 def crear(app_id: str, con_web: bool = True, minutos: int = 6, voz: str | None = None,
-          desde: str | None = None, notas: str = "", hook=None) -> Path:
-    """`hook(etapa)` se llama al empezar cada etapa (la oficina visual lo usa para coordinar agentes)."""
-    from agentes import blog, editor, graficos, guionista, investigador, voz as voz_mod
-
-    hook = hook or (lambda etapa: None)
-
-    carpeta = config.SALIDA / app_id
-    carpeta.mkdir(parents=True, exist_ok=True)
-    clips = _clips(app_id)
-    print(f"\n▶ {app_id}  ({len(clips)} clip(s) tuyos en entrada/{app_id}/)")
-
-    hook("recolectar")
-    print("1/7 Recolectando datos de Play Store")
-    if (carpeta / "ficha.json").exists() and not _rehacer("recolectar", desde):
-        datos = {"ficha": _leer(carpeta / "ficha.json"), "resenas": _leer(carpeta / "resenas.json"),
-                 "imagenes": _leer(carpeta / "imagenes.json")}
-    else:
-        datos = investigador.recolectar(app_id, carpeta)
-    ficha, imagenes = datos["ficha"], datos["imagenes"]
-
-    hook("investigar")
-    print("2/7 Investigando (expediente de evidencia)")
-    expediente = _leer(carpeta / "expediente.json")
-    if expediente is None or _rehacer("investigar", desde):
-        expediente = investigador.analizar(datos, carpeta, con_web=con_web)
-    print(f"    veredicto: {expediente['veredicto']}")
-
-    hook("guion")
-    print("3/7 Escribiendo guion")
-    guion = _leer(carpeta / "guion.json")
-    if guion is None or _rehacer("guion", desde):
-        info_clips = [{"indice": i, "archivo": Path(c).name} for i, c in enumerate(clips, 1)]
-        guion = guionista.escribir(ficha, expediente, info_clips, minutos, notas)
-        _guardar(carpeta / "guion.json", guion)
-
-    hook("voz")
-    print("4/7 Narrando")
-    if _rehacer("voz", desde):
-        for f in (carpeta / "audio").glob("*.mp3"):
-            f.unlink()
-    escenas = voz_mod.narrar(guion["escenas"], carpeta, voz)
-    _guardar(carpeta / "guion.json", guion)
-
-    hook("miniatura")
-    print("5/7 Miniatura")
-    caps = imagenes.get("capturas") or []
-    mini = graficos.miniatura(guion["texto_miniatura"], guion["sello_miniatura"], imagenes.get("icono"),
-                              caps[0] if caps else None, carpeta / "miniatura.jpg")
-
-    hook("video")
-    print("6/7 Editando video")
-    ctx = {"ficha": ficha, "expediente": expediente, "imagenes": imagenes}
-    video = editor.editar(escenas, ctx, carpeta, clips)
-
-    hook("blog")
-    print("7/7 Escribiendo entrada del blog")
-    entrada = _leer(carpeta / "blog.json")
-    if entrada is None or _rehacer("blog", desde):
-        entrada = blog.escribir(ficha, expediente, len(caps))
-        _guardar(carpeta / "blog.json", entrada)
-    (carpeta / "blog_preview.html").write_text(
-        f"<meta charset='utf-8'><h1>{entrada['titulo']}</h1>{entrada['html']}", encoding="utf-8")
-
-    _reporte(carpeta, ficha, expediente, guion, entrada, video, mini)
-    hook("fin")
-    print(f"\n✔ Listo. Revisa {carpeta / 'REVISAR.md'} antes de publicar.")
-    return carpeta
+          desde: str | None = None, notas: str = "") -> Path:
+    """Hace el video completo, una etapa tras otra (desde la terminal)."""
+    p = Produccion(app_id, con_web, minutos, voz, desde, notas)
+    print(f"\n▶ {app_id}  ({len(p.clips)} clip(s) tuyos en entrada/{app_id}/)")
+    for i, etapa in enumerate(ETAPAS, 1):
+        print(f"{i}/{len(ETAPAS)} {etapa}")
+        p.etapa(etapa)
+    p.cerrar()
+    print(f"\n✔ Listo. Revisa {p.carpeta / 'REVISAR.md'} antes de publicar.")
+    return p.carpeta
 
 
 def _reporte(carpeta, ficha, exp, guion, entrada, video, mini) -> None:
@@ -140,7 +200,7 @@ def publicar(app_id: str, titulo_n: int = 1) -> dict:
     guion, entrada = _leer(carpeta / "guion.json"), _leer(carpeta / "blog.json")
     imagenes = _leer(carpeta / "imagenes.json")
     if not (guion and entrada and (carpeta / "video.mp4").exists()):
-        sys.exit(f"Primero ejecuta: python canal.py crear {app_id}")
+        raise RuntimeError(f"Falta el video o el blog. Primero ejecuta: python canal.py crear {app_id}")
     pub = _leer(carpeta / "publicado.json") or {}
 
     if "blog" not in pub:
@@ -215,7 +275,7 @@ def main() -> None:
     s.add_argument("--sin-web", action="store_true", help="no buscar en internet (más barato)")
     s.add_argument("--minutos", type=int, default=6)
     s.add_argument("--voz", choices=["edge", "elevenlabs", "silencio"])
-    s.add_argument("--desde", choices=ETAPAS, help="rehacer desde esta etapa")
+    s.add_argument("--desde", choices=ETAPAS, help="rehacer esta etapa y las que dependen de ella")
     s = sub.add_parser("publicar"); s.add_argument("app_id")
     s.add_argument("--titulo", type=int, default=1, help="cuál de los 3 títulos usar")
     s = sub.add_parser("automatico"); s.add_argument("--n", type=int, default=1)

@@ -56,7 +56,7 @@ AGENTES = [
 ]
 
 ETAPA_AGENTE = {
-    "recolectar": "investigador", "investigar": "investigador", "guion": "guionista",
+    "investigar": "investigador", "guion": "guionista",
     "voz": "locutor", "miniatura": "disenadora", "video": "editor", "blog": "redactora",
     "publicar": "community",
 }
@@ -77,6 +77,13 @@ FRASES = {
     "community": ["Subiendo a YouTube…", "Publicando en el blog…", "Poniendo el video en el post…"],
 }
 ETAPAS_PROYECTO = ["investigar", "guion", "voz", "miniatura", "video", "blog", "revision", "publicar", "publicado"]
+ACCION = {
+    "ideas": "Buscar apps nuevas en Play Store", "investigar": "Investigar reseñas y evidencia",
+    "guion": "Escribir el guion", "voz": "Narrar el guion", "miniatura": "Diseñar la miniatura",
+    "video": "Editar el video", "blog": "Escribir el post del blog", "publicar": "Publicar en YouTube y el blog",
+}
+QUE_ES = {"investigar": "el expediente de Iván", "guion": "el guion de Gabi", "voz": "la narración de Leo"}
+ACTIVAS = ("esperando", "en_cola", "trabajando")
 
 
 class Oficina:
@@ -96,9 +103,13 @@ class Oficina:
         self.proyectos = datos.get("proyectos", {})
         self.preferencias = datos.get("preferencias", [])
         self.log = datos.get("log", [])
+        self.tareas = datos.get("tareas", [])
         for p in self.proyectos.values():  # lo que quedó a medias al cerrar
             if p["estado"] in ("produccion", "publicando"):
                 p["estado"], p["error"] = "error", "Se interrumpió al cerrar la oficina."
+        for t in self.tareas:
+            if t["estado"] in ACTIVAS:
+                t["estado"], t["error"] = "cancelada", "Se interrumpió al cerrar la oficina."
         self.ultima_busqueda = datos.get("ultima_busqueda", "")
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
@@ -111,7 +122,7 @@ class Oficina:
             ESTADO.write_text(json.dumps({
                 "propuestas": self.propuestas[-200:], "proyectos": self.proyectos,
                 "preferencias": self.preferencias[-30:], "log": self.log[-300:],
-                "ultima_busqueda": self.ultima_busqueda,
+                "ultima_busqueda": self.ultima_busqueda, "tareas": self.tareas[-300:],
             }, ensure_ascii=False, indent=1), encoding="utf-8")
 
     def snapshot(self) -> dict:
@@ -120,7 +131,9 @@ class Oficina:
                     "propuestas": [p for p in self.propuestas if p["estado"] == "pendiente"],
                     "proyectos": sorted(self.proyectos.values(), key=lambda p: -p["creado"]),
                     "preferencias": self.preferencias[-10:], "log": self.log[-60:],
-                    "etapas": ETAPAS_PROYECTO}
+                    "etapas": ETAPAS_PROYECTO, "ahora": time.time(),
+                    "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
+                              + [t for t in self.tareas[-250:] if t["estado"] not in ACTIVAS][-120:]}
 
     def decir(self, agente: str, texto: str, al_log: bool = True) -> None:
         with self.lock:
@@ -133,6 +146,20 @@ class Oficina:
     def poner(self, agente: str, **campos) -> None:
         with self.lock:
             self.agentes[agente].update(campos)
+            self._tocar()
+
+    def nueva_tarea(self, agente: str, etapa: str, proyecto: str | None = None, titulo: str = "") -> dict:
+        t = {"id": uuid.uuid4().hex[:8], "agente": agente, "etapa": etapa, "accion": ACCION.get(etapa, etapa),
+             "proyecto": proyecto, "titulo": titulo, "estado": "esperando", "espera": "",
+             "creado": time.time(), "inicio": None, "fin": None, "error": None}
+        with self.lock:
+            self.tareas.append(t)
+            self._tocar()
+        return t
+
+    def tarea(self, t: dict, **campos) -> None:
+        with self.lock:
+            t.update(campos)
             self._tocar()
 
     def _ambiente(self) -> None:
@@ -183,11 +210,20 @@ class Oficina:
 
     def visitar(self, quien: str, a_quien: str, texto: str) -> None:
         """`quien` camina al escritorio de `a_quien`, le dice algo y regresa."""
-        self.poner(quien, ubicacion=f"visita:{a_quien}")
-        time.sleep(PASEO * 0.5)
-        self.decir(quien, texto)
-        time.sleep(PASEO * 0.5)
+        self.recorrido(quien, [(a_quien, texto)])
+
+    def recorrido(self, quien: str, paradas: list, al_llegar=None) -> None:
+        """Camina a varios escritorios, entrega algo en cada uno y regresa al suyo.
+        `al_llegar(i)` se llama al llegar a la parada i (para que el otro empiece en ese momento)."""
+        for i, (a_quien, texto) in enumerate(paradas):
+            self.poner(quien, ubicacion=f"visita:{a_quien}")
+            time.sleep(PASEO * 0.5)
+            self.decir(quien, texto)
+            if al_llegar:
+                al_llegar(i)
+            time.sleep(1.5)
         self.poner(quien, ubicacion="casa")
+        time.sleep(PASEO * 0.4)
 
     def avisar_jefe(self, texto: str) -> None:
         notificar(texto)
@@ -203,12 +239,15 @@ class Oficina:
         if guia:
             with self.lock:
                 self.preferencias.append(f"Pidió: {guia}")
+        t = self.nueva_tarea("productora", "ideas", titulo=guia or "Búsqueda general")
+        self.tarea(t, estado="trabajando", inicio=time.time())
         self.poner("productora", estado="trabajando")
         self.decir("productora", "¡Voy! Busco apps nuevas en Play Store" + (f" ({guia})" if guia else ""))
         try:
             gustos = "\n".join(f"- {p}" for p in self.preferencias[-15:])
             candidatas = buscador.ideas(5, gustos)
         except Exception as exc:  # noqa: BLE001
+            self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
             self.poner("productora", estado="libre")
             self.decir("productora", f"Uy, no pude buscar ideas: {exc}")
             return
@@ -223,6 +262,7 @@ class Oficina:
                 nuevas.append(c)
                 self.propuestas.append({**c, "id": uuid.uuid4().hex[:8], "estado": "pendiente",
                                         "creado": time.time(), "comentarios": []})
+        self.tarea(t, estado="hecha", fin=time.time(), resultado=f"{len(nuevas)} ideas nuevas")
         self.poner("productora", estado="libre")
         if nuevas:
             self.avisar_jefe(f"¡Jefe! Te traje {len(nuevas)} ideas. ¿Qué opinas? Están en tu bandeja.")
@@ -270,26 +310,135 @@ class Oficina:
         app_id = propuesta["app_id"]
         with self.lock:
             self.proyectos[app_id] = {"id": app_id, "titulo": propuesta["titulo"], "angulo": propuesta.get("angulo", ""),
-                                      "estado": "produccion", "etapa": "investigar", "creado": time.time(),
-                                      "error": None, "notas": notas, "publicado": None}
+                                      "estado": "produccion", "etapa": "investigar", "etapas": {},
+                                      "creado": time.time(), "error": None, "notas": notas, "publicado": None}
             self._tocar()
-        threading.Thread(target=self._producir, args=(app_id, notas, None), daemon=True).start()
+        threading.Thread(target=self._producir, args=(app_id, notas, None, set()), daemon=True).start()
 
-    def _producir(self, app_id: str, notas: str, desde: str | None) -> None:
+    def _marcar(self, app_id: str, etapa: str, estado: str) -> None:
+        with self.lock:
+            p = self.proyectos[app_id]
+            p.setdefault("etapas", {})[etapa] = estado
+            if estado == "trabajando":
+                p["etapa"] = etapa
+            self._tocar()
+
+    def _producir(self, app_id: str, notas: str, desde: str | None, saltar: set) -> None:
+        """Reparte el video entre el equipo. Cada etapa arranca en cuanto tiene lo que necesita,
+        así que varias corren al mismo tiempo (ver canal.DEPENDE)."""
         import canal
 
-        coord = Coordinador(self, app_id)
-        self.decir("productora", f"¡Perfecto! Arrancamos con {self.proyectos[app_id]['titulo']}")
+        titulo = self.proyectos[app_id]["titulo"]
         try:
-            canal.crear(app_id, con_web=True, desde=desde, notas=notas, hook=coord.etapa)
+            prod = canal.Produccion(app_id, con_web=True, desde=desde, notas=notas)
+            if desde:
+                saltar = set(canal.DEPENDE) - prod.rehacer
+            for e in canal.ETAPAS:  # lo que ya está hecho solo se carga (el orden respeta dependencias)
+                if e in saltar:
+                    prod.cargar(e)
         except Exception as exc:  # noqa: BLE001
-            coord.fallo(exc)
-            return
+            return self._fallo_proyecto(app_id, "productora", exc)
+
+        etapas = [e for e in canal.ETAPAS if e not in saltar]
+        listas = {e: threading.Event() for e in canal.DEPENDE}
+        for e in saltar:
+            listas[e].set()
+            self._marcar(app_id, e, "hecha")
+        fallo: dict = {}
+        tareas = {e: self.nueva_tarea(ETAPA_AGENTE[e], e, app_id, titulo) for e in etapas}
+        for e in etapas:
+            self._marcar(app_id, e, "esperando")
+
+        self.decir("productora", f"¡Perfecto! Arrancamos con {titulo}")
+        primeras = [e for e in etapas if all(d in saltar for d in canal.DEPENDE[e])]
+        encargos = []
+        for e in primeras:
+            ag = ETAPA_AGENTE[e]
+            encargos.append((ag, f"{self.agentes[ag]['nombre']}, te toca: {ACCION[e].lower()} de {titulo}"))
+        self.recorrido("productora", encargos)
+
+        hilos = [threading.Thread(target=self._trabajar, args=(prod, e, tareas[e], listas, fallo), daemon=True)
+                 for e in etapas]
+        for h in hilos:
+            h.start()
+        for h in hilos:
+            h.join()
+        if fallo:
+            return self._fallo_proyecto(app_id, fallo["agente"], fallo["exc"])
+        try:
+            prod.cerrar()
+        except Exception as exc:  # noqa: BLE001
+            return self._fallo_proyecto(app_id, "productora", exc)
         with self.lock:
             p = self.proyectos[app_id]
             p["estado"], p["etapa"] = "revision", "revision"
             self._tocar()
-        self.avisar_jefe(f"¡Jefe! El video de {self.proyectos[app_id]['titulo']} está listo. ¿Lo revisas?")
+        self.avisar_jefe(f"¡Jefe! El video de {titulo} está listo. ¿Lo revisas?")
+
+    def _trabajar(self, prod, etapa: str, t: dict, listas: dict, fallo: dict) -> None:
+        """Una etapa: esperar lo que necesita, esperar turno del agente, trabajar y entregar."""
+        import canal
+
+        agente, app_id = t["agente"], t["proyecto"]
+        nombre = self.agentes[agente]["nombre"]
+        try:
+            deps = canal.DEPENDE[etapa]
+            if any(not listas[d].is_set() for d in deps):
+                self.tarea(t, espera="Espera " + " y ".join(QUE_ES.get(d, d) for d in deps))
+            for d in deps:
+                listas[d].wait()
+            if fallo:
+                self.tarea(t, estado="cancelada", espera="", fin=time.time())
+                self._marcar(app_id, etapa, "cancelada")
+                listas[etapa].set()  # que las que dependen de esta también se enteren
+                return
+            turno = self.turnos[agente]
+            self.tarea(t, estado="en_cola", espera="")
+            if not turno.acquire(blocking=False):
+                self.tarea(t, espera=f"{nombre} termina otra tarea primero")
+                self.decir(agente, f"Termino lo que tengo y sigo con {t['titulo']}", al_log=False)
+                turno.acquire()
+        except Exception as exc:  # noqa: BLE001
+            fallo.setdefault("exc", exc)
+            fallo.setdefault("agente", agente)
+            listas[etapa].set()
+            return
+        try:
+            self.tarea(t, estado="trabajando", inicio=time.time(), espera="")
+            self._marcar(app_id, etapa, "trabajando")
+            self.poner(agente, estado="trabajando", proyecto=app_id)
+            self.decir(agente, random.choice(FRASES[agente]), al_log=False)
+            try:
+                prod.etapa(etapa)
+            except Exception as exc:  # noqa: BLE001
+                fallo.setdefault("exc", exc)
+                fallo.setdefault("agente", agente)
+                self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
+                self._marcar(app_id, etapa, "fallo")
+                self.poner(agente, estado="libre", proyecto=None)
+                self.decir(agente, f"¡Ups! Algo falló: {str(exc)[:120]}")
+                return
+            self.tarea(t, estado="hecha", fin=time.time())
+            self._marcar(app_id, etapa, "hecha")
+            self.poner(agente, estado="libre", proyecto=None)
+            # entregar: a quienes siguen (todos a la vez apenas llega con el primero) o a Paola si es lo último
+            siguientes = sorted({ETAPA_AGENTE[e] for e, deps in canal.DEPENDE.items() if etapa in deps})
+            if siguientes:
+                paradas = [(s, f"{self.agentes[s]['nombre']}, te dejo {ENTREGA[agente]} de {t['titulo']}") for s in siguientes]
+            else:
+                paradas = [("productora", f"Paola, listo {ENTREGA[agente]} de {t['titulo']} ✔")]
+            self.recorrido(agente, paradas, al_llegar=lambda i: listas[etapa].set())
+        finally:
+            listas[etapa].set()
+            self.turnos[agente].release()
+
+    def _fallo_proyecto(self, app_id: str, quien: str, exc: Exception) -> None:
+        with self.lock:
+            p = self.proyectos[app_id]
+            p["estado"], p["error"] = "error", str(exc)[:400]
+            self._tocar()
+        self.decir(quien, f"¡Ups! Algo falló con {p['titulo']}: {str(exc)[:120]}")
+        self.avisar_jefe(f"Jefe, {p['titulo']} tuvo un problema. Está en tu bandeja.")
 
     def accion_proyecto(self, app_id: str, accion: str, texto: str = "", titulo_n: int = 1) -> dict:
         with self.lock:
@@ -307,11 +456,12 @@ class Oficina:
                 self.log.append({"t": time.time(), "quien": "jefe", "texto": f"✏️ Cambios a {p['titulo']}: {texto}"})
                 self.preferencias.append(f"En un guion pidió: {texto}")
                 self._tocar()
-                threading.Thread(target=self._producir, args=(app_id, p["notas"], "guion"), daemon=True).start()
+                threading.Thread(target=self._producir, args=(app_id, p["notas"], "guion", set()), daemon=True).start()
             elif accion == "reintentar" and p["estado"] == "error":
+                hechas = {e for e, est in (p.get("etapas") or {}).items() if est == "hecha"}
                 p["estado"], p["error"] = "produccion", None
                 self._tocar()
-                threading.Thread(target=self._producir, args=(app_id, p.get("notas", ""), None), daemon=True).start()
+                threading.Thread(target=self._producir, args=(app_id, p.get("notas", ""), None, hechas), daemon=True).start()
             elif accion == "descartar" and p["estado"] in ("revision", "error"):
                 p["estado"] = "descartado"
                 self.log.append({"t": time.time(), "quien": "jefe", "texto": f"🗑️ Descartado: {p['titulo']}"})
@@ -323,20 +473,28 @@ class Oficina:
     def _publicar(self, app_id: str, titulo_n: int) -> None:
         import canal
 
-        coord = Coordinador(self, app_id)
-        try:
-            coord.etapa("publicar")
-            pub = canal.publicar(app_id, titulo_n)
-            coord.etapa("fin")
-        except Exception as exc:  # noqa: BLE001
-            coord.fallo(exc)
-            return
+        titulo = self.proyectos[app_id]["titulo"]
+        t = self.nueva_tarea("community", "publicar", app_id, titulo)
+        self.visitar("productora", "community", f"Carla, el jefe aprobó {titulo}. ¡A publicar!")
+        with self.turnos["community"]:
+            self.tarea(t, estado="trabajando", inicio=time.time())
+            self.poner("community", estado="trabajando", proyecto=app_id)
+            self.decir("community", random.choice(FRASES["community"]), al_log=False)
+            try:
+                pub = canal.publicar(app_id, titulo_n)
+            except Exception as exc:  # noqa: BLE001
+                self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
+                self.poner("community", estado="libre", proyecto=None)
+                return self._fallo_proyecto(app_id, "community", exc)
+            self.tarea(t, estado="hecha", fin=time.time())
+            self.poner("community", estado="libre", proyecto=None)
+            self.visitar("community", "productora", f"Paola, ya está publicado {titulo} ✔")
         with self.lock:
             p = self.proyectos[app_id]
             p["estado"], p["etapa"], p["publicado"] = "publicado", "publicado", pub
             p["publicado_t"] = time.time()
             self._tocar()
-        self.avisar_jefe(f"¡Publicado! {self.proyectos[app_id]['titulo']} ya está en YouTube y en el blog 🎉")
+        self.avisar_jefe(f"¡Publicado! {titulo} ya está en YouTube y en el blog 🎉")
 
     def detalle(self, app_id: str) -> dict:
         carpeta = config.SALIDA / app_id
@@ -385,54 +543,6 @@ def telegram_chat_id() -> None:
         raise SystemExit("No hay mensajes. Mándale cualquier mensaje a tu bot en Telegram y vuelve a correr esto.")
     for cid, nombre in chats.items():
         print(f"TELEGRAM_CHAT_ID={cid}   ({nombre})")
-
-
-class Coordinador:
-    """Pasa el proyecto de un agente a otro: caminan, se entregan el trabajo y esperan turno."""
-
-    def __init__(self, oficina: Oficina, app_id: str):
-        self.o, self.app_id = oficina, app_id
-        self.actual = "productora"
-        self.con_turno = None
-
-    def _soltar(self) -> None:
-        if self.con_turno:
-            self.o.poner(self.con_turno, estado="libre", proyecto=None)
-            self.o.turnos[self.con_turno].release()
-            self.con_turno = None
-
-    def etapa(self, etapa: str) -> None:
-        siguiente = "productora" if etapa == "fin" else ETAPA_AGENTE[etapa]
-        if etapa in ETAPAS_PROYECTO:
-            with self.o.lock:
-                self.o.proyectos[self.app_id]["etapa"] = etapa
-                self.o._tocar()
-        if siguiente == self.actual:
-            return
-        nombre = self.o.agentes[siguiente]["nombre"]
-        titulo = self.o.proyectos[self.app_id]["titulo"]
-        texto = (f"{nombre}, te paso {ENTREGA[self.actual]} de {titulo}" if siguiente != "productora"
-                 else f"Paola, listo {ENTREGA[self.actual]} de {titulo} ✔")
-        self.o.visitar(self.actual, siguiente, texto)
-        self._soltar()
-        if siguiente != "productora":
-            if not self.o.turnos[siguiente].acquire(blocking=False):
-                self.o.decir(siguiente, f"Termino lo que tengo y sigo con {titulo}", al_log=False)
-                self.o.turnos[siguiente].acquire()
-            self.con_turno = siguiente
-            self.o.poner(siguiente, estado="trabajando", proyecto=self.app_id)
-            self.o.decir(siguiente, random.choice(FRASES[siguiente]), al_log=False)
-        self.actual = siguiente
-
-    def fallo(self, exc: Exception) -> None:
-        quien = self.actual
-        self._soltar()
-        with self.o.lock:
-            p = self.o.proyectos[self.app_id]
-            p["estado"], p["error"] = "error", str(exc)[:400]
-            self.o._tocar()
-        self.o.decir(quien, f"¡Ups! Algo falló con {p['titulo']}: {str(exc)[:120]}")
-        self.o.avisar_jefe(f"Jefe, {p['titulo']} tuvo un problema. Está en tu bandeja.")
 
 
 def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> ThreadingHTTPServer:

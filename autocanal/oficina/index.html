@@ -26,6 +26,7 @@
   <aside class="panel">
     <nav class="pestanas" role="tablist">
       <button class="pestana activa" data-tab="bandeja" role="tab">Bandeja <span id="cuenta" class="cuenta" hidden>0</span></button>
+      <button class="pestana" data-tab="equipo" role="tab">Equipo</button>
       <button class="pestana" data-tab="proyectos" role="tab">Proyectos</button>
       <button class="pestana" data-tab="chat" role="tab">Chat</button>
     </nav>
@@ -41,6 +42,7 @@
       </form>
       <div id="bandeja"></div>
     </div>
+    <div class="contenido" id="tab-equipo" hidden><div id="equipo"></div></div>
     <div class="contenido" id="tab-proyectos" hidden><div id="proyectos"></div></div>
     <div class="contenido" id="tab-chat" hidden><ol id="chat" class="chat"></ol></div>
   </aside>
@@ -53,7 +55,6 @@
   </div>
 </div>
 
-<div class="ficha-agente" id="ficha" hidden></div>
 
 <script src="/static/oficina.js"></script>
 <script src="/static/app.js"></script>

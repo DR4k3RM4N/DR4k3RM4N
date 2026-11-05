@@ -40,6 +40,7 @@
     $("#modo").hidden = !nuevo.demo;
     pintarBandeja();
     pintarProyectos();
+    pintarEquipo();
     pintarChat();
   }
 
@@ -168,10 +169,15 @@
     const agentes = {};
     estado.agentes.forEach((a) => (agentes[a.id] = a));
     $("#proyectos").innerHTML = lista.map((p) => {
-      const i = estado.etapas.indexOf(p.etapa);
-      const pasos = estado.etapas.map((et, k) => {
+      const pasos = estado.etapas.map((et) => {
         const a = agentes[AGENTE_ETAPA[et]];
-        const clase = k < i || p.estado === "publicado" ? "hecho" : k === i ? (p.estado === "error" ? "falla" : "actual") : "";
+        let clase = "";
+        const est = (p.etapas || {})[et];
+        if (est) clase = { hecha: "hecho", trabajando: "actual", fallo: "falla", en_cola: "cola", esperando: "", cancelada: "" }[est] || "";
+        if (et === "revision") clase = p.estado === "revision" ? "actual" : ["publicando", "publicado"].includes(p.estado) ? "hecho" : "";
+        if (et === "publicar") clase = p.estado === "publicando" ? "actual" : p.estado === "publicado" ? "hecho" : "";
+        if (et === "publicado") clase = p.estado === "publicado" ? "hecho" : "";
+        if (p.estado === "error" && clase === "actual") clase = "falla";
         return `<li class="${clase}" title="${esc(ETIQUETA_ETAPA[et])} · ${esc(a?.nombre)}"><span style="--c:${a?.color}"></span>${esc(ETIQUETA_ETAPA[et])}</li>`;
       }).join("");
       const pub = p.publicado ? `<div class="enlaces"><a href="${esc(p.publicado.youtube)}" target="_blank" rel="noopener">▶ YouTube</a>
@@ -201,11 +207,13 @@
     if (abajo) lista.scrollTop = lista.scrollHeight;
   }
 
-  document.querySelectorAll(".pestana").forEach((p) => p.addEventListener("click", () => {
-    document.querySelectorAll(".pestana").forEach((x) => x.classList.toggle("activa", x === p));
-    document.querySelectorAll(".contenido").forEach((c) => (c.hidden = c.id !== `tab-${p.dataset.tab}`));
-    if (p.dataset.tab === "chat") $("#chat").scrollTop = $("#chat").scrollHeight;
-  }));
+  function abrirPestana(nombre) {
+    document.querySelectorAll(".pestana").forEach((x) => x.classList.toggle("activa", x.dataset.tab === nombre));
+    document.querySelectorAll(".contenido").forEach((c) => (c.hidden = c.id !== `tab-${nombre}`));
+    if (nombre === "chat") $("#chat").scrollTop = $("#chat").scrollHeight;
+    if (nombre === "equipo") pintarEquipo();
+  }
+  document.querySelectorAll(".pestana").forEach((p) => p.addEventListener("click", () => abrirPestana(p.dataset.tab)));
 
   // ---------- revisión del video ----------
   async function abrirRevision(id) {
@@ -276,38 +284,135 @@
   }
   $("#modal-cerrar").addEventListener("click", cerrarModal);
   $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") cerrarModal(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { cerrarModal(); $("#ficha").hidden = true; } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
 
-  // ---------- ficha de agente al hacer clic ----------
+  // ---------- equipo: tareas de cada agente ----------
+  const DESCRIPCION = {
+    productora: "Busca apps en Play Store, te propone ideas, aprende de tus opiniones y coordina al equipo.",
+    investigador: "Lee reseñas, busca en internet y arma el expediente de evidencia.",
+    guionista: "Escribe el guion con tu estilo, los títulos y el texto de la miniatura.",
+    locutor: "Narra cada escena del guion.", disenadora: "Diseña la miniatura del video.",
+    editor: "Edita el video: escenas, zoom, subtítulos y música.",
+    redactora: "Escribe la entrada SEO del blog con capturas.",
+    community: "Publica en WordPress y YouTube y conecta uno con otro.",
+    jefe: "Apruebas ideas, opinas y das el visto bueno final.",
+  };
+  const ESTADO_TAREA = { esperando: "Esperando", en_cola: "En fila", trabajando: "Trabajando", hecha: "Hecha",
+                         fallo: "Falló", cancelada: "Cancelada" };
+  let agenteVisto = null;
+
+  const reloj = () => (estado.ahora || Date.now() / 1000) + (Date.now() - (estado._recibido || Date.now())) / 1000;
+  function duracion(seg) {
+    seg = Math.max(0, Math.round(seg));
+    return seg < 60 ? `${seg}s` : seg < 3600 ? `${Math.floor(seg / 60)}m ${String(seg % 60).padStart(2, "0")}s` : `${Math.floor(seg / 3600)}h ${Math.floor(seg / 60) % 60}m`;
+  }
+  function haceCuanto(t) {
+    const s = reloj() - t;
+    return s < 60 ? "hace un momento" : s < 3600 ? `hace ${Math.floor(s / 60)} min` : s < 86400 ? `hace ${Math.floor(s / 3600)} h` : `hace ${Math.floor(s / 86400)} d`;
+  }
+  const tareasDe = (id) => (estado.tareas || []).filter((t) => t.agente === id);
+  function estadoAgente(a) {
+    const ts = tareasDe(a.id);
+    if (ts.some((t) => t.estado === "trabajando")) return ["Trabajando", "trab"];
+    if (ts.some((t) => t.estado === "en_cola")) return ["Con tareas en fila", "cola"];
+    if (a.ubicacion?.startsWith("visita:")) return ["Entregando trabajo", "trab"];
+    if (ts.some((t) => t.estado === "esperando")) return ["Esperando a otro", "espera"];
+    return ["Libre", "libre"];
+  }
+
+  let presionado = false;
+  $("#equipo").addEventListener("pointerdown", () => (presionado = true));
+  document.addEventListener("pointerup", () => setTimeout(() => (presionado = false), 0));
+
+  function pintarEquipo() {
+    if (!estado || $("#tab-equipo").hidden || presionado) return;
+    if (document.activeElement?.closest?.("#equipo")) return;
+    const cont = $("#equipo");
+    if (!agenteVisto) {
+      cont.innerHTML = `<p class="pista">Pícale a un agente (aquí o en la oficina) para ver sus tareas.</p>
+        <div class="equipo-lista">${estado.agentes.map((a) => {
+          const [txt, cls] = estadoAgente(a);
+          const actual = tareasDe(a.id).find((t) => t.estado === "trabajando");
+          const fila = tareasDe(a.id).filter((t) => ["en_cola", "esperando"].includes(t.estado)).length;
+          return `<button class="agente-tarjeta" data-agente="${a.id}" style="--c:${a.color}">
+            <canvas class="retrato" data-retrato="${a.id}" width="72" height="152"></canvas>
+            <span class="agente-info">
+              <b>${esc(a.id === "jefe" ? "Tú" : a.nombre)}</b> <small>${esc(a.rol)}</small>
+              <span class="estado-chip ${cls}">${esc(txt)}</span>
+              <span class="agente-ahora">${actual ? `${esc(actual.accion)} · ${esc(actual.titulo)}` : a.id === "jefe" ? "Revisa tu bandeja" : "—"}</span>
+              ${fila ? `<span class="agente-fila">${fila} en fila</span>` : ""}
+            </span>
+          </button>`;
+        }).join("")}</div>`;
+    } else {
+      const a = estado.agentes.find((x) => x.id === agenteVisto);
+      const ts = tareasDe(a.id).slice().reverse();
+      const actual = ts.filter((t) => t.estado === "trabajando");
+      const fila = ts.filter((t) => ["en_cola", "esperando"].includes(t.estado)).reverse();
+      const hechas = ts.filter((t) => ["hecha", "fallo", "cancelada"].includes(t.estado)).slice(0, 10);
+      const frases = estado.log.filter((m) => m.quien === a.id).slice(-3).reverse();
+      const [txt, cls] = estadoAgente(a);
+      const tarjeta = (t, viva) => `<li class="tarea tarea-${t.estado}">
+          <div class="tarea-cabeza"><b>${esc(t.accion)}</b><span class="estado-chip ${t.estado}">${esc(ESTADO_TAREA[t.estado] || t.estado)}</span></div>
+          <div class="tarea-sub">${esc(t.titulo || "")}</div>
+          ${t.espera ? `<div class="tarea-espera">⏳ ${esc(t.espera)}</div>` : ""}
+          ${viva ? `<div class="tarea-tiempo">⏱ ${duracion(reloj() - t.inicio)}</div><div class="barra-tarea"><b></b></div>` : ""}
+          ${t.fin && t.inicio ? `<div class="tarea-tiempo">${t.estado === "hecha" ? "✔" : "✖"} en ${duracion(t.fin - t.inicio)} · ${haceCuanto(t.fin)}</div>` : ""}
+          ${t.resultado ? `<div class="tarea-sub">${esc(t.resultado)}</div>` : ""}
+          ${t.error ? `<div class="tarea-error">${esc(t.error)}</div>` : ""}
+        </li>`;
+      cont.innerHTML = `<button class="btn btn-mini volver" data-volver>← Todo el equipo</button>
+        <div class="agente-detalle" style="--c:${a.color}">
+          <canvas class="retrato grande" data-retrato="${a.id}" width="108" height="228"></canvas>
+          <div>
+            <h3>${esc(a.id === "jefe" ? "Tú" : a.nombre)}</h3>
+            <p class="rol">${esc(a.rol)}</p>
+            <span class="estado-chip ${cls}">${esc(txt)}</span>
+            <p class="desc">${esc(DESCRIPCION[a.id] || "")}</p>
+          </div>
+        </div>
+        ${a.id === "jefe" ? `<p class="vacio">Tus pendientes están en la Bandeja.</p>` : `
+        <h4 class="seccion-mini">Ahora</h4>
+        ${actual.length ? `<ul class="tareas">${actual.map((t) => tarjeta(t, true)).join("")}</ul>` : `<p class="vacio">${a.estado === "libre" ? "Sin tareas: está libre." : "Entregando trabajo a un compañero."}</p>`}
+        <h4 class="seccion-mini">En fila ${fila.length ? `(${fila.length})` : ""}</h4>
+        ${fila.length ? `<ul class="tareas">${fila.map((t) => tarjeta(t, false)).join("")}</ul>` : `<p class="vacio">Nada en fila.</p>`}
+        <h4 class="seccion-mini">Terminadas</h4>
+        ${hechas.length ? `<ul class="tareas">${hechas.map((t) => tarjeta(t, false)).join("")}</ul>` : `<p class="vacio">Todavía nada.</p>`}`}
+        ${frases.length ? `<h4 class="seccion-mini">Lo último que dijo</h4><ul class="frases">${frases.map((m) => `<li>“${esc(m.texto)}” <small>${hora(m.t)}</small></li>`).join("")}</ul>` : ""}`;
+      // barra de avance aproximada
+      const DUR = { ideas: 30, investigar: 90, guion: 60, voz: 45, miniatura: 8, video: 150, blog: 60, publicar: 60 };
+      cont.querySelectorAll(".tarea-trabajando .barra-tarea b").forEach((b, k) => {
+        const t = actual[k];
+        const av = 1 - Math.exp(-(reloj() - t.inicio) / (DUR[t.etapa] || 60) * 1.6);
+        b.style.width = `${Math.min(97, av * 100)}%`;
+      });
+    }
+    cont.querySelectorAll("[data-retrato]").forEach((c) => window.Oficina.retrato(c.dataset.retrato, c));
+  }
+
+  function verAgente(id) {
+    agenteVisto = id;
+    window.Oficina.seleccionar(id);
+    abrirPestana("equipo");
+  }
+
+  $("#equipo").addEventListener("click", (e) => {
+    if (e.target.closest("[data-volver]")) { agenteVisto = null; window.Oficina.seleccionar(null); return pintarEquipo(); }
+    const t = e.target.closest("[data-agente]");
+    if (t) verAgente(t.dataset.agente);
+  });
+  setInterval(() => { if (agenteVisto || !$("#tab-equipo").hidden) pintarEquipo(); }, 1000);
+
   $("#lienzo").addEventListener("click", (e) => {
     const id = window.Oficina.agenteEn(e.clientX, e.clientY);
-    const ficha = $("#ficha");
-    if (!id || !estado) { ficha.hidden = true; return; }
-    const a = estado.agentes.find((x) => x.id === id);
-    const proyecto = estado.proyectos.find((p) => p.id === a.proyecto);
-    const frases = estado.log.filter((m) => m.quien === id).slice(-4).reverse();
-    const descripcion = {
-      productora: "Busca apps en Play Store, te propone ideas, aprende de tus opiniones y coordina al equipo.",
-      investigador: "Lee reseñas, busca en internet y arma el expediente de evidencia.",
-      guionista: "Escribe el guion con tu estilo, los títulos y el texto de la miniatura.",
-      locutor: "Narra cada escena del guion.", disenadora: "Diseña la miniatura.",
-      editor: "Edita el video: escenas, zoom, subtítulos y música.",
-      redactora: "Escribe la entrada SEO del blog con capturas.",
-      community: "Publica en WordPress y YouTube y conecta uno con otro.",
-      jefe: "Apruebas ideas, opinas y das el visto bueno final.",
-    }[id];
-    ficha.innerHTML = `<div class="cabeza"><span class="punto" style="--c:${a.color}"></span><b>${esc(id === "jefe" ? "Tú" : a.nombre)}</b> · ${esc(a.rol)}</div>
-      <p>${esc(descripcion)}</p>
-      <p class="estado-agente">${a.estado === "trabajando" ? `Trabajando en <b>${esc(proyecto?.titulo || "algo")}</b>` : "Libre"}</p>
-      ${frases.length ? `<ul>${frases.map((m) => `<li>“${esc(m.texto)}”</li>`).join("")}</ul>` : ""}`;
-    ficha.style.left = `${Math.min(e.clientX + 12, window.innerWidth - 300)}px`;
-    ficha.style.top = `${Math.min(e.clientY + 12, window.innerHeight - 220)}px`;
-    ficha.hidden = false;
+    if (id) verAgente(id);
   });
   $("#lienzo").addEventListener("mousemove", (e) => {
-    $("#lienzo").style.cursor = window.Oficina.agenteEn(e.clientX, e.clientY) ? "pointer" : "default";
+    const id = window.Oficina.agenteEn(e.clientX, e.clientY);
+    window.Oficina.encima(id);
+    $("#lienzo").style.cursor = id ? "pointer" : "default";
   });
-  document.addEventListener("click", (e) => { if (!e.target.closest("#ficha, #lienzo")) $("#ficha").hidden = true; });
+  $("#lienzo").addEventListener("mouseleave", () => window.Oficina.encima(null));
 
   api("/api/estado").then(pintar).catch(() => {});
   conectar();
