@@ -10,14 +10,28 @@ import requests
 
 from . import claude, config
 
-SYSTEM = f"""Eres redactor SEO del blog de "{config.CANAL_NOMBRE}", que analiza apps que prometen \
+SYSTEM = f"""Eres redactora SEO del blog de "{config.CANAL_NOMBRE}", que analiza apps que prometen \
 pagar dinero. Escribes en español, claro y útil, para gente que busca en Google "<app> paga o es \
-estafa".
+estafa". Si te dan la GUÍA DE ESTILO del creador, escribe como él (tono, estructura, cómo empieza y \
+cierra, frases), pero mejor posicionado.
 
-Reglas:
+Reglas de contenido:
 - Solo usa datos del expediente. Afirmaciones fuertes solo si el veredicto las respalda.
 - Estructura con <h2>/<h3>, párrafos cortos, una lista de señales de alerta, una tabla con \
 datos clave (desarrollador, descargas, calificación, pago mínimo), veredicto y preguntas frecuentes.
+
+Reglas SEO:
+- Elige UNA palabra clave principal (la búsqueda más probable, ej. "<app> paga o es estafa") y 3 a 6 \
+secundarias (usa las búsquedas relacionadas que te paso).
+- La principal va al inicio del título (máx. 60 caracteres), en el primer párrafo, en al menos un \
+<h2>, en el slug (corto, sin palabras vacías) y en el texto alternativo de una captura.
+- Meta descripción de 140 a 158 caracteres, con la palabra clave y una razón para hacer clic.
+- Sección final "Preguntas frecuentes" con <h3> por pregunta: usa las preguntas reales que hace la \
+gente en Google (te las paso) y contéstalas con datos del expediente.
+- Supera a la competencia: cubre lo que sus títulos prometen y agrega lo que tú sí tienes (prueba, \
+reseñas reales, veredicto).
+- Enlaces internos: si te paso entradas del mismo blog, enlaza 2 o 3 relacionadas con texto descriptivo.
+- Enlaces externos a las fuentes del expediente.
 - Inserta las capturas donde convenga con el marcador exacto {{{{captura_N}}}} en su propio párrafo \
 (N empieza en 1). Usa entre 3 y 6.
 - Pon el marcador {{{{video}}}} cerca del inicio, donde irá el video de YouTube.
@@ -34,21 +48,72 @@ SCHEMA = {
         "html": {"type": "string"},
         "etiquetas": {"type": "array", "items": {"type": "string"}},
         "alt_capturas": {"type": "array", "items": {"type": "string"}},
+        "palabra_clave": {"type": "string"},
+        "palabras_secundarias": {"type": "array", "items": {"type": "string"}},
+        "enlaces_internos": {"type": "array", "items": {"type": "string"}, "description": "URLs internas que usaste"},
     },
-    "required": ["titulo", "slug", "meta_descripcion", "extracto", "html", "etiquetas", "alt_capturas"],
+    "required": ["titulo", "slug", "meta_descripcion", "extracto", "html", "etiquetas", "alt_capturas",
+                 "palabra_clave", "palabras_secundarias", "enlaces_internos"],
     "additionalProperties": False,
 }
 
 
+def posts_propios(limite: int = 40) -> list[dict]:
+    """Entradas ya publicadas en tu blog, para enlazarlas (se guardan 12 h para no preguntar siempre)."""
+    import time
+
+    from . import estilo
+
+    url = config.env("WP_URL").rstrip("/")
+    if not url:
+        return []
+    cache = estilo.DIR / "posts_cache.json"
+    if cache.exists() and time.time() - cache.stat().st_mtime < 12 * 3600:
+        return json.loads(cache.read_text(encoding="utf-8"))
+    try:
+        r = requests.get(f"{url}/wp-json/wp/v2/posts", params={"per_page": limite, "_fields": "title,link"}, timeout=30)
+        r.raise_for_status()
+        posts = [{"titulo": re.sub(r"<[^>]+>", "", p["title"]["rendered"]), "url": p["link"]} for p in r.json()]
+    except (requests.RequestException, ValueError, KeyError) as exc:
+        print(f"    aviso: no pude leer tus entradas para enlazarlas: {exc}", flush=True)
+        return []
+    estilo.DIR.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(posts, ensure_ascii=False), encoding="utf-8")
+    return posts
+
+
 def escribir(ficha: dict, expediente: dict, n_capturas: int) -> dict:
+    from . import buscar_web, estilo
+
     exp = {k: v for k, v in expediente.items() if k != "informe_web"}
-    return claude.json_estructurado(
-        SYSTEM,
-        f"APP: {json.dumps({k: v for k, v in ficha.items() if k not in ('description', 'screenshots', 'icon', 'headerImage', 'histogram')}, ensure_ascii=False, default=str)}\n\n"
-        f"EXPEDIENTE:\n{json.dumps(exp, ensure_ascii=False, default=str)}\n\n"
-        f"Hay {n_capturas} capturas disponibles. Escribe la entrada (1200-1800 palabras).",
-        SCHEMA, tarea="blog",
-    )
+    app = ficha["title"].split(":")[0].split(" - ")[0].strip()
+    partes = [
+        f"APP: {json.dumps({k: v for k, v in ficha.items() if k not in ('description', 'screenshots', 'icon', 'headerImage', 'histogram')}, ensure_ascii=False, default=str)}",
+        f"EXPEDIENTE:\n{json.dumps(exp, ensure_ascii=False, default=str)}",
+    ]
+    guia = estilo.cargar().get("blog")
+    largo = "1200-1800"
+    if guia:
+        partes.append("GUÍA DE ESTILO DEL CREADOR (escribe así):\n" + json.dumps(
+            {k: guia[k] for k in ("resumen", "tono", "estructura", "como_empieza", "como_cierra", "recursos",
+                                  "frases_tipicas", "mejoras_seo") if k in guia}, ensure_ascii=False))
+        if guia.get("longitud_palabras"):
+            n = int(guia["longitud_palabras"])
+            largo = f"{max(900, int(n * 0.9))}-{max(1300, int(n * 1.2))}"
+    if buscar_web.disponible():
+        s = buscar_web.seo(f"{app} paga o es estafa")
+        if s["busquedas"] and claude.al_gastar:
+            claude.al_gastar(getattr(claude.contexto, "proyecto", None), "blog", "búsqueda",
+                             buscar_web.costo({"serper" if buscar_web.SERPER else "tavily": s["busquedas"]}), 0, 0,
+                             f"Google SEO ({s['busquedas']} búsqueda)")
+        partes.append("INVESTIGACIÓN SEO EN GOOGLE:\n" + json.dumps(
+            {"lo_que_pregunta_la_gente": s["preguntas"], "busquedas_relacionadas": s["relacionadas"],
+             "competencia_en_primera_pagina": s["competencia"]}, ensure_ascii=False))
+    internos = [p for p in posts_propios() if app.lower() not in p["titulo"].lower()][:25]
+    if internos:
+        partes.append("ENTRADAS DEL MISMO BLOG (para enlaces internos):\n" + json.dumps(internos, ensure_ascii=False))
+    partes.append(f"Hay {n_capturas} capturas disponibles. Escribe la entrada ({largo} palabras).")
+    return claude.json_estructurado(SYSTEM, "\n\n".join(partes), SCHEMA, tarea="blog", que="escribir post")
 
 
 class WordPress:

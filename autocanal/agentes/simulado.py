@@ -109,6 +109,18 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
     props = schema["properties"]
     texto = contenido if isinstance(contenido, str) else json.dumps(contenido[-1], ensure_ascii=False)
     nombre = next((t for _, t, _ in APPS if t in texto), "esta app")
+    if "fondo" in props and "lado_icono" in props:
+        return {"descripcion": "Fondo degradado morado, texto blanco enorme con borde, icono a la derecha y flecha amarilla (demo).",
+                "fondo": "degradado", "color_fondo": "#1B1035", "color_fondo_2": "#7B2CBF", "color_texto": "#FFFFFF",
+                "color_borde_texto": "#3C096C", "color_acento": "#FFD60A", "posicion_texto": "izquierda", "mayusculas": True,
+                "tamano_texto": "enorme", "lado_icono": "derecha", "lado_cara": "ninguno", "elementos": ["flecha", "marco"],
+                "palabras_max": 4, "inclinacion_icono": 8, "consejos_texto": "Preguntas cortas y directas."}
+    if "tono" in props and "mejoras_seo" in props:
+        return {"resumen": "Escribe directo, de tú, con humor y mucha prueba (demo).", "tono": "cercano", "estructura": ["Gancho", "Qué es", "Prueba", "Veredicto"],
+                "longitud_palabras": 1100, "como_empieza": "Con una pregunta", "como_cierra": "Con recomendación", "recursos": ["listas", "tablas"],
+                "frases_tipicas": ["No te dejes engañar"], "mejoras_seo": ["Poner la palabra clave en el título", "Agregar preguntas frecuentes"]}
+    if "opcion" in props:
+        return {"opcion": random.randint(1, 3), "razon": "Se parece más a tus referencias (demo)."}
     if "acciones" in props:
         return {"respuesta": "¡Va, jefe! (modo demo: aquí te contestaría Haiku)", "acciones": []}
     if "veredicto" in props:
@@ -127,6 +139,7 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
         return {"titulos": [f"¿{nombre} paga? Lo probé", f"{nombre}: la verdad", f"No descargues {nombre} sin ver esto"],
                 "descripcion": "Análisis completo en el blog: {{BLOG_URL}}", "etiquetas": ["apps", "ganar dinero"],
                 "texto_miniatura": "¿Te paga?" if not cambio else "¡No paga!",
+                "textos_miniatura": ["¿Te paga?", "Lo probé 7 días", "¡Cuidado con esta app!"],
                 "sello_miniatura": "CUIDADO" if not cambio else "NO PAGA",
                 "escenas": [
                     {"narracion": f"{nombre} promete quinientos pesos al día. ¿Será cierto?", "visual": "titulo", "indice": 0, "texto": "¿500 al día?"},
@@ -137,7 +150,8 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                 ]}
     return {"titulo": f"¿{nombre} paga o es estafa? Análisis 2026", "slug": "analisis", "meta_descripcion": "Probamos la app.",
             "extracto": "Probamos la app.", "html": "<p>{{video}}</p><h2>Qué es</h2><p>{{captura_1}}</p>",
-            "etiquetas": ["apps"], "alt_capturas": ["inicio"]}
+            "etiquetas": ["apps"], "alt_capturas": ["inicio"], "palabra_clave": f"{nombre} paga o es estafa",
+            "palabras_secundarias": [f"{nombre} opiniones", f"{nombre} pago mínimo"], "enlaces_internos": []}
 
 
 def investigar_web(system, pregunta, tarea="investigar", max_busquedas=5):

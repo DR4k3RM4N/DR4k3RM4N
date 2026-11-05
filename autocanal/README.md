@@ -86,6 +86,21 @@ haciendo ahora, cuánto lleva, qué tiene en fila (y qué está esperando) y lo 
 Sobre cada agente ves un ícono de estado (🔎 trabajando, ⏳ en fila, ☕ en el café, 💤 libre) y una
 barrita de avance aproximado.
 
+### Tu estilo (pestaña Estilo)
+
+Desde la oficina, sin terminal:
+
+- **Miniaturas (Dani):** sube de 3 a 10 miniaturas que te gusten, tu cara (PNG sin fondo) y tu
+  tipografía. Dani estudia el estilo (fondo, colores, posición del texto, flechas, marcos) y cada
+  video sale con **3 opciones**; elige la más parecida a tus referencias y tú la cambias en la revisión.
+- **Edición (Edu):** subtítulos grandes estilo shorts o clásicos, transiciones (variadas, deslizar,
+  fundido o corte), barra de progreso, sonido en los cambios de escena, música, intro y outro.
+- **Blog (Rosa):** pega enlaces a tus mejores entradas; Rosa aprende cómo escribes. Cada post usa
+  investigación SEO de Google (lo que pregunta la gente, búsquedas relacionadas, competencia), elige
+  palabra clave y secundarias, y enlaza 2–3 de tus otras entradas.
+- **YouTube (Carla):** al darle Publicar sube el video con título, descripción, etiquetas y miniatura.
+  Sin WordPress sube solo a YouTube. Conexión paso a paso: [`despliegue/GUIA_YOUTUBE.md`](despliegue/GUIA_YOUTUBE.md).
+
 ### Por Telegram o WhatsApp
 
 Tu equipo te avisa por chat (ideas, videos listos, problemas) y tú contestas como en un chat:

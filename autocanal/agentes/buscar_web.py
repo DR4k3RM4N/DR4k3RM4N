@@ -85,5 +85,31 @@ def buscar(consultas: list[str], por_consulta: int = 6, max_texto: int = 700) ->
     return salida, conteo
 
 
+def seo(consulta: str) -> dict:
+    """Para el blog: qué pregunta la gente, búsquedas relacionadas y quién sale arriba en Google."""
+    salida = {"preguntas": [], "relacionadas": [], "competencia": [], "busquedas": 0}
+    if SERPER:
+        try:
+            r = requests.post("https://google.serper.dev/search", timeout=30,
+                              headers={"X-API-KEY": SERPER, "Content-Type": "application/json"},
+                              json={"q": consulta, "gl": config.CANAL_PAIS, "hl": config.CANAL_IDIOMA, "num": 10})
+            r.raise_for_status()
+            d = r.json()
+            salida["busquedas"] += 1
+            salida["preguntas"] = [p.get("question", "") for p in d.get("peopleAlsoAsk", []) if p.get("question")][:8]
+            salida["relacionadas"] = [x.get("query", "") for x in d.get("relatedSearches", []) if x.get("query")][:10]
+            salida["competencia"] = [{"titulo": x.get("title", ""), "url": x.get("link", "")} for x in d.get("organic", [])[:6]]
+        except (requests.RequestException, ValueError) as exc:
+            print(f"    aviso SEO: {exc}", flush=True)
+    elif TAVILY:
+        try:
+            res = _tavily(consulta, 6)
+            salida["busquedas"] += 1
+            salida["competencia"] = [{"titulo": x["titulo"], "url": x["url"]} for x in res]
+        except (requests.RequestException, ValueError) as exc:
+            print(f"    aviso SEO: {exc}", flush=True)
+    return salida
+
+
 def costo(conteo: dict) -> float:
     return sum(PRECIO.get(p, 0) * n for p, n in conteo.items())

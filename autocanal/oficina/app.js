@@ -190,7 +190,7 @@
         return `<li class="${clase}" title="${esc(ETIQUETA_ETAPA[et])} · ${esc(a?.nombre)}"><span style="--c:${a?.color}"></span>${esc(ETIQUETA_ETAPA[et])}</li>`;
       }).join("");
       const pub = p.publicado ? `<div class="enlaces"><a href="${esc(p.publicado.youtube)}" target="_blank" rel="noopener">▶ YouTube</a>
-        <a href="${esc(p.publicado.blog?.link)}" target="_blank" rel="noopener">✎ Blog</a></div>` : "";
+        ${p.publicado.blog?.link ? `<a href="${esc(p.publicado.blog.link)}" target="_blank" rel="noopener">✎ Blog</a>` : ""}</div>` : "";
       return `<article class="tarjeta">
         <div class="cabeza"><h4>${esc(p.titulo)}</h4><span class="chip chip-estado-${esc(p.estado)}">${esc(ESTADO_PROY[p.estado] || p.estado)}</span></div>
         <ol class="pasos">${pasos}</ol>${pub}
@@ -222,6 +222,7 @@
     document.querySelectorAll(".contenido").forEach((c) => (c.hidden = c.id !== `tab-${nombre}`));
     if (nombre === "chat") $("#chat").scrollTop = $("#chat").scrollHeight;
     if (nombre === "equipo") pintarEquipo();
+    if (nombre === "estilo") pintarEstilo();
   }
   document.querySelectorAll(".pestana").forEach((p) => p.addEventListener("click", () => abrirPestana(p.dataset.tab)));
 
@@ -236,7 +237,10 @@
       <div class="revision">
         <div class="medios">
           ${d.video ? `<video src="${esc(d.video)}" controls preload="metadata" poster="${esc(d.miniatura || "")}"></video>` : "<p>Sin video</p>"}
-          ${d.miniatura ? `<figure><img src="${esc(d.miniatura)}" alt="Miniatura del video"><figcaption>Miniatura</figcaption></figure>` : ""}
+          ${d.miniaturas && d.miniaturas.length > 1 ? `<h3>Miniatura <small>${esc(d.miniatura_razon || "")}</small></h3>
+            <div class="mini-opciones">${d.miniaturas.map((m, k) => `<button class="mini-op ${k === d.miniatura_elegida ? "sel" : ""}" data-mini="${k + 1}" ${editable ? "" : "disabled"} title="${esc(m.texto)}">
+              <img src="${esc(m.url)}?v=${Date.now()}" alt="Opción ${k + 1}: ${esc(m.texto)}"><span>${k === d.miniatura_elegida ? "✓ Elegida" : `Opción ${k + 1}`}</span></button>`).join("")}</div>`
+          : d.miniatura ? `<figure><img src="${esc(d.miniatura)}" alt="Miniatura del video"><figcaption>Miniatura</figcaption></figure>` : ""}
           ${d.blog_preview ? `<a class="btn ancho" href="${esc(d.blog_preview)}" target="_blank" rel="noopener">Ver borrador del blog: ${esc(d.blog_titulo)}</a>` : ""}
         </div>
         <div class="datos">
@@ -248,6 +252,8 @@
           <h3>Evidencia</h3>
           <ul class="senales">${d.senales.map((s) => `<li><span class="grav grav-${esc(s.gravedad)}">${esc(s.gravedad)}</span> <b>${esc(s.senal)}</b> — ${esc(s.evidencia)} <i>(${esc(s.fuente)})</i></li>`).join("")}</ul>
           ${d.fuentes.length ? `<details><summary>Fuentes (${d.fuentes.length})</summary><ul>${d.fuentes.map((f) => `<li><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.titulo)}</a></li>`).join("")}</ul></details>` : ""}
+          ${d.palabra_clave ? `<h3>SEO del blog</h3><p class="seo"><b>Palabra clave:</b> ${esc(d.palabra_clave)}<br>
+            <b>Secundarias:</b> ${esc((d.palabras_secundarias || []).join(", "))}<br><b>Meta descripción:</b> ${esc(d.meta_descripcion || "")}</p>` : ""}
           <h3>Título</h3>
           <div class="titulos">${d.titulos.map((t, k) => `<label><input type="radio" name="titulo" value="${k + 1}" ${k ? "" : "checked"} ${editable ? "" : "disabled"}> ${esc(t)}</label>`).join("")}</div>
           <details><summary>Guion (${d.escenas.length} escenas)</summary><ol class="guion">${d.escenas.map((e) => `<li>${esc(e)}</li>`).join("")}</ol></details>
@@ -265,6 +271,10 @@
       </div>` : ""}`;
     $("#modal").hidden = false;
     $("#modal-cerrar").focus();
+    document.querySelectorAll("[data-mini]").forEach((b) => (b.onclick = async () => {
+      try { await api(`/api/proyecto/${encodeURIComponent(id)}`, { accion: "miniatura", titulo: Number(b.dataset.mini) }); abrirRevision(id); }
+      catch (err) { alert(err.message); }
+    }));
     if (!editable) return;
     const checks = [...document.querySelectorAll(".check")];
     const revisarChecks = () => {
@@ -425,6 +435,107 @@
     $("#lienzo").style.cursor = id ? "pointer" : "default";
   });
   $("#lienzo").addEventListener("mouseleave", () => window.Oficina.encima(null));
+
+  // ---------- estilo: lo que los agentes aprenden de ti ----------
+  const SUBIDAS = {
+    cara: ["Tu cara (PNG sin fondo)", ".png"], fuente: ["Tu tipografía (.ttf)", ".ttf,.otf"],
+    musica: ["Música de fondo", ".mp3,.m4a,.wav"], whoosh: ["Sonido en cambios de escena", ".mp3,.wav,.m4a"],
+    intro: ["Intro de tu canal", ".mp4,.mov,.webm"], outro: ["Cierre / outro", ".mp4,.mov,.webm"],
+  };
+
+  function subida(tipo, tiene) {
+    const [nombre, acepta] = SUBIDAS[tipo];
+    return `<div class="subida"><span>${tiene ? "✅" : "⬜"} ${esc(nombre)}</span>
+      <label class="btn btn-mini">${tiene ? "Cambiar" : "Subir"}<input type="file" accept="${acepta}" data-subir="${tipo}" hidden></label>
+      ${tiene ? `<button class="btn btn-mini btn-no" data-borrar="${tipo}">Quitar</button>` : ""}</div>`;
+  }
+
+  async function pintarEstilo() {
+    let e;
+    try { e = await api("/api/estilo"); } catch { return; }
+    const a = e.ajustes, m = e.miniaturas, b = e.blog;
+    const sel = (k, ops) => `<select data-ajuste="${k}">${ops.map(([v, t]) => `<option value="${v}" ${String(a[k]) === String(v) ? "selected" : ""}>${t}</option>`).join("")}</select>`;
+    const chk = (k, t) => `<label class="chk"><input type="checkbox" data-ajuste="${k}" ${a[k] ? "checked" : ""}> ${t}</label>`;
+    $("#estilo").innerHTML = `
+      <section class="tarjeta estilo-sec" style="--c:#10b981">
+        <h4>🎨 Miniaturas · Dani</h4>
+        <p class="pista">Sube de 3 a 10 miniaturas que te gusten (tuyas o de canales que admiras). Dani aprende el estilo y lo usa en cada video.</p>
+        <div class="refs">${e.referencias.map((n) => `<figure><img src="/estilo/miniaturas/${encodeURIComponent(n)}" alt="${esc(n)}"><button class="quitar" data-borrar="miniatura" data-nombre="${esc(n)}" aria-label="Quitar">✕</button></figure>`).join("")}
+          <label class="ref-nueva">＋<br><small>Subir</small><input type="file" accept="image/*" multiple data-subir="miniatura" hidden></label></div>
+        ${subida("cara", e.archivos.cara)}${subida("fuente", e.archivos.fuente)}
+        <div class="acciones"><button class="btn btn-primario" data-estudiar="miniaturas" ${e.referencias.length ? "" : "disabled"}>🔍 Que Dani estudie el estilo</button>
+          <label class="chk">Opciones por video ${sel("opciones_miniatura", [[1, "1"], [2, "2"], [3, "3"]])}</label></div>
+        ${m ? `<div class="aprendido"><b>Lo que aprendió:</b> ${esc(m.descripcion)}
+          <div class="colores">${["color_fondo", "color_fondo_2", "color_texto", "color_borde_texto", "color_acento"].map((k) => `<span style="background:${esc(m[k])}" title="${k}"></span>`).join("")}</div>
+          <small>Fondo: ${esc(m.fondo)} · Texto: ${esc(m.posicion_texto)}, ${esc(m.tamano_texto)}${m.mayusculas ? ", mayúsculas" : ""} · ${esc((m.elementos || []).join(", ") || "sin extras")}</small></div>` : ""}
+      </section>
+      <section class="tarjeta estilo-sec" style="--c:#ef4444">
+        <h4>🎬 Edición · Edu</h4>
+        <div class="ajustes">
+          <label>Subtítulos ${sel("subtitulos", [["grande", "Grandes (estilo shorts)"], ["clasico", "Clásicos"]])}</label>
+          <label>Transiciones ${sel("transicion", [["variado", "Variadas"], ["deslizar", "Deslizar"], ["fundido", "Fundido"], ["corte", "Corte directo"]])}</label>
+          ${chk("barra_progreso", "Barra de progreso")}${chk("sonido_cambios", "Sonido en cada cambio de escena")}
+        </div>
+        ${subida("musica", e.archivos.musica)}${subida("whoosh", e.archivos.whoosh)}${subida("intro", e.archivos.intro)}${subida("outro", e.archivos.outro)}
+        <p class="pista">Los colores de subtítulos y barra salen del estilo de tus miniaturas. Usa música sin copyright.</p>
+      </section>
+      <section class="tarjeta estilo-sec" style="--c:#06b6d4">
+        <h4>📝 Blog · Rosa</h4>
+        <p class="pista">Pega enlaces a 3–6 de tus mejores entradas (una por línea). Rosa aprende cómo escribes y lo mejora para Google.</p>
+        <textarea id="blog-urls" rows="4" placeholder="https://tublog.com/una-entrada&#10;https://tublog.com/otra-entrada">${esc((e.blog_urls || []).join("\n"))}</textarea>
+        <div class="acciones"><button class="btn btn-primario" data-estudiar="blog">📖 Que Rosa estudie mis entradas</button></div>
+        <p class="pista">${e.seo_google ? "✅ Cada post usa lo que la gente pregunta en Google y las búsquedas relacionadas (Serper)." : "⬜ Con la clave de Serper, cada post usaría lo que la gente pregunta en Google."}</p>
+        ${b ? `<div class="aprendido"><b>Tu estilo:</b> ${esc(b.resumen)}<br><small>Tono: ${esc(b.tono)} · ~${esc(b.longitud_palabras)} palabras · leyó ${esc(b.leidas)}</small>
+          <details><summary>Estructura y mejoras SEO</summary><ol>${(b.estructura || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ol>
+          <b>Para posicionar mejor:</b><ul>${(b.mejoras_seo || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details></div>` : ""}
+      </section>
+      <section class="tarjeta estilo-sec" style="--c:#f97316">
+        <h4>📤 YouTube · Carla</h4>
+        <p>${e.youtube.conectado ? "✅ Tu canal está conectado." : e.youtube.secreto ? "⬜ Falta autorizar tu canal (ver la guía)." : "⬜ Aún no está conectado (ver la guía)."}
+          Los videos se suben como <b>${esc({ private: "privados", unlisted: "ocultos", public: "públicos" }[e.youtube.privacidad] || e.youtube.privacidad)}</b>.</p>
+        <p class="pista">Carla sube el video cuando le das <b>Publicar</b> en la revisión, con título, descripción, etiquetas, miniatura y el enlace al blog.</p>
+      </section>`;
+  }
+
+  $("#estilo").addEventListener("change", async (ev) => {
+    const el = ev.target;
+    if (el.dataset.subir) {
+      const archivos = [...el.files];
+      el.closest(".tarjeta").classList.add("saliendo");
+      for (const f of archivos) {
+        try {
+          const r = await fetch(`/api/estilo/subir?tipo=${el.dataset.subir}&nombre=${encodeURIComponent(f.name)}`,
+                                { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: f });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) alert(`${f.name}: ${j.error || "no se pudo subir"}`);
+        } catch (err) { alert(`${f.name}: ${err.message}`); }
+      }
+      return pintarEstilo();
+    }
+    if (el.dataset.ajuste) {
+      const v = el.type === "checkbox" ? el.checked : el.dataset.ajuste === "opciones_miniatura" ? Number(el.value) : el.value;
+      try { await api("/api/estilo/ajustes", { [el.dataset.ajuste]: v }); } catch (err) { alert(err.message); }
+    }
+  });
+
+  $("#estilo").addEventListener("click", async (ev) => {
+    const b = ev.target.closest("button");
+    if (!b) return;
+    if (b.dataset.borrar) {
+      if (!confirm("¿Quitar este archivo?")) return;
+      await api("/api/estilo/borrar", { tipo: b.dataset.borrar, nombre: b.dataset.nombre || "" }).catch((e) => alert(e.message));
+      return pintarEstilo();
+    }
+    if (b.dataset.estudiar) {
+      const urls = $("#blog-urls").value.split(/\s+/).filter((u) => u.startsWith("http"));
+      try {
+        await api("/api/estilo/estudiar", { que: b.dataset.estudiar, urls });
+        b.textContent = b.dataset.estudiar === "miniaturas" ? "Dani está estudiando… (míralo en la oficina)" : "Rosa está leyendo… (míralo en la oficina)";
+        b.disabled = true;
+        setTimeout(pintarEstilo, 45000);
+      } catch (err) { alert(err.message); }
+    }
+  });
 
   api("/api/estado").then(pintar).catch(() => {});
   conectar();

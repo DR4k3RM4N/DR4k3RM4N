@@ -29,6 +29,7 @@ from agentes import chat_jefe
 from agentes import claude as ia
 from agentes import whatsapp as wa
 from agentes import config
+from agentes import estilo
 from agentes import telegram as tg
 
 WEB = config.BASE / "oficina"
@@ -85,6 +86,7 @@ ACCION = {
     "ideas": "Buscar apps nuevas en Play Store", "investigar": "Investigar reseñas y evidencia",
     "guion": "Escribir el guion", "voz": "Narrar el guion", "miniatura": "Diseñar la miniatura",
     "video": "Editar el video", "blog": "Escribir el post del blog", "publicar": "Publicar en YouTube y el blog",
+    "estilo_miniaturas": "Estudiar tus miniaturas", "estilo_blog": "Estudiar tus entradas del blog",
 }
 QUE_ES = {"investigar": "el expediente de Iván", "guion": "el guion de Gabi", "voz": "la narración de Leo"}
 ACTIVAS = ("esperando", "en_cola", "trabajando")
@@ -684,6 +686,8 @@ class Oficina:
                 p["estado"], p["error"] = "produccion", None
                 self._tocar()
                 threading.Thread(target=self._producir, args=(app_id, p.get("notas", ""), None, hechas), daemon=True).start()
+            elif accion == "miniatura":
+                return self.elegir_miniatura(app_id, titulo_n - 1)
             elif accion == "descartar" and p["estado"] in ("revision", "error"):
                 p["estado"] = "descartado"
                 self.log.append({"t": time.time(), "quien": "jefe", "texto": f"🗑️ Descartado: {p['titulo']}"})
@@ -716,7 +720,63 @@ class Oficina:
             p["estado"], p["etapa"], p["publicado"] = "publicado", "publicado", pub
             p["publicado_t"] = time.time()
             self._tocar()
-        self.avisar_jefe(f"¡Publicado! {titulo} ya está en YouTube y en el blog 🎉")
+        donde = "en YouTube y en el blog" if (pub or {}).get("blog") else "en YouTube"
+        privado = config.env("YT_PRIVACIDAD", "private") == "private"
+        self.avisar_jefe(f"¡Publicado! {titulo} ya está {donde} 🎉"
+                         + (" Quedó en privado: ábrelo en YouTube Studio para hacerlo público." if privado else "")
+                         + (f"\n{pub.get('youtube')}" if (pub or {}).get("youtube") else ""))
+
+    # ---------- estilo ----------
+    def estudiar(self, que: str, urls: list[str] | None = None) -> None:
+        agente, etapa = ("disenadora", "estilo_miniaturas") if que == "miniaturas" else ("redactora", "estilo_blog")
+        threading.Thread(target=self._estudiar, args=(agente, etapa, urls or []), daemon=True).start()
+
+    def _estudiar(self, agente: str, etapa: str, urls: list[str]) -> None:
+        t = self.nueva_tarea(agente, etapa, titulo="Tu estilo")
+        with self.turnos[agente]:
+            self.tarea(t, estado="trabajando", inicio=time.time())
+            self.poner(agente, estado="trabajando")
+            self.decir(agente, "¡Déjame ver tus miniaturas!" if agente == "disenadora" else "Voy a leer tus entradas…")
+            ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, etapa, t
+            try:
+                if agente == "disenadora":
+                    r = estilo.estudiar_miniaturas()
+                    resumen = r["descripcion"]
+                else:
+                    r = estilo.estudiar_blog(urls)
+                    resumen = f"Leí {r['leidas']} entradas. {r['resumen']}"
+            except Exception as exc:  # noqa: BLE001
+                self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
+                self.poner(agente, estado="libre")
+                self.decir(agente, f"No pude: {str(exc)[:120]}")
+                return
+            self.tarea(t, estado="hecha", fin=time.time(), resultado=resumen[:200])
+            self.poner(agente, estado="libre")
+            self.decir(agente, "¡Ya entendí tu estilo! " + resumen[:140])
+        self.avisar_chat(agente, "Aprendí tu estilo: " + resumen[:300], importante=True)
+
+    def estilo_resumen(self) -> dict:
+        r = estilo.resumen()
+        r["youtube"] = {"conectado": (config.BASE / "youtube_token.json").exists(),
+                        "secreto": (config.BASE / config.env("YT_CLIENT_SECRETS", "client_secret.json")).exists(),
+                        "privacidad": config.env("YT_PRIVACIDAD", "private")}
+        r["seo_google"] = bool(config.env("SERPER_API_KEY"))
+        return r
+
+    def elegir_miniatura(self, app_id: str, n: int) -> dict:
+        import shutil
+
+        carpeta = config.SALIDA / app_id
+        f = carpeta / "miniaturas.json"
+        if not f.exists():
+            return {"error": "Este video no tiene opciones de miniatura."}
+        datos = json.loads(f.read_text(encoding="utf-8"))
+        if not 0 <= n < len(datos["opciones"]):
+            return {"error": "Esa opción no existe."}
+        shutil.copyfile(carpeta / datos["opciones"][n]["archivo"], carpeta / "miniatura.jpg")
+        datos["elegida"], datos["razon"] = n, "La elegiste tú."
+        f.write_text(json.dumps(datos, ensure_ascii=False, indent=1), encoding="utf-8")
+        return {"ok": True}
 
     def detalle(self, app_id: str) -> dict:
         carpeta = config.SALIDA / app_id
@@ -736,6 +796,11 @@ class Oficina:
             "pendiente": exp.get("pendiente_de_probar", []), "fuentes": exp.get("fuentes_web", []),
             "titulos": guion.get("titulos", []), "escenas": [e["narracion"] for e in guion.get("escenas", [])],
             "blog_titulo": blog.get("titulo"),
+            "palabra_clave": blog.get("palabra_clave"), "palabras_secundarias": blog.get("palabras_secundarias", []),
+            "meta_descripcion": blog.get("meta_descripcion"),
+            "miniaturas": [{"url": base + o["archivo"], "texto": o["texto"]} for o in (leer("miniaturas.json") or {}).get("opciones", [])],
+            "miniatura_elegida": (leer("miniaturas.json") or {}).get("elegida", 0),
+            "miniatura_razon": (leer("miniaturas.json") or {}).get("razon", ""),
         }
 
 
@@ -932,6 +997,27 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
+        def _subir(self):
+            """Sube un archivo de estilo. Va en binario (application/octet-stream): ese tipo no lo
+            puede mandar otra página sin permiso del navegador, así que también protege contra CSRF."""
+            if "application/octet-stream" not in self.headers.get("Content-Type", ""):
+                return self._json({"error": "tipo no permitido"}, 403)
+            origen = self.headers.get("Origin")
+            if origen and urlparse(origen).netloc != self.headers.get("Host"):
+                return self._json({"error": "origen no permitido"}, 403)
+            q = parse_qs(urlparse(self.path).query)
+            tipo, nombre = q.get("tipo", [""])[0], q.get("nombre", [""])[0]
+            largo = int(self.headers.get("Content-Length") or 0)
+            if tipo not in estilo.TIPOS:
+                return self._json({"error": "tipo de archivo no válido"}, 400)
+            if largo <= 0 or largo > estilo.TIPOS[tipo][2] * 1024 * 1024:
+                return self._json({"error": f"El archivo debe pesar menos de {estilo.TIPOS[tipo][2]} MB."}, 400)
+            try:
+                p = estilo.guardar_archivo(tipo, nombre, self.rfile.read(largo))
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 400)
+            return self._json({"ok": True, "archivo": p.name})
+
         def _texto(self, texto: str, codigo: int = 200):
             cuerpo = texto.encode()
             self.send_response(codigo)
@@ -957,6 +1043,10 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._archivo(WEB / ruta[len("/static/"):], WEB)
             if ruta.startswith("/salida/"):
                 return self._archivo(config.SALIDA / ruta[len("/salida/"):], config.SALIDA)
+            if ruta.startswith("/estilo/"):
+                return self._archivo(estilo.DIR / ruta[len("/estilo/"):], estilo.DIR)
+            if ruta == "/api/estilo":
+                return self._json(oficina.estilo_resumen())
             if ruta == "/api/estado":
                 return self._json(oficina.snapshot())
             if ruta.startswith("/api/proyecto/"):
@@ -1000,6 +1090,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return
             if not self._autorizado():
                 return
+            if urlparse(self.path).path == "/api/estilo/subir":
+                return self._subir()
             if not self._mismo_origen():
                 return self._json({"error": "origen no permitido"}, 403)
             largo = int(self.headers.get("Content-Length") or 0)
@@ -1010,6 +1102,22 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             ruta = urlparse(self.path).path
             if ruta == "/api/ideas/descartar":
                 return self._json(oficina.descartar_ideas())
+            if ruta == "/api/estilo/estudiar":
+                que = datos.get("que")
+                if que not in ("miniaturas", "blog"):
+                    return self._json({"error": "¿qué estudio?"}, 400)
+                if que == "miniaturas" and not estilo.referencias():
+                    return self._json({"error": "Primero sube ejemplos de miniaturas."}, 400)
+                urls = [str(u)[:500] for u in datos.get("urls", [])][:6]
+                if que == "blog" and not urls:
+                    return self._json({"error": "Pega al menos un enlace."}, 400)
+                oficina.estudiar(que, urls)
+                return self._json({"ok": True})
+            if ruta == "/api/estilo/ajustes":
+                return self._json({"ajustes": estilo.ajustar(datos)})
+            if ruta == "/api/estilo/borrar":
+                estilo.borrar(str(datos.get("tipo")), str(datos.get("nombre", "")))
+                return self._json({"ok": True})
             if ruta == "/api/ideas":
                 oficina.pedir_ideas(str(datos.get("guia", ""))[:500])
                 return self._json({"ok": True})

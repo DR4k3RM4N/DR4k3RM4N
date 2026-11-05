@@ -43,6 +43,8 @@ SCHEMA = {
         "descripcion": {"type": "string", "description": "Descripción de YouTube; usa {{BLOG_URL}} donde va el enlace al blog"},
         "etiquetas": {"type": "array", "items": {"type": "string"}},
         "texto_miniatura": {"type": "string"},
+        "textos_miniatura": {"type": "array", "items": {"type": "string"},
+                             "description": "3 opciones distintas de texto para la miniatura, 2 a 5 palabras cada una"},
         "sello_miniatura": {"type": "string", "enum": ["NO PAGA", "CUIDADO", "SÍ PAGA", "¿PAGA?"]},
         "escenas": {"type": "array", "items": {
             "type": "object",
@@ -56,7 +58,7 @@ SCHEMA = {
             "additionalProperties": False,
         }},
     },
-    "required": ["titulos", "descripcion", "etiquetas", "texto_miniatura", "sello_miniatura", "escenas"],
+    "required": ["titulos", "descripcion", "etiquetas", "texto_miniatura", "textos_miniatura", "sello_miniatura", "escenas"],
     "additionalProperties": False,
 }
 
@@ -73,4 +75,9 @@ def escribir(ficha: dict, expediente: dict, clips: list[dict], minutos: int = 6,
     )
     if notas:
         pedido += f"\n\nCAMBIOS QUE PIDIÓ EL JEFE (prioridad):\n{notas}"
+    from . import estilo
+    mini = estilo.cargar().get("miniaturas")
+    if mini:
+        pedido += (f"\n\nESTILO DE MINIATURAS DEL CANAL: {mini.get('descripcion', '')} "
+                   f"Textos: {mini.get('consejos_texto', '')} Máximo {mini.get('palabras_max', 4)} palabras.")
     return claude.json_estructurado(SYSTEM, pedido, SCHEMA, tarea="guion")

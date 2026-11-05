@@ -111,12 +111,30 @@ class Produccion:
         _guardar(self.carpeta / "guion.json", self.guion)
 
     def miniatura(self) -> None:
-        from agentes import graficos
+        """Dani hace varias opciones con tu estilo y elige la que más se parece a tus referencias."""
+        import shutil
 
+        from agentes import estilo, graficos
+
+        datos = estilo.cargar()
+        spec, n = datos.get("miniaturas"), int(datos["ajustes"].get("opciones_miniatura", 3))
         caps = self.imagenes.get("capturas") or []
-        self.mini = graficos.miniatura(self.guion["texto_miniatura"], self.guion["sello_miniatura"],
-                                       self.imagenes.get("icono"), caps[0] if caps else None,
-                                       self.carpeta / "miniatura.jpg")
+        textos = [t for t in (self.guion.get("textos_miniatura") or []) if t.strip()] or [self.guion["texto_miniatura"]]
+        opciones = []
+        for i in range(n):
+            texto = textos[i % len(textos)]
+            espejo = i >= len(textos) or (i == 1 and len(textos) == 1)
+            captura = caps[i % len(caps)] if caps else None
+            p = self.carpeta / f"miniatura_{i + 1}.jpg"
+            graficos.miniatura(texto, self.guion["sello_miniatura"], self.imagenes.get("icono"), captura, p, spec, espejo=espejo)
+            opciones.append({"archivo": p.name, "texto": texto})
+        elegida, razon = 0, "La primera opción."
+        refs = estilo.referencias()
+        if len(opciones) > 1 and refs:
+            elegida, razon = elegir_miniatura([self.carpeta / o["archivo"] for o in opciones], refs)
+        shutil.copyfile(self.carpeta / opciones[elegida]["archivo"], self.carpeta / "miniatura.jpg")
+        _guardar(self.carpeta / "miniaturas.json", {"opciones": opciones, "elegida": elegida, "razon": razon})
+        self.mini = self.carpeta / "miniatura.jpg"
 
     def editar(self) -> None:
         from agentes import editor
@@ -161,6 +179,34 @@ class Produccion:
         return self.carpeta
 
 
+ELEGIR = {
+    "type": "object",
+    "properties": {"opcion": {"type": "integer", "description": "Número de la opción elegida (empieza en 1)"},
+                   "razon": {"type": "string"}},
+    "required": ["opcion", "razon"],
+    "additionalProperties": False,
+}
+
+
+def elegir_miniatura(opciones: list[Path], referencias: list[Path]) -> tuple[int, str]:
+    """Haiku compara las opciones con tus referencias y elige la más parecida y llamativa."""
+    from agentes import claude, estilo
+
+    contenido = [{"type": "text", "text": "REFERENCIAS DEL ESTILO DEL CANAL:"}]
+    contenido += [estilo.imagen_bloque(r, 480) for r in referencias[:4]]
+    for i, o in enumerate(opciones, 1):
+        contenido += [{"type": "text", "text": f"OPCIÓN {i}:"}, estilo.imagen_bloque(o, 640)]
+    contenido.append({"type": "text", "text": "¿Qué opción se parece más al estilo de las referencias y es más llamativa "
+                                              "y legible en tamaño chico? Responde el número y por qué en una frase."})
+    try:
+        r = claude.json_estructurado("Eres diseñadora de miniaturas de YouTube.", contenido, ELEGIR,
+                                     tarea="miniatura", que="elegir miniatura")
+        n = int(r["opcion"]) - 1
+        return (n if 0 <= n < len(opciones) else 0), r["razon"]
+    except Exception as exc:  # noqa: BLE001 — si no se puede elegir, se queda la primera
+        return 0, f"No pude comparar ({exc}); quedó la primera."
+
+
 def crear(app_id: str, con_web: bool = True, minutos: int = 6, voz: str | None = None,
           desde: str | None = None, notas: str = "") -> Path:
     """Hace el video completo, una etapa tras otra (desde la terminal)."""
@@ -187,7 +233,8 @@ def _reporte(carpeta, ficha, exp, guion, entrada, video, mini) -> None:
         l.append(f"- **[{s['gravedad']}] {s['senal']}** — {s['evidencia']} _(fuente: {s['fuente']})_")
     l += ["", "## Fuentes web", *[f"- [{f['titulo']}]({f['url']})" for f in exp.get("fuentes_web", [])], "",
           "## Títulos propuestos", *[f"{i}. {t}" for i, t in enumerate(guion["titulos"], 1)], "",
-          f"## Blog: {entrada['titulo']}", entrada["meta_descripcion"], "",
+          f"## Blog: {entrada['titulo']}", entrada["meta_descripcion"],
+          f"- Palabra clave: **{entrada.get('palabra_clave', '')}** · secundarias: {', '.join(entrada.get('palabras_secundarias', []))}", "",
           "## Guion"]
     for i, e in enumerate(guion["escenas"], 1):
         l.append(f"{i}. _[{e['visual']} {e.get('indice', '')} {e.get('texto', '')}]_ {e['narracion']}")
@@ -204,25 +251,34 @@ def publicar(app_id: str, titulo_n: int = 1) -> dict:
         raise RuntimeError(f"Falta el video o el blog. Primero ejecuta: python canal.py crear {app_id}")
     pub = _leer(carpeta / "publicado.json") or {}
 
+    con_blog = bool(config.env("WP_URL") and config.env("WP_USUARIO") and config.env("WP_APP_PASSWORD"))
     if "blog" not in pub:
-        print("Subiendo entrada a WordPress…")
-        wp = blog.WordPress()
-        pub["blog"] = wp.publicar(entrada, imagenes, str(carpeta / "miniatura.jpg"), _slug(entrada["slug"]))
+        if con_blog:
+            print("Subiendo entrada a WordPress…")
+            wp = blog.WordPress()
+            pub["blog"] = wp.publicar(entrada, imagenes, str(carpeta / "miniatura.jpg"), _slug(entrada["slug"]))
+            print(f"  · {pub['blog']['link']} ({pub['blog']['estado']})")
+        else:  # sin WordPress todavía: se sube solo a YouTube
+            print("WordPress no está configurado: subo solo a YouTube.")
+            pub["blog"] = None
         _guardar(carpeta / "publicado.json", pub)
-        print(f"  · {pub['blog']['link']} ({pub['blog']['estado']})")
 
     if "youtube" not in pub:
         print("Subiendo video a YouTube…")
-        desc = guion["descripcion"].replace("{{BLOG_URL}}", pub["blog"]["link"])
-        if pub["blog"]["link"] not in desc:
-            desc += f"\n\nAnálisis completo: {pub['blog']['link']}"
+        enlace = (pub.get("blog") or {}).get("link")
+        if enlace:
+            desc = guion["descripcion"].replace("{{BLOG_URL}}", enlace)
+            if enlace not in desc:
+                desc += f"\n\nAnálisis completo: {enlace}"
+        else:
+            desc = "\n".join(l for l in guion["descripcion"].splitlines() if "{{BLOG_URL}}" not in l)
         sintetico = config.env("VOZ_MOTOR", "edge") != "propia"
         pub["youtube"] = youtube.subir(carpeta / "video.mp4", carpeta / "miniatura.jpg",
                                        guion["titulos"][titulo_n - 1], desc, guion["etiquetas"], sintetico)
         _guardar(carpeta / "publicado.json", pub)
         print(f"  · {pub['youtube']}")
 
-    if not pub.get("video_en_blog"):
+    if pub.get("blog") and not pub.get("video_en_blog"):
         blog.WordPress().insertar_video(pub["blog"]["id"], pub["youtube"])
         pub["video_en_blog"] = True
         _guardar(carpeta / "publicado.json", pub)

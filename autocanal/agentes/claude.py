@@ -25,6 +25,8 @@ TAREAS = {
     "blog": ("claude-haiku-5-5", "low"),            # ordenar la investigación en un post
     "whatsapp": ("claude-haiku-5-5", "low"),        # entender lo que escribes por WhatsApp
     "leer_web": ("claude-haiku-5-5", "low"),        # leer resultados de Google y sacar hechos con fuente
+    "estilo": ("claude-sonnet-5-5", "low"),         # estudiar tus miniaturas y entradas (una sola vez)
+    "miniatura": ("claude-haiku-5-5", "low"),       # elegir la opción de miniatura más parecida a tu estilo
 }
 
 # Precios en USD por millón de tokens: (entrada, salida). Haiku cambia de tarifa arriba de 100K de entrada.
