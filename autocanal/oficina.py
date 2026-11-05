@@ -29,6 +29,7 @@ from agentes import chat_jefe
 from agentes import claude as ia
 from agentes import whatsapp as wa
 from agentes import config
+from agentes import telegram as tg
 
 WEB = config.BASE / "oficina"
 ESTADO = config.BASE / "oficina_estado.json"
@@ -38,8 +39,8 @@ PASEO = 6.0  # segundos que tarda un agente en ir a otro escritorio, hablar y vo
 USUARIO = config.env("OFICINA_USUARIO", "jefe")
 PASSWORD = config.env("OFICINA_PASSWORD")
 URL_PUBLICA = config.env("OFICINA_URL")
-TELEGRAM_TOKEN = config.env("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = config.env("TELEGRAM_CHAT_ID")
+# importante = ideas, videos listos, publicados y problemas · todo = también cada entrega entre agentes
+NIVEL_AVISOS = config.env("AVISOS_NIVEL") or config.env("WHATSAPP_NIVEL", "importante")
 IDEAS_HORA = config.env("IDEAS_HORA")          # ej. 09:00 — vacío = no buscar solas
 IDEAS_ZONA = config.env("IDEAS_ZONA", "America/Mexico_City")
 IDEAS_GUIA = config.env("IDEAS_GUIA")
@@ -119,10 +120,13 @@ class Oficina:
         self.gasto = datos.get("gasto", {})  # USD por día (AAAA-MM-DD)
         ia.al_gastar = self._gasto
         self.wa = datos.get("whatsapp", {"ultimo_entrante": 0, "numero": "", "vistos": []})
-        self.wa_cola: list[tuple[float, str, bool]] = []
-        self.wa_lock = threading.Lock()
-        if wa.activo():
-            threading.Thread(target=self._wa_despachar, daemon=True).start()
+        self.chat_cola: list[tuple[float, str, bool, bool]] = []  # (cuándo, línea, importante, con botones)
+        self.chat_lock = threading.Lock()
+        self.tg_vistos: list[str] = []
+        if wa.activo() or tg.activo():
+            threading.Thread(target=self._chat_despachar, daemon=True).start()
+        if tg.activo():
+            threading.Thread(target=tg.escuchar, args=(self.recibir_telegram,), daemon=True).start()
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
 
@@ -156,44 +160,63 @@ class Oficina:
             if al_log:
                 self.log.append({"t": time.time(), "quien": agente, "texto": texto})
             self._tocar()
-        if al_log and wa.NIVEL == "todo" and agente != "jefe":
-            self.whatsapp(agente, texto)
+        if al_log and NIVEL_AVISOS == "todo" and agente != "jefe":
+            self.avisar_chat(agente, texto)
 
     def poner(self, agente: str, **campos) -> None:
         with self.lock:
             self.agentes[agente].update(campos)
             self._tocar()
 
-    # ---------- WhatsApp ----------
+    # ---------- chat con el jefe (WhatsApp y Telegram) ----------
     EMOJI = {"productora": "📋", "investigador": "🔎", "guionista": "✍️", "locutor": "🎙️", "disenadora": "🎨",
              "editor": "🎬", "redactora": "📝", "community": "📤"}
 
-    def whatsapp(self, agente: str, texto: str, importante: bool = False) -> None:
-        """Pone un aviso en la cola; se juntan varios en un solo mensaje para gastar menos."""
-        if not wa.activo():
+    def avisar_chat(self, agente: str, texto: str, importante: bool = False, botones: bool = False) -> None:
+        """Pone un aviso en la cola; se juntan varios en un solo mensaje (en WhatsApp cada mensaje cuesta)."""
+        if not (wa.activo() or tg.activo()):
             return
         a = self.agentes.get(agente, {})
         linea = f"{self.EMOJI.get(agente, '💬')} *{a.get('nombre', agente)}*: {texto}"
-        with self.wa_lock:
-            if any(texto in l for _, l, _ in self.wa_cola):
+        with self.chat_lock:
+            if any(texto in l for _, l, _, _ in self.chat_cola):
                 return
-            self.wa_cola.append((time.time(), linea, importante))
+            self.chat_cola.append((time.time(), linea, importante, botones))
 
-    def _wa_despachar(self) -> None:
+    def _chat_despachar(self) -> None:
         while True:
             time.sleep(3)
-            with self.wa_lock:
-                if not self.wa_cola:
+            with self.chat_lock:
+                if not self.chat_cola:
                     continue
-                primero = self.wa_cola[0][0]
-                urgente = any(imp for _, _, imp in self.wa_cola)
+                primero = self.chat_cola[0][0]
+                urgente = any(imp for _, _, imp, _ in self.chat_cola)
                 if time.time() - primero < (6 if urgente else 60):
                     continue
-                lineas = [l for _, l, _ in self.wa_cola]
-                self.wa_cola.clear()
+                lineas = [l for _, l, _, _ in self.chat_cola]
+                con_botones = any(b for _, _, _, b in self.chat_cola)
+                self.chat_cola.clear()
             texto = "\n\n".join(lineas)
             if URL_PUBLICA:
                 texto += f"\n\n👉 {URL_PUBLICA}"
+            if wa.activo():
+                self._wa_enviar(texto)
+            if tg.activo():
+                self._tg_enviar(texto, tg.botones_ideas(self._pendientes()) if con_botones else None)
+
+    def _tg_enviar(self, texto: str, botones=None, teclado: bool = False) -> None:
+        try:
+            tg.enviar(texto, botones=botones, teclado=teclado)
+        except Exception as exc:  # noqa: BLE001
+            print(f"aviso: Telegram: {exc}", flush=True)
+            with self.lock:
+                self.log.append({"t": time.time(), "quien": "productora", "texto": f"⚠️ No pude mandarte Telegram: {exc}"})
+                self._tocar()
+
+    def _responder(self, canal: str, texto: str, botones=None, teclado: bool = False) -> None:
+        if canal == "telegram":
+            self._tg_enviar(texto, botones, teclado)
+        else:
             self._wa_enviar(texto)
 
     def _wa_enviar(self, texto: str) -> None:
@@ -242,7 +265,7 @@ class Oficina:
         return "\n".join(lineas)
 
     def recibir_whatsapp(self, mensaje: dict) -> None:
-        """Un mensaje tuyo por WhatsApp: se entiende y se ejecuta."""
+        """Un mensaje tuyo por WhatsApp."""
         with self.lock:
             if mensaje["id"] in self.wa.setdefault("vistos", []):
                 return  # Meta a veces reenvía el mismo aviso
@@ -250,16 +273,38 @@ class Oficina:
             if not wa.es_el_jefe(mensaje["de"]):
                 return
             self.wa["ultimo_entrante"], self.wa["numero"] = time.time(), mensaje["de"]
-            self.log.append({"t": time.time(), "quien": "jefe", "texto": f"📱 {mensaje['texto'] or '(' + str(mensaje['tipo']) + ')'}"})
+            self._tocar()
+        self._atender("whatsapp", mensaje)
+
+    def recibir_telegram(self, mensaje: dict) -> None:
+        """Un mensaje (o botón) tuyo por Telegram. tg.escuchar ya filtró que seas tú."""
+        with self.lock:
+            if mensaje["id"] in self.tg_vistos:
+                return
+            self.tg_vistos = (self.tg_vistos + [mensaje["id"]])[-200:]
+        self._atender("telegram", mensaje)
+
+    BOTONES_FIJOS = {"💡 pendientes": "pendientes", "📊 ¿cómo van?": "¿cómo van?", "🔍 buscar ideas": "ideas",
+                     "❓ ayuda": "ayuda", "/start": "ayuda", "/ayuda": "ayuda", "/help": "ayuda",
+                     "/pendientes": "pendientes", "/estado": "estado", "/ideas": "ideas"}
+
+    def _atender(self, canal: str, mensaje: dict) -> None:
+        """Lo que escribes por chat: se entiende (comandos o Haiku) y se ejecuta."""
+        icono = "✈️" if canal == "telegram" else "📱"
+        with self.lock:
+            self.log.append({"t": time.time(), "quien": "jefe", "texto": f"{icono} {mensaje['texto'] or '(' + str(mensaje['tipo']) + ')'}"})
             self._tocar()
         if not mensaje["texto"]:
-            return self._wa_enviar("Por ahora solo entiendo mensajes de texto 🙂")
+            return self._responder(canal, "Por ahora solo entiendo mensajes de texto 🙂")
+        texto_jefe = self.BOTONES_FIJOS.get(mensaje["texto"].strip().lower(), mensaje["texto"])
+        if texto_jefe == "ayuda":
+            return self._responder(canal, chat_jefe.AYUDA, teclado=True)
         ideas = self._pendientes()
         ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "whatsapp", None
         try:
-            plan = chat_jefe.interpretar(mensaje["texto"], ideas, sorted(self.proyectos.values(), key=lambda p: -p["creado"]))
+            plan = chat_jefe.interpretar(texto_jefe, ideas, sorted(self.proyectos.values(), key=lambda p: -p["creado"]))
         except Exception as exc:  # noqa: BLE001
-            return self._wa_enviar(f"No te entendí bien ({exc}). Escribe *ayuda* para ver qué puedo hacer.")
+            return self._responder(canal, f"No te entendí bien ({exc}). Escribe *ayuda* para ver qué puedo hacer.")
         partes = [plan["respuesta"]] if plan.get("respuesta") else []
         for acc in plan.get("acciones", []):
             tipo, n, texto = acc["tipo"], acc.get("numero", 0), acc.get("texto", "")
@@ -283,9 +328,11 @@ class Oficina:
                 partes.append("💡 *Ideas:*\n" + self._lista_ideas()
                               + ("\n\n👀 *Para revisar en la oficina:* " + ", ".join(revision) if revision else ""))
         texto = "\n\n".join(x for x in partes if x) or "👍"
-        if any(a["tipo"] == "pendientes" for a in plan.get("acciones", [])) and URL_PUBLICA:
+        pidio_lista = any(a["tipo"] == "pendientes" for a in plan.get("acciones", []))
+        if pidio_lista and URL_PUBLICA:
             texto += f"\n\n👉 {URL_PUBLICA}"
-        self._wa_enviar(texto)
+        botones = tg.botones_ideas(self._pendientes()) if canal == "telegram" and pidio_lista and self._pendientes() else None
+        self._responder(canal, texto, botones)
 
     def _hoy(self) -> str:
         return dt.datetime.now(ZoneInfo(IDEAS_ZONA)).date().isoformat()
@@ -389,9 +436,8 @@ class Oficina:
         self.poner(quien, ubicacion="casa")
         time.sleep(PASEO * 0.4)
 
-    def avisar_jefe(self, texto: str, extra_whatsapp: str = "") -> None:
-        notificar(texto)
-        self.whatsapp("productora", texto + (f"\n{extra_whatsapp}" if extra_whatsapp else ""), importante=True)
+    def avisar_jefe(self, texto: str, extra_whatsapp: str = "", botones: bool = False) -> None:
+        self.avisar_chat("productora", texto + (f"\n{extra_whatsapp}" if extra_whatsapp else ""), importante=True, botones=botones)
         self.visitar("productora", "jefe", texto)
 
     # ---------- ideas ----------
@@ -434,7 +480,8 @@ class Oficina:
         self.poner("productora", estado="libre")
         if nuevas:
             self.avisar_jefe(f"¡Jefe! Te traje {len(nuevas)} ideas. ¿Qué opinas? Están en tu bandeja.",
-                             extra_whatsapp=self._lista_ideas() + "\n\nContéstame *sí 1*, *no 2 (motivo)* u *opino 3 ...*")
+                             extra_whatsapp=self._lista_ideas() + "\n\nContéstame *sí 1*, *no 2 (motivo)* u *opino 3 ...*",
+                             botones=True)
         else:
             self.decir("productora", "Jefe, no encontré apps nuevas; las que vi ya están en tu bandeja.")
 
@@ -689,32 +736,57 @@ class Oficina:
         }
 
 
-def notificar(texto: str) -> None:
-    """Manda un aviso a tu Telegram (si está configurado), sin frenar a los agentes."""
-    if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
-        return
-    mensaje = texto + (f"\n\n👉 {URL_PUBLICA}" if URL_PUBLICA else "")
+def configurar_telegram() -> None:
+    """Asistente: valida el token de @BotFather, espera tu primer mensaje y guarda tu chat."""
+    import getpass
+    import os
+    import re as _re
 
-    def enviar():
-        try:
-            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                          json={"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}, timeout=20)
-        except requests.RequestException as exc:
-            print(f"aviso: Telegram: {exc}")
-    threading.Thread(target=enviar, daemon=True).start()
+    env = config.BASE / ".env"
+    texto = env.read_text(encoding="utf-8") if env.exists() else ""
 
+    def pon(clave, valor):
+        nonlocal texto
+        if _re.search(rf"^{clave}=", texto, flags=_re.M):
+            texto = _re.sub(rf"^{clave}=.*$", lambda _: f"{clave}={valor}", texto, flags=_re.M)
+        else:
+            texto = texto.rstrip("\n") + f"\n{clave}={valor}\n"
 
-def telegram_chat_id() -> None:
-    """Ayuda para configurar Telegram: muestra el chat_id de quien le escribió al bot."""
-    if not TELEGRAM_TOKEN:
-        raise SystemExit("Primero pon TELEGRAM_TOKEN en .env (te lo da @BotFather).")
-    r = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates", timeout=20).json()
-    chats = {m["message"]["chat"]["id"]: m["message"]["chat"].get("first_name", "")
-             for m in r.get("result", []) if "message" in m}
-    if not chats:
-        raise SystemExit("No hay mensajes. Mándale cualquier mensaje a tu bot en Telegram y vuelve a correr esto.")
-    for cid, nombre in chats.items():
-        print(f"TELEGRAM_CHAT_ID={cid}   ({nombre})")
+    print("Configurar Telegram.\n1) En Telegram busca @BotFather, escríbele /newbot y sigue los pasos.")
+    token = getpass.getpass("2) Pega aquí el token que te dio (no se ve al pegarlo): ").strip()
+    try:
+        bot = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=20).json()
+    except requests.RequestException as exc:
+        raise SystemExit(f"No pude hablar con Telegram: {exc}")
+    if not bot.get("ok"):
+        raise SystemExit("Ese token no sirve. Cópialo completo de @BotFather e inténtalo otra vez.")
+    usuario = bot["result"]["username"]
+    print(f"\n✔ Tu bot es @{usuario}")
+    print(f"3) En tu celular abre  https://t.me/{usuario}  y dale INICIAR (o mándale 'hola').")
+    print("   Esperando tu mensaje (hasta 3 minutos)…")
+    chat = None
+    for _ in range(6):
+        r = requests.get(f"https://api.telegram.org/bot{token}/getUpdates", params={"timeout": 30}, timeout=45).json()
+        if not r.get("ok"):
+            if r.get("error_code") == 409:
+                raise SystemExit("La oficina está usando este bot. Detenla: sudo systemctl stop oficina, y repite.")
+            continue
+        mensajes = [u["message"] for u in r.get("result", []) if "message" in u]
+        if mensajes:
+            chat = mensajes[-1]["chat"]
+            break
+    if not chat:
+        raise SystemExit("No me llegó tu mensaje. Vuelve a correr esto y mándale 'hola' a tu bot.")
+    pon("TELEGRAM_TOKEN", token)
+    pon("TELEGRAM_CHAT_ID", str(chat["id"]))
+    env.write_text(texto, encoding="utf-8")
+    os.chmod(env, 0o600)
+    requests.post(f"https://api.telegram.org/bot{token}/sendMessage", timeout=20, json={
+        "chat_id": chat["id"], "reply_markup": tg.TECLADO,
+        "text": "¡Hola jefe! 👋 Soy Paola. Desde aquí el equipo te va a avisar y tú nos puedes contestar. "
+                "Reinicia la oficina y escríbeme 'ayuda'."})
+    print(f"\n✔ Listo, {chat.get('first_name', 'jefe')}. Te mandé un mensaje de bienvenida.")
+    print("4) Reinicia la oficina:  sudo systemctl restart oficina")
 
 
 def configurar_whatsapp() -> None:
@@ -961,14 +1033,15 @@ def main() -> None:
     p.add_argument("--host", default="127.0.0.1",
                    help="0.0.0.0 para aceptar conexiones de fuera (exige OFICINA_PASSWORD)")
     p.add_argument("--sin-navegador", action="store_true")
-    p.add_argument("--telegram-id", action="store_true", help="muestra tu TELEGRAM_CHAT_ID y sale")
+    p.add_argument("--configurar-telegram", "--telegram-id", action="store_true", dest="configurar_telegram",
+                   help="asistente para conectar tu Telegram")
     p.add_argument("--probar-whatsapp", action="store_true", help="te manda un WhatsApp de prueba y sale")
     p.add_argument("--configurar-whatsapp", action="store_true", help="asistente para poner los datos de WhatsApp")
     a = p.parse_args()
     if a.configurar_whatsapp:
         return configurar_whatsapp()
-    if a.telegram_id:
-        return telegram_chat_id()
+    if a.configurar_telegram:
+        return configurar_telegram()
     if a.probar_whatsapp:
         return probar_whatsapp()
     a.demo = a.demo or config.env("OFICINA_DEMO") == "1"
@@ -984,8 +1057,8 @@ def main() -> None:
     url = f"http://localhost:{a.puerto}"
     print(f"🏢 Oficina abierta en {url}" + ("  (modo demo)" if a.demo else "")
           + (f"  · ideas diarias a las {IDEAS_HORA} ({IDEAS_ZONA})" if IDEAS_HORA else "")
-          + ("  · avisos por Telegram" if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID else "")
-          + (f"  · WhatsApp ({wa.NIVEL})" if wa.activo() else "")
+          + ("  · Telegram" if tg.activo() else "") + ("  · WhatsApp" if wa.activo() else "")
+          + (f" (avisos: {NIVEL_AVISOS})" if tg.activo() or wa.activo() else "")
           + "  — Ctrl+C para cerrar", flush=True)
     if not a.sin_navegador:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()

@@ -113,24 +113,30 @@ cd /opt/canal/autocanal && sudo -u canal .venv/bin/python canal.py autorizar-you
 Te muestra un enlace largo. **Cópialo y ábrelo en el navegador de tu computadora**, elige tu canal
 y acepta. Al final dice `✔ Listo, autorizado el canal: …`. Ya puedes cerrar esa ventana.
 
-## 5. Avisos por Telegram (opcional, pero lo vale)
+## 5. Chat con tu equipo por Telegram (gratis, 5 minutos)
 
-1. En Telegram busca **@BotFather**, escríbele `/newbot` y sigue los pasos. Te da un **token**.
-2. Ponlo en `.env` como `TELEGRAM_TOKEN=…` (con `sudo nano /opt/canal/autocanal/.env`).
-3. Busca tu bot nuevo en Telegram y mándale cualquier mensaje ("hola").
-4. En el servidor:
+1. En Telegram busca **@BotFather**, escríbele `/newbot`, ponle un nombre (ej. "Oficina de mi canal")
+   y un usuario que termine en `bot`. Te da un **token**: cópialo.
+2. En el servidor corre el asistente y pega el token cuando te lo pida:
 
 ```bash
-cd /opt/canal/autocanal && sudo -u canal .venv/bin/python oficina.py --telegram-id
+cd /opt/canal/autocanal && sudo -u canal .venv/bin/python oficina.py --configurar-telegram
 ```
 
-5. Te muestra `TELEGRAM_CHAT_ID=123456789`. Ponlo en `.env` y reinicia:
+3. Te dice que abras tu bot en Telegram y le des **INICIAR**. Al hacerlo, el asistente te reconoce,
+   guarda todo y te manda un mensaje de bienvenida.
+4. Reinicia la oficina:
 
 ```bash
 sudo systemctl restart oficina
 ```
 
-Desde ahora, cuando Paola tenga ideas o un video listo, te llega un mensaje con el enlace.
+Desde ahora Paola te manda las ideas con botones **✅ / ❌**, te avisa cuando un video está listo y le
+puedes escribir: *¿cómo van?*, *pendientes*, *busca apps de encuestas*, *no 2 ya la hicimos*… Abajo del
+chat tienes botones fijos para lo más común. Solo obedece mensajes tuyos.
+
+(¿Prefieres WhatsApp? Funciona igual pero Meta cobra por mensaje y pide más pasos:
+[`GUIA_WHATSAPP.md`](GUIA_WHATSAPP.md).)
 
 ---
 

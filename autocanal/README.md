@@ -86,11 +86,16 @@ haciendo ahora, cuánto lleva, qué tiene en fila (y qué está esperando) y lo 
 Sobre cada agente ves un ícono de estado (🔎 trabajando, ⏳ en fila, ☕ en el café, 💤 libre) y una
 barrita de avance aproximado.
 
-### Por WhatsApp
+### Por Telegram o WhatsApp
 
-Tu equipo te avisa por WhatsApp (ideas, videos listos, problemas) y tú contestas como en un chat:
-*sí 1*, *no 2 ya la hicimos*, *busca apps de encuestas*, *¿cómo van?*. Usa la API oficial de Meta.
-Paso a paso en [`despliegue/GUIA_WHATSAPP.md`](despliegue/GUIA_WHATSAPP.md).
+Tu equipo te avisa por chat (ideas, videos listos, problemas) y tú contestas como en un chat:
+*sí 1*, *no 2 ya la hicimos*, *busca apps de encuestas*, *¿cómo van?*. Los comandos simples se
+entienden gratis; lo demás lo interpreta Haiku (fracción de centavo).
+
+- **Telegram (gratis, recomendado):** ideas con botones ✅/❌ y teclado fijo. Se conecta con
+  `python oficina.py --configurar-telegram` (ver la sección 5 de
+  [`despliegue/GUIA_SERVIDOR.md`](despliegue/GUIA_SERVIDOR.md)).
+- **WhatsApp (API oficial de Meta, cobra por mensaje):** [`despliegue/GUIA_WHATSAPP.md`](despliegue/GUIA_WHATSAPP.md).
 
 ### En un servidor (siempre activa)
 

@@ -112,7 +112,7 @@ donde ves el video y la lista de comprobación; por WhatsApp te llega el enlace.
 
 ## Ajustes en `.env`
 
-- `WHATSAPP_NIVEL=todo` para recibir también cada entrega entre agentes (más mensajes, más costo).
+- `AVISOS_NIVEL=todo` para recibir también cada entrega entre agentes (más mensajes, más costo).
   Con `importante` (por defecto) solo: ideas listas, video listo, publicado y problemas.
 - Solo se obedecen mensajes de tu número (`WHATSAPP_JEFE`); los de cualquier otro se ignoran.
 
