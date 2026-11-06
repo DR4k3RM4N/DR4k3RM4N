@@ -240,3 +240,12 @@ solo ese agente de modelo en `.env` (por ejemplo `MODELO_BLOG=claude-sonnet-5-5`
 - Grabación automática de la app con un emulador Android (`adb shell screenrecord`) para no grabar a mano.
 - Versión vertical de 60 s para Shorts/TikTok a partir del mismo guion.
 - Publicación programada (fecha y hora) en YouTube y WordPress.
+
+## Videos de cualquier tema
+
+No todo tiene que ser de apps que pagan. Pídele a Paola, por ejemplo, *hazme un video de Marvel Rivals*:
+busca en Google qué pregunta y busca la gente sobre eso ahora (y las novedades) y te propone 5 ideas con enfoques
+distintos (top, guía, noticias, opinión…). Si ya das el enfoque (*los mejores personajes de Marvel Rivals para
+principiantes*), la primera idea es la tuya y las demás son alternativas. Cuesta ~3 búsquedas + una llamada a Haiku.
+Al aprobar una, Iván investiga el tema en Google, Gabi escribe el guion con imágenes del tema, Rosa el blog SEO y
+Edu lo edita igual que los demás. Si grabas clips (gameplay, por ejemplo) ponlos en `entrada/<id del proyecto>/`.

@@ -302,3 +302,5 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 @media (prefers-reduced-motion: reduce) {
   .globo, .pasos li.actual span { animation: none; }
 }
+
+.chip-formato { background: rgba(255,255,255,.08); color: var(--suave); font-size: .72em; vertical-align: middle; }

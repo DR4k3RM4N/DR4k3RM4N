@@ -126,6 +126,31 @@ def tarjeta_captura(captura_ruta: str | None, icono_ruta: str | None, destino: P
     return destino
 
 
+def tarjeta_imagen(ruta: str | None, destino: Path, etiqueta: str = "", respaldo: str = "") -> Path:
+    """Imagen del tema a pantalla completa (sin recortar lo importante: si no llena, va sobre su propio
+    fondo desenfocado), con una etiqueta opcional arriba."""
+    im = abrir(ruta)
+    if im is None:
+        return tarjeta_dato(etiqueta or respaldo, None, destino)
+    im = im.convert("RGB")
+    proporcion = im.width / im.height
+    if 1.5 <= proporcion <= 2.0:  # casi 16:9: llena la pantalla
+        img = ImageOps.fit(im, (W, H))
+    else:
+        img = fondo_desenfocado(im, oscuro=0.45)
+        escala = min((W - 120) / im.width, (H - 100) / im.height)
+        pieza = redondear(im.resize((int(im.width * escala), int(im.height * escala))), 28)
+        img.paste(pieza, ((W - pieza.width) // 2, (H - pieza.height) // 2), pieza)
+    if etiqueta:
+        d = ImageDraw.Draw(img, "RGBA")
+        f = fuente(64)
+        ancho = d.textlength(etiqueta.upper(), font=f)
+        d.rounded_rectangle([60, 50, 60 + ancho + 60, 50 + 100], 20, fill=(0, 0, 0, 190))
+        d.text((90, 64), etiqueta.upper(), font=f, fill=AMARILLO)
+    img.save(destino)
+    return destino
+
+
 def tarjeta_resena(resena: dict, icono_ruta: str | None, destino: Path) -> Path:
     icono = abrir(icono_ruta)
     img = fondo_desenfocado(icono, oscuro=0.75)
@@ -337,14 +362,16 @@ def miniatura(texto: str, sello: str, icono_ruta: str | None, captura_ruta: str 
                               _rgb(spec["color_borde_texto"], (0, 0, 0)), "sombra_texto" in spec["elementos"])
 
     # sello (NO PAGA, CUIDADO…) debajo del texto
-    color_sello = COLOR_SELLO.get(sello, acento)
-    fs = fuente(62)
-    bw = d.textlength(sello, font=fs)
-    sx = (caja_texto[0] + caja_texto[2]) / 2 - bw / 2
-    sy = min(MH - 110, max(y_fin + 10, MH - 160)) if not vertical else y_sello
-    sy = max(20, min(MH - 100, sy))
-    d.rounded_rectangle([sx - 24, sy, sx + bw + 24, sy + 92], 18, fill=color_sello)
-    d.text((sx, sy + 12), sello, font=fs, fill=BLANCO if color_sello != AMARILLO else (0, 0, 0))
+    if sello:  # en videos de temas libres puede ir vacío o ser cualquier palabra ("TOP 5", "NUEVO")
+        color_sello = COLOR_SELLO.get(sello, acento)
+        fs = fuente(62)
+        bw = d.textlength(sello, font=fs)
+        sx = (caja_texto[0] + caja_texto[2]) / 2 - bw / 2
+        sy = min(MH - 110, max(y_fin + 10, MH - 160)) if not vertical else y_sello
+        sy = max(20, min(MH - 100, sy))
+        d.rounded_rectangle([sx - 24, sy, sx + bw + 24, sy + 92], 18, fill=color_sello)
+        claro = sum(color_sello[:3]) > 520
+        d.text((sx, sy + 12), sello, font=fs, fill=(0, 0, 0) if claro else BLANCO)
 
     if "flecha" in spec["elementos"] and icono is not None and not vertical:
         hacia_izq = caja_texto[0] > ix

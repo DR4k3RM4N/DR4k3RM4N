@@ -1,4 +1,4 @@
-"""Agente 1 — Buscador de ideas: encuentra apps "para ganar dinero" que valga la pena investigar."""
+"""Agente 1 — Buscador de ideas: apps "para ganar dinero" que valga la pena investigar, o ideas de cualquier tema (temas.py)."""
 from __future__ import annotations
 
 import json
@@ -61,11 +61,12 @@ def marcar_hecha(app_id: str) -> None:
 PEDIDO = {
     "type": "object",
     "properties": {
-        "tipo": {"type": "string", "enum": ["idea", "app", "tema"],
+        "tipo": {"type": "string", "enum": ["idea", "app", "tema", "libre"],
                  "description": "idea = propone un video concreto sobre una app o servicio, con un enfoque; "
-                                "app = solo nombra una app para investigar; tema = un tipo de apps o un asunto"},
+                                "app = solo nombra una app para investigar; tema = un tipo de apps o un asunto de dinero; "
+                                "libre = cualquier otro tema (videojuego, película, serie, tecnología, noticia, deporte…)"},
         "texto": {"type": "string", "description": "El nombre de la app o servicio (idea/app), o el tema en pocas palabras"},
-        "angulo": {"type": "string", "description": "Solo si es idea: el enfoque del video en sus palabras, como título tentativo"},
+        "angulo": {"type": "string", "description": "Si es idea o libre y dio un enfoque: el enfoque en sus palabras, como título tentativo; si no, vacío"},
     },
     "required": ["tipo", "texto", "angulo"],
     "additionalProperties": False,
@@ -77,7 +78,12 @@ tarjetas, préstamos, inversiones, etc.).
 Plata Card" → texto "Plata Card", angulo "¿Por qué no recomiendo Plata Card?"; "haz uno de Temu diciendo si paga \
 por referidos" → texto "Temu", angulo "¿Temu sí paga por referidos?".
 - "app": solo nombra una app para investigar, sin enfoque. Ej.: "Cash Gato".
-- "tema": un tipo de apps o un asunto. Ej.: "apps de encuestas", "préstamos rápidos"."""
+- "tema": un tipo de apps o un asunto de dinero. Ej.: "apps de encuestas", "préstamos rápidos".
+- "libre": cualquier tema que NO sea analizar apps, servicios o formas de ganar dinero: videojuegos, películas, \
+series, tecnología, celulares, noticias, deportes, tutoriales… Ej.: "hazme un video de Marvel Rivals" → texto \
+"Marvel Rivals", angulo ""; "un video de los mejores personajes de Marvel Rivals para principiantes" → texto \
+"Marvel Rivals", angulo "Los mejores personajes de Marvel Rivals para principiantes". OJO: una app de juegos que \
+promete pagar dinero NO es libre (es app o idea)."""
 
 ELEGIR_APP = {
     "type": "object",
@@ -216,6 +222,9 @@ def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
     hechas = set(historial())
     tipo, texto, angulo = entender_pedido(pedido)
     print(f"  · pedido: {tipo}" + (f" ({texto})" if texto else "") + (f" — {angulo}" if angulo else ""))
+    if tipo == "libre":  # cualquier tema: Paola propone varios enfoques con lo que se busca en Google
+        from . import temas
+        return temas.ideas(texto, angulo, pedido, guia, cuantas)
     if tipo == "idea":  # tu idea de video: se respeta tal cual, sin filtrar como "app nueva"
         app = encontrar_app(texto, hechas) or fuera_de_play(texto)
         if not app:

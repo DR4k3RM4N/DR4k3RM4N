@@ -80,6 +80,12 @@ def _imagen_escena(esc: dict, i: int, ctx: dict, carpeta: Path) -> Path:
         if citadas:
             return graficos.tarjeta_resena(citadas[idx % len(citadas)], icono, destino)
         return graficos.tarjeta_dato(esc.get("texto") or "Reseñas", icono, destino)
+    if tipo == "imagen" or (tipo == "captura" and ctx["expediente"].get("tipo") == "tema"):
+        caps = ctx["imagenes"].get("capturas") or []
+        ruta = caps[(max(idx, 1) - 1) % len(caps)] if caps else None
+        return graficos.tarjeta_imagen(ruta, destino, esc.get("texto", ""), respaldo=ctx["ficha"]["title"])
+    if tipo == "cierre" or (tipo == "veredicto" and ctx["expediente"].get("tipo") == "tema"):
+        return graficos.tarjeta_titulo(esc.get("texto") or "¿Tú qué opinas?", icono, destino)
     if tipo == "veredicto":
         return graficos.tarjeta_veredicto(ctx["expediente"]["veredicto"], icono, destino, esc.get("texto", ""))
     if tipo == "dato":

@@ -82,13 +82,36 @@ def posts_propios(limite: int = 40) -> list[dict]:
     return posts
 
 
+SYSTEM_TEMA = f"""Eres redactora SEO del blog de "{config.CANAL_NOMBRE}". Esta entrada NO es de apps que pagan: es de un \
+tema libre (videojuego, película, tecnología, noticia…). Escribes en español, claro y útil, para gente que busca ese \
+tema en Google. Si te dan la GUÍA DE ESTILO del creador, escribe como él, pero mejor posicionado.
+
+Reglas de contenido:
+- Usa los datos del expediente (puntos, curiosidades, comentarios); no inventes cifras ni fechas.
+- Estructura con <h2>/<h3>, párrafos cortos, listas o tablas donde ayuden, tu conclusión y preguntas frecuentes.
+
+Reglas SEO:
+- Palabra clave principal = la búsqueda más probable para el enfoque del video; 3 a 6 secundarias (usa las \
+búsquedas relacionadas que te paso).
+- La principal va al inicio del título (máx. 60 caracteres), en el primer párrafo, en al menos un <h2>, en el slug \
+y en el texto alternativo de una imagen.
+- Meta descripción de 140 a 158 caracteres, con la palabra clave y una razón para hacer clic.
+- "Preguntas frecuentes" con <h3> por pregunta: usa las preguntas reales de Google que te paso.
+- Enlaces internos: si te paso entradas del mismo blog, enlaza 2 o 3 relacionadas. Enlaces externos a las fuentes.
+- Inserta imágenes con el marcador exacto {{{{captura_N}}}} en su propio párrafo (N empieza en 1). Usa entre 2 y 5.
+- Pon el marcador {{{{video}}}} cerca del inicio, donde irá el video de YouTube.
+- HTML simple compatible con el editor de WordPress (sin <html>, <head> ni estilos)."""
+
+
 def escribir(ficha: dict, expediente: dict, n_capturas: int) -> dict:
     from . import buscar_web, estilo
 
     exp = {k: v for k, v in expediente.items() if k != "informe_web"}
+    es_tema = expediente.get("tipo") == "tema"
     app = ficha["title"].split(":")[0].split(" - ")[0].strip()
     partes = [
-        f"APP: {json.dumps({k: v for k, v in ficha.items() if k not in ('description', 'screenshots', 'icon', 'headerImage', 'histogram')}, ensure_ascii=False, default=str)}",
+        (f"TEMA: {app} — VIDEO: {expediente.get('angulo', '')}" if es_tema else
+         f"APP: {json.dumps({k: v for k, v in ficha.items() if k not in ('description', 'screenshots', 'icon', 'headerImage', 'histogram')}, ensure_ascii=False, default=str)}"),
         f"EXPEDIENTE:\n{json.dumps(exp, ensure_ascii=False, default=str)}",
     ]
     guia = estilo.cargar().get("blog")
@@ -101,7 +124,7 @@ def escribir(ficha: dict, expediente: dict, n_capturas: int) -> dict:
             n = int(guia["longitud_palabras"])
             largo = f"{max(900, int(n * 0.9))}-{max(1300, int(n * 1.2))}"
     if buscar_web.disponible():
-        s = buscar_web.seo(f"{app} paga o es estafa")
+        s = buscar_web.seo(expediente.get("angulo") or app if es_tema else f"{app} paga o es estafa")
         if s["busquedas"] and claude.al_gastar:
             claude.al_gastar(getattr(claude.contexto, "proyecto", None), "blog", "búsqueda",
                              buscar_web.costo({"serper" if buscar_web.SERPER else "tavily": s["busquedas"]}), 0, 0,
@@ -112,8 +135,9 @@ def escribir(ficha: dict, expediente: dict, n_capturas: int) -> dict:
     internos = [p for p in posts_propios() if app.lower() not in p["titulo"].lower()][:25]
     if internos:
         partes.append("ENTRADAS DEL MISMO BLOG (para enlaces internos):\n" + json.dumps(internos, ensure_ascii=False))
-    partes.append(f"Hay {n_capturas} capturas disponibles. Escribe la entrada ({largo} palabras).")
-    return claude.json_estructurado(SYSTEM, "\n\n".join(partes), SCHEMA, tarea="blog", que="escribir post")
+    partes.append(f"Hay {n_capturas} {'imágenes' if es_tema else 'capturas'} disponibles. Escribe la entrada ({largo} palabras).")
+    return claude.json_estructurado(SYSTEM_TEMA if es_tema else SYSTEM, "\n\n".join(partes), SCHEMA, tarea="blog",
+                                    que="escribir post")
 
 
 class WordPress:

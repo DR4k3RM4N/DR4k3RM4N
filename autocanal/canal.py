@@ -81,18 +81,24 @@ class Produccion:
         from agentes import investigador
 
         c = self.carpeta
+        from agentes import temas
+
+        es_tema = self.app_id.startswith("tema:")
         if (c / "ficha.json").exists() and "investigar" not in self.rehacer:
             datos = {"ficha": _leer(c / "ficha.json"), "resenas": _leer(c / "resenas.json"),
                      "imagenes": _leer(c / "imagenes.json")}
         else:
             print("  · recolectando datos")
             origen = _leer(c / "origen.json") or {}
-            datos = investigador.recolectar(self.app_id, c, origen.get("nombre", ""))
+            datos = (temas.recolectar(self.app_id, c, origen) if es_tema
+                     else investigador.recolectar(self.app_id, c, origen.get("nombre", "")))
         self.ficha, self.imagenes = datos["ficha"], datos["imagenes"]
         self.expediente = _leer(c / "expediente.json")
         if self.expediente is None or "investigar" in self.rehacer:
-            self.expediente = investigador.analizar(datos, c, con_web=self.con_web)
-        print(f"    veredicto: {self.expediente['veredicto']}")
+            self.expediente = (temas.analizar(datos, c, con_web=self.con_web) if es_tema
+                               else investigador.analizar(datos, c, con_web=self.con_web))
+        print(f"    veredicto: {self.expediente['veredicto']}" if not es_tema
+              else f"    tema: {self.ficha['title']} — {self.ficha.get('angulo', '')}")
 
     def guionizar(self) -> None:
         from agentes import guionista
@@ -226,7 +232,8 @@ def _reporte(carpeta, ficha, exp, guion, entrada, video, mini) -> None:
     dur = sum(e.get("duracion", 0) for e in guion["escenas"])
     l = [f"# Revisión: {ficha['title']}", "",
          f"- Video: `{video.name}` ({dur / 60:.1f} min) · Miniatura: `{mini.name}` · Blog: `blog_preview.html`",
-         f"- **Veredicto:** {exp['veredicto']}", f"- {exp['resumen']}",
+         (f"- **Tema:** {exp.get('angulo', '')}" if exp.get("tipo") == "tema" else f"- **Veredicto:** {exp['veredicto']}"),
+         f"- {exp['resumen']}",
          f"- Búsqueda en internet: {exp.get('investigacion_web', 'hecha')}", "",
          "## Antes de publicar, comprueba tú mismo", *[f"- [ ] {p}" for p in exp["pendiente_de_probar"]],
          "- [ ] Cada afirmación del guion está respaldada abajo", "",

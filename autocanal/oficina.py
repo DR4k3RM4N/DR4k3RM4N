@@ -534,7 +534,12 @@ class Oficina:
         self.tarea(t, estado="hecha", fin=time.time(), resultado=f"{len(nuevas) + len(actualizadas)} ideas")
         self.poner("productora", estado="libre")
         tuyas = [c for c in nuevas + actualizadas if c.get("idea_jefe")]
-        if tuyas:
+        if tuyas and tuyas[0].get("tema"):
+            c = tuyas[0]
+            self.avisar_jefe(f"¡Jefe! Para «{c['tema']}» se me ocurrieron {len(tuyas)} ideas de video. La que más me late: "
+                             f"«{c['angulo']}». ¿Cuál hacemos?",
+                             extra_whatsapp=self._lista_ideas() + "\n\nContéstame *sí N* para arrancar.", botones=True)
+        elif tuyas:
             c = tuyas[0]
             self.avisar_jefe(f"¡Jefe! Para tu idea encontré {c['titulo']}. Video: «{c['angulo']}». ¿La hago?",
                              extra_whatsapp=self._lista_ideas() + "\n\nContéstame *sí N* para arrancar.", botones=True)
@@ -604,7 +609,8 @@ class Oficina:
             carpeta = config.SALIDA / app_id  # de dónde salió la idea (nombre real si no está en Play Store)
             carpeta.mkdir(parents=True, exist_ok=True)
             (carpeta / "origen.json").write_text(json.dumps(
-                {"nombre": propuesta["titulo"], "angulo": propuesta.get("angulo", ""), "fuera_de_play": propuesta.get("fuera_de_play", False)},
+                {"nombre": propuesta["titulo"], "angulo": propuesta.get("angulo", ""), "fuera_de_play": propuesta.get("fuera_de_play", False),
+                 "tema": propuesta.get("tema", ""), "formato": propuesta.get("formato", "")},
                 ensure_ascii=False), encoding="utf-8")
             self.proyectos[app_id] = {"id": app_id, "titulo": propuesta["titulo"], "angulo": propuesta.get("angulo", ""),
                                       "estado": "produccion", "etapa": "investigar", "etapas": {},

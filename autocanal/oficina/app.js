@@ -11,7 +11,7 @@
                          video: "editor", blog: "redactora", revision: "jefe", publicar: "community", publicado: "community" };
   const VEREDICTO = { estafa_comprobada: ["NO PAGA", "rojo"], senales_de_alerta: ["CUIDADO", "naranja"],
                       paga_pero_no_vale_la_pena: ["NO VALE LA PENA", "amarillo"], legitima: ["SÍ PAGA", "verde"],
-                      no_concluyente: ["SIN PRUEBAS", "gris"] };
+                      no_concluyente: ["SIN PRUEBAS", "gris"], tema: ["TEMA LIBRE", "amarillo"] };
   const ESTADO_PROY = { produccion: "En producción", revision: "Espera tu revisión", publicando: "Publicando",
                         publicado: "Publicado", error: "Con problema", descartado: "Descartado" };
 
@@ -96,7 +96,7 @@
         <article class="tarjeta" data-idea="${esc(i.id)}">
           ${i.personalizada ? `<div class="tuya">💡 Tu idea</div>` : ""}
           <div class="cabeza"><h4>${i.num ? `<span class="num">${i.num}</span>` : ""}${esc(i.titulo)}</h4><span class="chip chip-${esc(i.potencial_vistas)}">${esc(i.potencial_vistas)}</span></div>
-          <p class="angulo">🎬 ${esc(i.angulo || "")}</p>
+          <p class="angulo">🎬 ${esc(i.angulo || "")}${i.formato ? ` <span class="chip chip-formato">${esc(i.formato)}</span>` : ""}</p>
           <p class="porque">${esc(i.por_que)}</p>
           <p class="appid">${esc(i.app_id)}</p>
           ${i.comentarios?.length ? `<ul class="comentarios">${i.comentarios.map((c) => `<li>💬 ${esc(c)}</li>`).join("")}</ul>` : ""}

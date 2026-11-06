@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import time
 from pathlib import Path
 
@@ -42,6 +43,16 @@ def _datos(app_id: str):
 
 def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
     _pausa(4, 7)
+    if pedido and not re.search(r"\bapps?\b|paga|dinero|estafa|tarjeta|card|cash|pr[eé]stamo|cobr|recomiend", pedido, re.I):
+        # tema libre (ej. "hazme un video de Marvel Rivals"): ideas con varios enfoques
+        tema = re.sub(r"^(hazme|haz|quiero|un|una|video|de|del|sobre|\s)+", "", pedido, flags=re.I).strip() or pedido
+        tema = tema[:1].upper() + tema[1:]
+        slug = re.sub(r"[^a-z0-9]+", "-", tema.lower()).strip("-")[:24]
+        enfoques = [("top", f"Los 5 secretos de {tema} que nadie te dice"), ("guia", f"Guía de {tema} para principiantes"),
+                    ("noticias", f"Todo lo nuevo de {tema} este mes"), ("opinion", f"¿{tema} vale la pena en 2026?")]
+        return [{"app_id": f"tema:{slug}-{k}", "titulo": tema, "angulo": t, "tema": tema, "formato": f,
+                 "por_que": "💡 Es de lo que más busca la gente ahora (demo).", "potencial_vistas": "alto" if k < 2 else "medio",
+                 "personalizada": True, "idea_jefe": pedido} for k, (f, t) in enumerate(enfoques[:cuantas])]
     if pedido and ("video" in pedido.lower() or "?" in pedido or "por qu" in pedido.lower()):
         app_id, titulo, _ = random.choice(APPS)
         return [{"app_id": app_id, "titulo": titulo, "angulo": f"Tu idea: {pedido}", "por_que": f"💡 Idea tuya: {pedido}",
@@ -129,6 +140,25 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                 "color_subtitulo": "#FFE600", "color_borde_subtitulo": "#000000", "transicion": "corte", "zoom": "fuerte",
                 "barra_progreso": False, "karaoke": True, "color_resaltado": "#22C55E",
                 "efectos": ["texto_pop", "golpe_zoom", "sello", "sacudida"], "intensidad_motion": "mucho", "consejos": ["Usa memes y b-roll entre explicaciones", "Cámara en mano en las pruebas"]}
+    if "puntos" in props and "curiosidades" in props:  # investigar un tema libre
+        return {"resumen": "La comunidad está hablando mucho de los cambios de la última temporada (demo).",
+                "puntos": [{"titulo": "Nueva temporada", "detalle": "Llegaron personajes y mapas nuevos.", "url": ""},
+                           {"titulo": "Los favoritos", "detalle": "Tres personajes dominan las partidas.", "url": ""}],
+                "curiosidades": [{"dato": "Tiene más de diez millones de jugadores.", "url": ""}],
+                "comentarios": [], "por_verificar": ["Que los datos sean de la temporada actual"]}
+    if "escenas" in props and "imagen" in json.dumps(props["escenas"]):  # guion de un tema libre
+        tema = texto.split("TEMA:")[1].split("\n")[0].strip() if "TEMA:" in texto else "el tema"
+        return {"titulos": [f"{tema}: lo que nadie te dice", f"Así cambió {tema}", f"¿{tema} vale la pena?"],
+                "descripcion": "Todo sobre el tema. Más en el blog: {{BLOG_URL}}", "etiquetas": [tema, "gaming"],
+                "texto_miniatura": "¡Esto cambió!", "textos_miniatura": ["¡Esto cambió!", "Nadie lo sabe", "Top 5"],
+                "sello_miniatura": "TOP 5",
+                "escenas": [
+                    {"narracion": f"Esto cambió todo en {tema} y casi nadie se dio cuenta.", "visual": "imagen", "indice": 1, "texto": ""},
+                    {"narracion": "Número tres: los mapas nuevos son enormes.", "visual": "titulo", "indice": 0, "texto": "Número 3"},
+                    {"narracion": "Mira esta imagen, es increíble cómo se ve.", "visual": "imagen", "indice": 2, "texto": "Mapas nuevos"},
+                    {"narracion": "Tiene más de diez millones de jugadores.", "visual": "dato", "indice": 0, "texto": "10 millones de jugadores"},
+                    {"narracion": "¿Y tú, cuál es tu favorito? Déjamelo en los comentarios.", "visual": "cierre", "indice": 0, "texto": "¿Cuál es tu favorito?"},
+                ]}
     if "plan" in props:  # Edu: motion graphics por escena
         return {"plan": [
             {"escena": 1, "efectos": [{"tipo": "contador", "palabra": "quinientos", "texto": "$500", "sonido": True},
@@ -205,8 +235,36 @@ def publicar_blog(app_id: str) -> dict:
     return pub
 
 
+def recolectar_tema(app_id: str, carpeta: Path, origen: dict) -> dict:
+    """Demo: imágenes inventadas del tema (sin internet)."""
+    from PIL import Image, ImageDraw
+
+    from . import graficos, playstore as ps
+
+    tema = origen.get("tema") or origen.get("nombre") or "Tema"
+    img = carpeta / "img"
+    img.mkdir(parents=True, exist_ok=True)
+    caps = []
+    for i, color in enumerate([(120, 40, 160), (30, 90, 170), (170, 60, 40), (30, 130, 90)], 1):
+        im = Image.new("RGB", (1600, 900), color)
+        ImageDraw.Draw(im).text((120, 360), f"{tema.upper()}\nIMAGEN {i}", font=graficos.fuente(110), fill=(255, 255, 255))
+        im.save(img / f"captura_{i}.jpg")
+        caps.append(str(img / f"captura_{i}.jpg"))
+    Image.open(caps[0]).crop((350, 0, 1250, 900)).resize((512, 512)).save(img / "icono.png")
+    ficha = {"appId": app_id, "title": tema, "tema": True, "angulo": origen.get("angulo", ""), "formato": origen.get("formato", ""),
+             "summary": origen.get("angulo", ""), "developer": "", "installs": "", "score": None, "screenshots": caps}
+    imagenes = {"icono": str(img / "icono.png"), "portada": None, "capturas": caps}
+    ps.guardar(carpeta, "ficha.json", ficha)
+    ps.guardar(carpeta, "resenas.json", [])
+    ps.guardar(carpeta, "imagenes.json", imagenes)
+    return {"ficha": ficha, "resenas": [], "imagenes": imagenes}
+
+
 def activar() -> None:
     import canal
+
+    from . import temas
+    temas.recolectar = recolectar_tema
 
     os.environ["VOZ_MOTOR"] = "silencio"
     config.HISTORIAL = config.BASE / "historial_demo.json"
