@@ -988,6 +988,51 @@ def configurar_whatsapp() -> None:
     print("Después reinicia la oficina:  sudo systemctl restart oficina")
 
 
+def probar_wordpress() -> None:
+    """Revisa la conexión con tu WordPress y explica qué falla, sin mostrar tu contraseña."""
+    url = config.env("WP_URL").rstrip("/")
+    usuario, clave = config.env("WP_USUARIO"), config.env("WP_APP_PASSWORD").replace(" ", "")
+    faltan = [n for n, v in [("WP_URL", url), ("WP_USUARIO", usuario), ("WP_APP_PASSWORD", clave)] if not v]
+    if faltan:
+        raise SystemExit("Faltan en .env: " + ", ".join(faltan))
+    print(f"Blog: {url}  ·  usuario: {usuario}  ·  contraseña de aplicación: {len(clave)} caracteres")
+    if len(clave) != 24:
+        print("⚠️  Una contraseña de aplicación tiene 24 caracteres (sin contar espacios). Revisa que la pegaste completa.")
+    try:
+        api = requests.get(f"{url}/wp-json/", timeout=30)
+    except requests.RequestException as exc:
+        raise SystemExit(f"✖ No pude abrir tu blog: {exc}")
+    if api.status_code != 200 or "namespaces" not in api.text:
+        raise SystemExit(f"✖ La API de WordPress no responde ({api.status_code}). Algún plugin la desactivó o la dirección está mal.")
+    if "application-passwords" not in api.text and "authentication" not in api.text:
+        print("⚠️  Tu WordPress no anuncia contraseñas de aplicación: puede que un plugin de seguridad las haya desactivado.")
+    r = requests.get(f"{url}/wp-json/wp/v2/users/me", params={"context": "edit"}, auth=(usuario, clave), timeout=30)
+    datos = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if r.status_code == 200:
+        roles = datos.get("roles", [])
+        puede = any(x in roles for x in ("administrator", "editor", "author"))
+        print(f"✔ WordPress te reconoce como «{datos.get('name')}» con rol: {', '.join(roles) or '?'}")
+        if puede:
+            print("✔ Ese usuario puede crear entradas. Si aún falla, mándame el error exacto.")
+        else:
+            print("✖ Ese rol no puede crear entradas. En WordPress → Usuarios, ponle rol Administrador o Editor.")
+        return
+    codigo = datos.get("code", "")
+    if codigo == "incorrect_password":
+        print("✖ La contraseña de aplicación no es correcta. Crea una nueva en Usuarios → Perfil → Contraseñas de aplicación.")
+    elif codigo == "invalid_username":
+        print("✖ Ese usuario no existe. Usa tu nombre de usuario de WordPress (el de entrar a wp-admin) o tu correo.")
+    elif codigo in ("rest_not_logged_in", "rest_cannot_create", ""):
+        print("✖ WordPress no está recibiendo tu usuario y contraseña. Casi siempre es tu hosting, que borra la")
+        print("  cabecera de acceso. Arreglo: en el archivo .htaccess de tu blog (Administrador de archivos de tu")
+        print("  hosting, carpeta public_html) agrega esta línea arriba de '# BEGIN WordPress':")
+        print("      SetEnvIf Authorization \"(.*)\" HTTP_AUTHORIZATION=$1")
+        print("  Si usas un plugin de seguridad (Wordfence, iThemes, All In One WP Security…), revisa que no")
+        print("  bloquee las contraseñas de aplicación ni la API REST.")
+    else:
+        print(f"✖ WordPress respondió {r.status_code}: {codigo} — {datos.get('message', '')[:200]}")
+
+
 def probar_whatsapp() -> None:
     faltan = [n for n, v in [("WHATSAPP_TOKEN", wa.TOKEN), ("WHATSAPP_PHONE_ID", wa.PHONE_ID), ("WHATSAPP_JEFE", wa.JEFE)] if not v]
     if faltan:
@@ -1231,6 +1276,7 @@ def main() -> None:
     p.add_argument("--configurar-telegram", "--telegram-id", action="store_true", dest="configurar_telegram",
                    help="asistente para conectar tu Telegram")
     p.add_argument("--probar-whatsapp", action="store_true", help="te manda un WhatsApp de prueba y sale")
+    p.add_argument("--probar-wordpress", action="store_true", help="revisa la conexión con tu blog y sale")
     p.add_argument("--configurar-whatsapp", action="store_true", help="asistente para poner los datos de WhatsApp")
     a = p.parse_args()
     if a.configurar_whatsapp:
@@ -1239,6 +1285,8 @@ def main() -> None:
         return configurar_telegram()
     if a.probar_whatsapp:
         return probar_whatsapp()
+    if a.probar_wordpress:
+        return probar_wordpress()
     a.demo = a.demo or config.env("OFICINA_DEMO") == "1"
     if a.host not in ("127.0.0.1", "localhost") and not PASSWORD:
         raise SystemExit("Para abrir la oficina a internet pon OFICINA_PASSWORD en .env.")
