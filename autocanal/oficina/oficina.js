@@ -599,7 +599,7 @@
       if (actual) {
         const pasado = Math.max(0, relojServidor - (actual.inicio || relojServidor));
         const esperado = DURACION[actual.etapa] || 60;
-        const avance = 1 - Math.exp(-pasado / esperado * 1.6);
+        const avance = actual.avance != null ? actual.avance : 1 - Math.exp(-pasado / esperado * 1.6);
         barra.firstChild.style.width = `${Math.min(97, avance * 100)}%`;
       }
       nombre.querySelector(".pto").className = `pto ${a?.estado === "trabajando" ? "trab" : tareasDe(id).some((tk) => tk.estado === "en_cola") ? "cola" : ""}`;

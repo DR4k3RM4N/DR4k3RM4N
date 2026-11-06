@@ -8,6 +8,12 @@ sudo -u canal git -C "$REPO" pull --ff-only
 sudo -u canal "$APP/.venv/bin/pip" install -q -r "$APP/requirements.txt"
 # La voz gratis de Microsoft cambia seguido: edge-tts siempre en su última versión.
 sudo -u canal "$APP/.venv/bin/pip" install -q --upgrade edge-tts
+# Memoria de respaldo (swap) de 2 GB: evita que el video se corte si se acaba la RAM.
+if ! swapon --show | grep -q .; then
+  echo "  Agregando 2 GB de memoria de respaldo (swap)…"
+  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
+  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
 # Aplica cambios de configuración del servidor que vengan en la nueva versión.
 URL="$(grep '^OFICINA_URL=' "$APP/.env" | cut -d= -f2- || true)"
 DOMINIO="${URL#https://}"

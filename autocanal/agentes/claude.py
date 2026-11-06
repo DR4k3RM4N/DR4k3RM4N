@@ -39,6 +39,7 @@ PRECIO_BUSQUEDA = 10.0 / 1000  # USD por búsqueda web
 # Quién está gastando (la oficina lo pone en cada hilo de trabajo) y a quién avisar del gasto.
 contexto = threading.local()
 al_gastar = None  # función(proyecto, etapa, modelo, costo_usd, tokens_entrada, tokens_salida, que)
+antes_de_llamar = None  # función sin argumentos; la oficina la usa para el tope de gasto diario
 
 
 class ErrorIA(Exception):
@@ -105,6 +106,8 @@ def json_estructurado(system: str, contenido, schema: dict, tarea: str = "guion"
                       que: str | None = None) -> dict:
     """Pide a Claude un JSON que cumple `schema`. `contenido` puede ser texto o bloques (imágenes)."""
     modelo, esfuerzo = modelo_de(tarea)
+    if antes_de_llamar:
+        antes_de_llamar()
     try:
         with _cliente().beta.messages.stream(
             model=modelo,
@@ -133,6 +136,8 @@ def investigar_web(system: str, pregunta: str, tarea: str = "investigar", max_bu
     # La búsqueda con filtrado dinámico es de Sonnet/Opus; otros modelos usan la versión básica.
     tipo = "web_search_20250305" if "haiku" in modelo else "web_search_20260209"
     herramienta = {"type": tipo, "name": "web_search", "max_uses": max_busquedas}
+    if antes_de_llamar:
+        antes_de_llamar()
     messages = [{"role": "user", "content": pregunta}]
     cliente = _cliente()
     try:

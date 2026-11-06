@@ -29,7 +29,7 @@ from agentes import chat_jefe
 from agentes import claude as ia
 from agentes import whatsapp as wa
 from agentes import config
-from agentes import estilo
+from agentes import editor, estilo
 from agentes import telegram as tg
 
 WEB = config.BASE / "oficina"
@@ -46,6 +46,9 @@ IDEAS_HORA = config.env("IDEAS_HORA")          # ej. 09:00 — vacío = no busca
 IDEAS_ZONA = config.env("IDEAS_ZONA", "America/Mexico_City")
 IDEAS_GUIA = config.env("IDEAS_GUIA")
 LIMPIAR_DIAS = int(config.env("LIMPIAR_DIAS", "30") or 30)
+# Tope de gasto en Claude por día (USD). Al llegar, los agentes paran y Paola te avisa. 0 = sin tope.
+LIMITE_DIARIO = float(config.env("LIMITE_DIARIO", "1") or 0)
+REANUDAR_MAX = 2  # veces seguidas que la oficina retoma sola un video interrumpido
 
 AGENTES = [
     # id, nombre, rol, color de ropa, peinado
@@ -113,9 +116,16 @@ class Oficina:
         for i, p in enumerate(sorted([p for p in self.propuestas if p["estado"] == "pendiente"], key=lambda p: p["creado"]), 1):
             p.setdefault("num", i)
         self.tareas = datos.get("tareas", [])
+        self.por_reanudar = []
         for p in self.proyectos.values():  # lo que quedó a medias al cerrar
-            if p["estado"] in ("produccion", "publicando"):
-                p["estado"], p["error"] = "error", "Se interrumpió al cerrar la oficina."
+            if p["estado"] == "produccion" and p.get("reanudado", 0) < REANUDAR_MAX:
+                p["reanudado"] = p.get("reanudado", 0) + 1
+                self.por_reanudar.append(p["id"])
+            elif p["estado"] == "produccion":
+                p["estado"], p["error"] = "error", ("Se interrumpió varias veces seguidas (puede ser falta de memoria del "
+                                                    "servidor). Revísalo y dale Reintentar.")
+            elif p["estado"] == "publicando":
+                p["estado"], p["error"] = "error", "Se interrumpió mientras se publicaba. Dale Reintentar."
         for t in self.tareas:
             if t["estado"] in ACTIVAS:
                 t["estado"], t["error"] = "cancelada", "Se interrumpió al cerrar la oficina."
@@ -132,6 +142,9 @@ class Oficina:
             threading.Thread(target=tg.escuchar, args=(self.recibir_telegram,), daemon=True).start()
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
+        if self.por_reanudar:
+            threading.Thread(target=self._reanudar, daemon=True).start()
+        ia.antes_de_llamar = self._revisar_tope
 
     # ---------- estado ----------
     def _tocar(self) -> None:
@@ -337,6 +350,30 @@ class Oficina:
         botones = tg.botones_ideas(self._pendientes()) if canal == "telegram" and pidio_lista and self._pendientes() else None
         self._responder(canal, texto, botones)
 
+    def _reanudar(self) -> None:
+        """Al prender la oficina: sigue los videos que se quedaron a medias, sin repetir lo ya hecho."""
+        time.sleep(5)
+        for app_id in self.por_reanudar:
+            p = self.proyectos[app_id]
+            hechas = {e for e, est in (p.get("etapas") or {}).items() if est == "hecha"}
+            self.decir("productora", f"Retomo {p['titulo']} donde se quedó (intento {p['reanudado']} de {REANUDAR_MAX}).")
+            threading.Thread(target=self._producir, args=(app_id, p.get("notas", ""), None, hechas), daemon=True).start()
+
+    def _revisar_tope(self) -> None:
+        """Lo llama agentes/claude.py antes de cada llamada: si ya se gastó el tope de hoy, no deja seguir."""
+        if not LIMITE_DIARIO:
+            return
+        hoy = self._resumen_gasto()["hoy"]
+        if hoy < LIMITE_DIARIO:
+            return
+        dia = self._hoy()
+        if getattr(self, "_tope_avisado", "") != dia:
+            self._tope_avisado = dia
+            self.avisar_chat("productora", f"Llegamos al tope de gasto de hoy (${LIMITE_DIARIO:.2f}). Paramos para no gastar "
+                                           "de más; mañana seguimos, o súbelo con LIMITE_DIARIO en .env.", importante=True)
+        raise ia.ErrorIA(f"Se alcanzó el tope de gasto de hoy (${LIMITE_DIARIO:.2f}). Dale Reintentar mañana o sube "
+                         "LIMITE_DIARIO en .env.")
+
     def _hoy(self) -> str:
         return dt.datetime.now(ZoneInfo(IDEAS_ZONA)).date().isoformat()
 
@@ -363,7 +400,7 @@ class Oficina:
         hoy = self._hoy()
         mes = hoy[:7]
         return {"hoy": round(self.gasto.get(hoy, 0), 4),
-                "mes": round(sum(v for k, v in self.gasto.items() if k.startswith(mes)), 4)}
+                "mes": round(sum(v for k, v in self.gasto.items() if k.startswith(mes)), 4), "tope": LIMITE_DIARIO}
 
     def nueva_tarea(self, agente: str, etapa: str, proyecto: str | None = None, titulo: str = "") -> dict:
         t = {"id": uuid.uuid4().hex[:8], "agente": agente, "etapa": etapa, "accion": ACCION.get(etapa, etapa),
@@ -385,7 +422,7 @@ class Oficina:
             time.sleep(7)
             with self.lock:
                 for a in self.agentes.values():
-                    if a["estado"] == "trabajando" and a["ubicacion"] == "casa" and a["id"] in FRASES:
+                    if a["estado"] == "trabajando" and a["ubicacion"] == "casa" and a["id"] in FRASES and a["id"] != "editor":
                         a["dice"], a["dice_t"] = random.choice(FRASES[a["id"]]), time.time()
                 self._tocar()
 
@@ -399,7 +436,8 @@ class Oficina:
                     ahora = dt.datetime.now(ZoneInfo(IDEAS_ZONA))
                     hoy = ahora.date().isoformat()
                     hh, _, mm = IDEAS_HORA.partition(":")
-                    if (ahora.hour, ahora.minute) >= (int(hh), int(mm or 0)) and self.ultima_busqueda != hoy:
+                    minutos = ahora.hour * 60 + ahora.minute - (int(hh) * 60 + int(mm or 0))
+                    if 0 <= minutos < 120 and self.ultima_busqueda != hoy:
                         self.ultima_busqueda = hoy
                         self._tocar()
                         self.pedir_ideas(IDEAS_GUIA)
@@ -622,6 +660,7 @@ class Oficina:
         with self.lock:
             p = self.proyectos[app_id]
             p["estado"], p["etapa"] = "revision", "revision"
+            p["reanudado"] = 0
             self._tocar()
         self.avisar_jefe(f"¡Jefe! El video de {titulo} está listo. ¿Lo revisas?")
 
@@ -659,6 +698,17 @@ class Oficina:
             self.poner(agente, estado="trabajando", proyecto=app_id)
             self.decir(agente, random.choice(FRASES[agente]), al_log=False)
             ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = app_id, etapa, t
+            ultimo = {"t": 0.0, "paso": ""}
+
+            def al_avanzar(paso, fraccion, t=t, agente=agente):
+                if paso == ultimo["paso"] and time.time() - ultimo["t"] < 2:
+                    return
+                cambio_de_paso = paso.split(" ")[0] != ultimo["paso"].split(" ")[0]
+                ultimo.update(t=time.time(), paso=paso)
+                self.tarea(t, paso=paso, avance=round(fraccion, 3))
+                if cambio_de_paso:
+                    self.decir(agente, paso + "…", al_log=False)
+            editor.contexto.al_avanzar = al_avanzar
             try:
                 prod.etapa(etapa)
             except Exception as exc:  # noqa: BLE001

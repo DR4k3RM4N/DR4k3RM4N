@@ -26,6 +26,13 @@ if ! command -v caddy >/dev/null; then
   fi
 fi
 
+# Memoria de respaldo (swap) de 2 GB: evita que el video se corte si se acaba la RAM.
+if ! swapon --show | grep -q .; then
+  echo "  Agregando 2 GB de memoria de respaldo (swap)…"
+  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
+  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
 paso "Creando el usuario '$USR' que corre la oficina"
 id "$USR" >/dev/null 2>&1 || useradd --system --home-dir "$REPO" --shell /usr/sbin/nologin "$USR"
 chown -R "$USR:$USR" "$REPO"

@@ -5,21 +5,53 @@ música, sonido en los cambios de escena y tu intro/outro. Los ajustes salen de 
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
+import threading
 from pathlib import Path
 
 from . import config, estilo, graficos
 
 FPS = 30
-VIDEO = ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(FPS)]
+# Pasadas intermedias en modo rápido y casi sin pérdida; solo la final se comprime con cuidado.
+RAPIDO = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "16", "-pix_fmt", "yuv420p", "-r", str(FPS), "-threads", "2"]
+VIDEO = ["-c:v", "libx264", "-preset", "faster", "-crf", "21", "-pix_fmt", "yuv420p", "-r", str(FPS), "-threads", "2"]
 AUDIO = ["-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
 TRANSICION = 0.35  # segundos
 VARIADAS = ["fade", "slideleft", "smoothup", "circleopen", "wipeleft", "smoothright", "fadeblack", "slideup"]
+GRUPO = 6  # escenas por grupo al unir con transiciones (abrir todas a la vez se come la memoria)
+
+contexto = threading.local()  # la oficina pone contexto.al_avanzar(paso, fraccion) para ver el avance real
+
+
+def _avance(paso: str, fraccion: float) -> None:
+    cb = getattr(contexto, "al_avanzar", None)
+    if cb:
+        try:
+            cb(paso, max(0.0, min(1.0, fraccion)))
+        except Exception:  # noqa: BLE001 — informar nunca debe romper la edición
+            pass
 
 
 def _ff(*args: str) -> None:
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *args], check=True)
+
+
+def _ff_avance(args: list[str], duracion: float, paso: str, desde: float, hasta: float) -> None:
+    """Corre ffmpeg informando el avance (lee su salida -progress)."""
+    p = subprocess.Popen(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1", "-nostats", *args],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    for linea in p.stdout:
+        if linea.startswith("out_time_us=") and duracion > 0:
+            try:
+                t = int(linea.split("=", 1)[1]) / 1e6
+            except ValueError:
+                continue
+            _avance(f"{paso} {min(99, int(t / duracion * 100))}%", desde + (hasta - desde) * min(1, t / duracion))
+    err = p.stderr.read()
+    if p.wait() != 0:
+        raise subprocess.CalledProcessError(p.returncode, "ffmpeg", stderr=err)
 
 
 def _duracion(ruta: Path) -> float:
@@ -72,9 +104,9 @@ def _segmento_imagen(png: Path, audio: str, dur: float, destino: Path, i: int, e
         x += f"+if(mod(floor(on/{P}),2),iw*0.02,-iw*0.02)"
     _ff("-loop", "1", "-framerate", str(FPS), "-i", str(png), "-i", audio,
         "-filter_complex",
-        f"[0]scale=2880:-2,zoompan=z='{z}':x='{x}':y='ih/2-(ih/zoom/2)'"
+        f"[0]scale=2304:-2,zoompan=z='{z}':x='{x}':y='ih/2-(ih/zoom/2)'"
         f":d={frames}:s=1920x1080:fps={FPS},setsar=1[v];[1:a]apad,aformat=sample_rates=44100:channel_layouts=stereo[a]",
-        "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}", *VIDEO, *AUDIO, str(destino))
+        "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}", *RAPIDO, *AUDIO, str(destino))
 
 
 def _segmento_clip(clip: str, audio: str, dur: float, destino: Path, extra: float) -> None:
@@ -85,7 +117,7 @@ def _segmento_clip(clip: str, audio: str, dur: float, destino: Path, extra: floa
         "[a]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=30:5,eq=brightness=-0.15[bg];"
         f"[b]scale=-2:1020[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps={FPS}[v];"
         "[1:a]apad,aformat=sample_rates=44100:channel_layouts=stereo[au]",
-        "-map", "[v]", "-map", "[au]", "-t", f"{dur + extra:.3f}", *VIDEO, *AUDIO, str(destino))
+        "-map", "[v]", "-map", "[au]", "-t", f"{dur + extra:.3f}", *RAPIDO, *AUDIO, str(destino))
 
 
 def _tiempo(s: float) -> str:
@@ -118,31 +150,58 @@ def _ass_color(hex_: str) -> str:
     return f"&H00{h[4:6]}{h[2:4]}{h[0:2]}".upper()
 
 
+def _xfade(partes: list[Path], duraciones: list[float], tipos: list[str], destino: Path, trabajo: Path,
+           nombre: str, extra_final: float) -> None:
+    """Une pocas piezas con transiciones en un solo ffmpeg. `duraciones` = lo que dura cada pieza sin el
+    relleno de la transición; `extra_final` = relleno que conserva la última pieza."""
+    filtros, v_prev, a_prev, offset = [], "[0:v]", "[0:a]", 0.0
+    for k in range(1, len(partes)):
+        offset += duraciones[k - 1]
+        v_sal, a_sal = (f"[v{k}]", f"[a{k}]") if k < len(partes) - 1 else ("[vout]", "[aout]")
+        filtros.append(f"{v_prev}[{k}:v]xfade=transition={tipos[k - 1]}:duration={TRANSICION}:offset={offset:.3f}{v_sal}")
+        filtros.append(f"{a_prev}[{k}:a]acrossfade=d={TRANSICION}:c1=tri:c2=tri{a_sal}")
+        v_prev, a_prev = v_sal, a_sal
+    script = trabajo / f"{nombre}.txt"
+    script.write_text(";\n".join(filtros), encoding="utf-8")
+    entradas = [x for p in partes for x in ("-i", str(p))]
+    _ff(*entradas, "-filter_complex_script", str(script), "-map", "[vout]", "-map", "[aout]", *RAPIDO, *AUDIO, str(destino))
+
+
 def _unir(partes: list[Path], duraciones: list[float], transicion: str, destino: Path, trabajo: Path) -> list[float]:
-    """Une las escenas. Con transición usa xfade/acrossfade; devuelve en qué segundo empieza cada cambio."""
+    """Une las escenas. Con transición las une por grupos pequeños (para no quedarse sin memoria) y luego
+    une los grupos. Devuelve en qué segundo empieza cada cambio de escena."""
+    cambios, t = [], 0.0
+    for d in duraciones[:-1]:
+        t += d
+        cambios.append(t)
     if transicion == "corte" or len(partes) < 2:
         lista = trabajo / "lista.txt"
         lista.write_text("".join(f"file '{p.resolve().as_posix()}'\n" for p in partes), encoding="utf-8")
         _ff("-f", "concat", "-safe", "0", "-i", str(lista), "-c", "copy", str(destino))
-        cambios, t = [], 0.0
-        for d in duraciones[:-1]:
-            t += d
-            cambios.append(t)
         return cambios
-    tipo = {"fundido": ["fade"], "deslizar": ["slideleft"]}.get(transicion, VARIADAS)
-    filtros, cambios = [], []
-    v_prev, a_prev, offset = "[0:v]", "[0:a]", 0.0
-    for k in range(1, len(partes)):
-        offset += duraciones[k - 1]
-        cambios.append(offset)
-        v_sal, a_sal = (f"[v{k}]", f"[a{k}]") if k < len(partes) - 1 else ("[vout]", "[aout]")
-        filtros.append(f"{v_prev}[{k}:v]xfade=transition={tipo[(k - 1) % len(tipo)]}:duration={TRANSICION}:offset={offset - 0.0:.3f}{v_sal}")
-        filtros.append(f"{a_prev}[{k}:a]acrossfade=d={TRANSICION}:c1=tri:c2=tri{a_sal}")
-        v_prev, a_prev = v_sal, a_sal
-    script = trabajo / "transiciones.txt"
-    script.write_text(";\n".join(filtros), encoding="utf-8")
-    entradas = [x for p in partes for x in ("-i", str(p))]
-    _ff(*entradas, "-filter_complex_script", str(script), "-map", "[vout]", "-map", "[aout]", *VIDEO, *AUDIO, str(destino))
+    tipos_base = {"fundido": ["fade"], "deslizar": ["slideleft"]}.get(transicion, VARIADAS)
+    tipos = [tipos_base[k % len(tipos_base)] for k in range(len(partes) - 1)]
+    grupos, k = [], 0
+    while k < len(partes):
+        grupos.append(list(range(k, min(k + GRUPO, len(partes)))))
+        k += GRUPO
+    piezas, duraciones_piezas = [], []
+    for g, idx in enumerate(grupos):
+        _avance(f"Uniendo transiciones (grupo {g + 1} de {len(grupos)})", 0.6 + 0.15 * g / len(grupos))
+        salida = trabajo / f"grupo_{g:02d}.mp4"
+        if len(idx) == 1:
+            salida = partes[idx[0]]
+        else:
+            _xfade([partes[i] for i in idx], [duraciones[i] for i in idx], [tipos[i] for i in idx[:-1]],
+                   salida, trabajo, f"grupo_{g:02d}", TRANSICION)
+        piezas.append(salida)
+        duraciones_piezas.append(sum(duraciones[i] for i in idx))  # el grupo conserva el relleno del final
+    if len(piezas) == 1:
+        _ff("-i", str(piezas[0]), "-c", "copy", str(destino))
+        return cambios
+    _avance("Uniendo los grupos", 0.76)
+    union = [tipos[grupos[g + 1][0] - 1] for g in range(len(grupos) - 1)]
+    _xfade(piezas, duraciones_piezas, union, destino, trabajo, "union", TRANSICION)
     return cambios
 
 
@@ -167,7 +226,21 @@ def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> P
     trabajo.mkdir(parents=True, exist_ok=True)
     partes, duraciones = [], []
     for i, esc in enumerate(escenas, 1):
-        seg = trabajo / f"seg_{i:02d}.mp4"
+        # nombre según lo que lleva la escena: si nada cambió y ya existe, se reutiliza
+        firma = hashlib.sha1(json.dumps([esc.get("narracion"), esc.get("visual"), esc.get("indice"), esc.get("texto"),
+                                         round(esc["duracion"], 3), extra, ajustes.get("zoom"), ajustes.get("corte_cada"),
+                                         spec.get("color_acento")], ensure_ascii=False).encode()).hexdigest()[:10]
+        seg = trabajo / f"seg_{i:02d}_{firma}.mp4"
+        _avance(f"Escena {i} de {len(escenas)}", 0.6 * (i - 1) / len(escenas))
+        try:
+            if seg.exists() and _duracion(seg) >= esc["duracion"] + extra - 0.2:
+                partes.append(seg)
+                duraciones.append(esc["duracion"])
+                print(f"  · escena {i}/{len(escenas)} ya estaba hecha")
+                continue
+        except (subprocess.CalledProcessError, ValueError):
+            pass
+        seg.unlink(missing_ok=True)
         if esc["visual"] == "grabacion" and clips:
             _segmento_clip(clips[(max(esc.get("indice", 1), 1) - 1) % len(clips)], esc["audio"], esc["duracion"], seg, extra)
         else:
@@ -240,8 +313,9 @@ def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> P
     script = trabajo / "final.txt"
     script.write_text(";\n".join(filtros), encoding="utf-8")
     principal = trabajo / "principal.mp4"
-    _ff(*entradas, "-filter_complex_script", str(script), "-map", v_final, "-map", a_final,
-        "-t", f"{duracion:.3f}", *VIDEO, *AUDIO, str(principal))
+    _ff_avance([*entradas, "-filter_complex_script", str(script), "-map", v_final, "-map", a_final,
+                "-t", f"{duracion:.3f}", *VIDEO, *AUDIO, str(principal)], duracion, "Subtítulos y música", 0.8, 0.97)
+    _avance("Últimos detalles", 0.98)
 
     # intro y outro del canal
     final = carpeta / "video.mp4"
@@ -263,4 +337,5 @@ def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> P
     # Los pedazos ya no sirven (se regeneran si se re-edita) y ocupan mucho disco.
     for f in trabajo.glob("*.mp4"):
         f.unlink(missing_ok=True)
+    _avance("Listo", 1.0)
     return final

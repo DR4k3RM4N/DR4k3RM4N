@@ -45,7 +45,8 @@
     $("#modo").hidden = !nuevo.demo;
     if (nuevo.gasto) {
       $("#gasto").hidden = false;
-      $("#gasto").innerHTML = `💰 Hoy <b>${dinero(nuevo.gasto.hoy)}</b> <span>· mes ${dinero(nuevo.gasto.mes)}</span>`;
+      $("#gasto").innerHTML = `💰 Hoy <b>${dinero(nuevo.gasto.hoy)}</b>${nuevo.gasto.tope ? `<span> / tope ${dinero(nuevo.gasto.tope)}</span>` : ""} <span>· mes ${dinero(nuevo.gasto.mes)}</span>`;
+      $("#gasto").classList.toggle("tope", !!nuevo.gasto.tope && nuevo.gasto.hoy >= nuevo.gasto.tope);
     }
     pintarBandeja();
     pintarProyectos();
@@ -377,7 +378,8 @@
           <div class="tarea-cabeza"><b>${esc(t.accion)}</b><span class="estado-chip ${t.estado}">${esc(ESTADO_TAREA[t.estado] || t.estado)}</span></div>
           <div class="tarea-sub">${esc(t.titulo || "")}</div>
           ${t.espera ? `<div class="tarea-espera">⏳ ${esc(t.espera)}</div>` : ""}
-          ${viva ? `<div class="tarea-tiempo">⏱ ${duracion(reloj() - t.inicio)}</div><div class="barra-tarea"><b></b></div>` : ""}
+          ${viva && t.paso ? `<div class="tarea-espera">▶ ${esc(t.paso)}</div>` : ""}
+          ${viva ? `<div class="tarea-tiempo">⏱ ${duracion(reloj() - t.inicio)}${t.avance ? ` · ${Math.round(t.avance * 100)}%` : ""}</div><div class="barra-tarea"><b></b></div>` : ""}
           ${t.fin && t.inicio ? `<div class="tarea-tiempo">${t.estado === "hecha" ? "✔" : "✖"} en ${duracion(t.fin - t.inicio)} · ${haceCuanto(t.fin)}</div>` : ""}
           ${t.resultado ? `<div class="tarea-sub">${esc(t.resultado)}</div>` : ""}
           ${t.costo ? `<div class="tarea-tiempo">💰 ${dinero(t.costo)} · ${esc((t.modelo || "").replace("claude-", ""))}</div>` : ""}
@@ -406,7 +408,7 @@
       const DUR = { ideas: 30, investigar: 90, guion: 60, voz: 45, miniatura: 8, video: 150, blog: 60, publicar: 60 };
       cont.querySelectorAll(".tarea-trabajando .barra-tarea b").forEach((b, k) => {
         const t = actual[k];
-        const av = 1 - Math.exp(-(reloj() - t.inicio) / (DUR[t.etapa] || 60) * 1.6);
+        const av = t.avance != null ? t.avance : 1 - Math.exp(-(reloj() - t.inicio) / (DUR[t.etapa] || 60) * 1.6);
         b.style.width = `${Math.min(97, av * 100)}%`;
       });
     }
