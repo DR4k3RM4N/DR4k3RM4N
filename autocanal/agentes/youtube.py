@@ -59,3 +59,18 @@ def subir(video: Path, miniatura: Path | None, titulo: str, descripcion: str, et
     if miniatura and miniatura.exists():
         yt.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(miniatura))).execute()
     return f"https://youtu.be/{video_id}"
+
+
+def agregar_a_descripcion(url_video: str, texto: str) -> None:
+    """Agrega una línea al final de la descripción de un video ya subido (por ejemplo, el enlace al blog)."""
+    video_id = url_video.rstrip("/").split("/")[-1].split("=")[-1]
+    yt = _servicio()
+    datos = yt.videos().list(part="snippet", id=video_id).execute().get("items", [])
+    if not datos:
+        raise RuntimeError("No encontré el video en tu canal.")
+    snippet = datos[0]["snippet"]
+    if texto in snippet.get("description", ""):
+        return
+    snippet["description"] = (snippet.get("description", "").rstrip() + "\n\n" + texto)[:5000]
+    yt.videos().update(part="snippet", body={"id": video_id, "snippet": {
+        k: snippet[k] for k in ("title", "description", "categoryId", "tags", "defaultLanguage") if k in snippet}}).execute()

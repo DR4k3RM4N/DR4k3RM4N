@@ -173,10 +173,23 @@ def publicar(app_id: str, titulo_n: int = 1) -> dict:
     from . import buscador as b
 
     _pausa(4, 6)
-    pub = {"blog": {"id": 1, "link": f"https://tublog.com/{app_id.split('.')[-1]}", "estado": "draft"},
-           "youtube": f"https://youtu.be/demo-{app_id.split('.')[-1]}", "video_en_blog": True, "demo": True}
+    if os.environ.get("DEMO_BLOG_FALLA") == "1":
+        pub = {"blog": None, "blog_error": "WordPress 401: no tienes permisos (demo)",
+               "youtube": f"https://youtu.be/demo-{app_id.split('.')[-1]}", "demo": True}
+    else:
+        pub = {"blog": {"id": 1, "link": f"https://tublog.com/{app_id.split('.')[-1]}", "estado": "draft"},
+               "youtube": f"https://youtu.be/demo-{app_id.split('.')[-1]}", "video_en_blog": True, "demo": True}
     (config.SALIDA / app_id / "publicado.json").write_text(json.dumps(pub, indent=2), encoding="utf-8")
     b.marcar_hecha(app_id)
+    return pub
+
+
+def publicar_blog(app_id: str) -> dict:
+    _pausa(2, 3)
+    pub = json.loads((config.SALIDA / app_id / "publicado.json").read_text(encoding="utf-8"))
+    pub.update(blog={"id": 1, "link": f"https://tublog.com/{app_id.split('.')[-1]}", "estado": "draft"}, video_en_blog=True)
+    pub.pop("blog_error", None)
+    (config.SALIDA / app_id / "publicado.json").write_text(json.dumps(pub, indent=2), encoding="utf-8")
     return pub
 
 
@@ -189,3 +202,4 @@ def activar() -> None:
     playstore.ficha, playstore.resenas, playstore.descargar_imagenes = ficha, resenas, descargar_imagenes
     claude.json_estructurado, claude.investigar_web = json_estructurado, investigar_web
     canal.publicar = publicar
+    canal.publicar_blog = publicar_blog

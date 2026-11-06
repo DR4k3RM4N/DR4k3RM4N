@@ -196,12 +196,21 @@
       return `<article class="tarjeta">
         <div class="cabeza"><h4>${esc(p.titulo)}</h4><span class="chip chip-estado-${esc(p.estado)}">${esc(ESTADO_PROY[p.estado] || p.estado)}</span></div>
         <ol class="pasos">${pasos}</ol>${pub}
+        ${p.blog_pendiente ? `<div class="pendiente-blog">📝 El blog quedó pendiente${p.publicado?.blog_error ? `: ${esc(p.publicado.blog_error.slice(0, 120))}` : ""}
+          <button class="btn btn-mini btn-primario" data-subir-blog="${esc(p.id)}">Subir blog</button></div>` : ""}
         ${p.costo ? `<div class="costo">💰 ${dinero(p.costo)} <span>${Object.entries(p.costos || {}).map(([e, v]) => `${esc(ETIQUETA_ETAPA[e] || e)} ${dinero(v)}`).join(" · ")}</span></div>` : ""}
         ${["revision", "publicado"].includes(p.estado) ? `<button class="btn ancho" data-revisar="${esc(p.id)}">Ver video</button>` : ""}
       </article>`;
     }).join("");
   }
-  $("#proyectos").addEventListener("click", (e) => {
+  $("#proyectos").addEventListener("click", async (e) => {
+    const sb = e.target.closest("[data-subir-blog]");
+    if (sb) {
+      sb.disabled = true;
+      try { await api(`/api/proyecto/${encodeURIComponent(sb.dataset.subirBlog)}`, { accion: "subir_blog" }); sb.textContent = "Carla lo está subiendo…"; }
+      catch (err) { alert(err.message); sb.disabled = false; }
+      return;
+    }
     const b = e.target.closest("[data-revisar]");
     if (b) abrirRevision(b.dataset.revisar);
   });
@@ -346,12 +355,16 @@
   $("#equipo").addEventListener("pointerdown", () => (presionado = true));
   document.addEventListener("pointerup", () => setTimeout(() => (presionado = false), 0));
 
-  function pintarEquipo() {
-    if (!estado || $("#tab-equipo").hidden || presionado) return;
-    if (document.activeElement?.closest?.("#equipo")) return;
+  function pintarEquipo(forzar = false) {
+    if (!estado || $("#tab-equipo").hidden) return;
+    // no repintar mientras se da clic o se escribe (solo cuadros de texto, no botones)
+    if (presionado && !forzar) return;
+    if (document.activeElement?.matches?.("#equipo input, #equipo textarea, #equipo select")) return;
     const cont = $("#equipo");
     if (!agenteVisto) {
-      cont.innerHTML = `<p class="pista">Pícale a un agente (aquí o en la oficina) para ver sus tareas.</p>
+      const terminadas = (estado.tareas || []).filter((t) => ["hecha", "fallo", "cancelada"].includes(t.estado)).length;
+      cont.innerHTML = `<div class="equipo-cabeza"><p class="pista">Pícale a un agente (aquí o en la oficina) para ver sus tareas.</p>
+        ${terminadas ? `<button class="btn btn-mini" data-limpiar="">🧹 Borrar terminadas (${terminadas})</button>` : ""}</div>
         <div class="equipo-lista">${estado.agentes.map((a) => {
           const [txt, cls] = estadoAgente(a);
           const actual = tareasDe(a.id).find((t) => t.estado === "trabajando");
@@ -401,7 +414,7 @@
         ${actual.length ? `<ul class="tareas">${actual.map((t) => tarjeta(t, true)).join("")}</ul>` : `<p class="vacio">${a.estado === "libre" ? "Sin tareas: está libre." : "Entregando trabajo a un compañero."}</p>`}
         <h4 class="seccion-mini">En fila ${fila.length ? `(${fila.length})` : ""}</h4>
         ${fila.length ? `<ul class="tareas">${fila.map((t) => tarjeta(t, false)).join("")}</ul>` : `<p class="vacio">Nada en fila.</p>`}
-        <h4 class="seccion-mini">Terminadas</h4>
+        <h4 class="seccion-mini">Terminadas ${hechas.length ? `<button class="btn btn-mini" data-limpiar="${esc(a.id)}">🧹 Borrar</button>` : ""}</h4>
         ${hechas.length ? `<ul class="tareas">${hechas.map((t) => tarjeta(t, false)).join("")}</ul>` : `<p class="vacio">Todavía nada.</p>`}`}
         ${frases.length ? `<h4 class="seccion-mini">Lo último que dijo</h4><ul class="frases">${frases.map((m) => `<li>“${esc(m.texto)}” <small>${hora(m.t)}</small></li>`).join("")}</ul>` : ""}`;
       // barra de avance aproximada
@@ -419,10 +432,19 @@
     agenteVisto = id;
     window.Oficina.seleccionar(id);
     abrirPestana("equipo");
+    pintarEquipo(true);
+    $("#tab-equipo").scrollTop = 0;
   }
 
   $("#equipo").addEventListener("click", (e) => {
-    if (e.target.closest("[data-volver]")) { agenteVisto = null; window.Oficina.seleccionar(null); return pintarEquipo(); }
+    if (e.target.closest("[data-volver]")) { agenteVisto = null; window.Oficina.seleccionar(null); return pintarEquipo(true); }
+    const limpiar = e.target.closest("[data-limpiar]");
+    if (limpiar) {
+      const quien = limpiar.dataset.limpiar;
+      if (!confirm(quien ? "¿Borrar las tareas terminadas de este agente?" : "¿Borrar las tareas terminadas de todo el equipo?")) return;
+      api("/api/tareas/limpiar", { agente: quien || null }).then(() => pintarEquipo(true)).catch((err) => alert(err.message));
+      return;
+    }
     const t = e.target.closest("[data-agente]");
     if (t) verAgente(t.dataset.agente);
   });

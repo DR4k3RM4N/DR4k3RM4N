@@ -89,6 +89,7 @@ ACCION = {
     "ideas": "Buscar apps nuevas en Play Store", "investigar": "Investigar reseñas y evidencia",
     "guion": "Escribir el guion", "voz": "Narrar el guion", "miniatura": "Diseñar la miniatura",
     "video": "Editar el video", "blog": "Escribir el post del blog", "publicar": "Publicar en YouTube y el blog",
+    "publicar_blog": "Subir el blog pendiente",
     "estilo_miniaturas": "Estudiar tus miniaturas", "estilo_blog": "Estudiar tus entradas del blog",
     "estilo_video": "Estudiar tu video de referencia",
 }
@@ -545,6 +546,16 @@ class Oficina:
             self.decir("productora", "Jefe, busqué pero todas las que encontré ya están en tu bandeja o ya las hicimos. "
                                      "Si tienes una idea concreta, dime cuál y la hago.")
 
+    def limpiar_tareas(self, agente: str | None = None) -> dict:
+        """Quita del historial las tareas terminadas (hechas, fallidas o canceladas). El gasto no se pierde."""
+        with self.lock:
+            antes = len(self.tareas)
+            self.tareas = [t for t in self.tareas
+                           if t["estado"] in ACTIVAS or (agente and t["agente"] != agente)]
+            n = antes - len(self.tareas)
+            self._tocar()
+        return {"ok": True, "borradas": n}
+
     def descartar_ideas(self) -> dict:
         """Limpia la bandeja de ideas sin contarlo como 'no me gustó' (no afecta lo que Paola aprende)."""
         with self.lock:
@@ -763,6 +774,8 @@ class Oficina:
                 p["estado"], p["error"] = "produccion", None
                 self._tocar()
                 threading.Thread(target=self._producir, args=(app_id, p.get("notas", ""), None, hechas), daemon=True).start()
+            elif accion == "subir_blog" and p["estado"] == "publicado" and p.get("blog_pendiente"):
+                threading.Thread(target=self._subir_blog, args=(app_id,), daemon=True).start()
             elif accion == "miniatura":
                 return self.elegir_miniatura(app_id, titulo_n - 1)
             elif accion == "descartar" and p["estado"] in ("revision", "error"):
@@ -796,12 +809,42 @@ class Oficina:
             p = self.proyectos[app_id]
             p["estado"], p["etapa"], p["publicado"] = "publicado", "publicado", pub
             p["publicado_t"] = time.time()
+            p["blog_pendiente"] = bool((pub or {}).get("blog_error"))
             self._tocar()
         donde = "en YouTube y en el blog" if (pub or {}).get("blog") else "en YouTube"
         privado = config.env("YT_PRIVACIDAD", "private") == "private"
         self.avisar_jefe(f"¡Publicado! {titulo} ya está {donde} 🎉"
                          + (" Quedó en privado: ábrelo en YouTube Studio para hacerlo público." if privado else "")
+                         + (" El blog no se pudo subir; queda pendiente con el botón «Subir blog»." if p["blog_pendiente"] else "")
                          + (f"\n{pub.get('youtube')}" if (pub or {}).get("youtube") else ""))
+
+    def _subir_blog(self, app_id: str) -> None:
+        import canal
+
+        titulo = self.proyectos[app_id]["titulo"]
+        t = self.nueva_tarea("community", "publicar_blog", app_id, titulo)
+        with self.turnos["community"]:
+            self.tarea(t, estado="trabajando", inicio=time.time())
+            self.poner("community", estado="trabajando", proyecto=app_id)
+            self.decir("community", "Subiendo el blog que quedó pendiente…", al_log=False)
+            try:
+                pub = canal.publicar_blog(app_id)
+            except Exception as exc:  # noqa: BLE001
+                self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
+                self.poner("community", estado="libre", proyecto=None)
+                self.decir("community", f"El blog sigue fallando: {str(exc)[:120]}")
+                with self.lock:
+                    self.proyectos[app_id]["blog_pendiente"] = True
+                    self.proyectos[app_id].setdefault("publicado", {})["blog_error"] = str(exc)[:300]
+                    self._tocar()
+                return
+            self.tarea(t, estado="hecha", fin=time.time())
+            self.poner("community", estado="libre", proyecto=None)
+        with self.lock:
+            p = self.proyectos[app_id]
+            p["publicado"], p["blog_pendiente"] = pub, False
+            self._tocar()
+        self.avisar_jefe(f"¡Listo! El blog de {titulo} ya está arriba y enlazado con el video 📝")
 
     # ---------- estilo ----------
     def estudiar(self, que: str, urls: list[str] | None = None) -> None:
@@ -1229,6 +1272,9 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             ruta = unquote(urlparse(self.path).path)  # ids como "web:app" llegan codificados
             if ruta == "/api/ideas/descartar":
                 return self._json(oficina.descartar_ideas())
+            if ruta == "/api/tareas/limpiar":
+                agente = datos.get("agente")
+                return self._json(oficina.limpiar_tareas(agente if agente in oficina.agentes else None))
             if ruta == "/api/estilo/estudiar":
                 que = datos.get("que")
                 if que not in ("miniaturas", "blog", "video"):

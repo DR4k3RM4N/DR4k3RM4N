@@ -257,9 +257,14 @@ def publicar(app_id: str, titulo_n: int = 1) -> dict:
     if "blog" not in pub:
         if con_blog:
             print("Subiendo entrada a WordPress…")
-            wp = blog.WordPress()
-            pub["blog"] = wp.publicar(entrada, imagenes, str(carpeta / "miniatura.jpg"), _slug(entrada["slug"]))
-            print(f"  · {pub['blog']['link']} ({pub['blog']['estado']})")
+            try:
+                wp = blog.WordPress()
+                pub["blog"] = wp.publicar(entrada, imagenes, str(carpeta / "miniatura.jpg"), _slug(entrada["slug"]))
+                pub.pop("blog_error", None)
+                print(f"  · {pub['blog']['link']} ({pub['blog']['estado']})")
+            except Exception as exc:  # noqa: BLE001 — el blog no detiene a YouTube; queda pendiente
+                pub["blog"], pub["blog_error"] = None, str(exc)[:300]
+                print(f"  · el blog falló ({exc}); sigo con YouTube y el blog queda pendiente")
         else:  # sin WordPress todavía: se sube solo a YouTube
             print("WordPress no está configurado: subo solo a YouTube.")
             pub["blog"] = None
@@ -286,6 +291,34 @@ def publicar(app_id: str, titulo_n: int = 1) -> dict:
         _guardar(carpeta / "publicado.json", pub)
     buscador.marcar_hecha(app_id.split("~")[0])
     print("✔ Publicado.")
+    return pub
+
+
+def publicar_blog(app_id: str) -> dict:
+    """Sube después el blog que quedó pendiente, pone el video dentro y agrega el enlace a YouTube."""
+    from agentes import blog, youtube
+
+    carpeta = config.SALIDA / app_id
+    entrada, imagenes = _leer(carpeta / "blog.json"), _leer(carpeta / "imagenes.json")
+    pub = _leer(carpeta / "publicado.json") or {}
+    if not entrada:
+        raise RuntimeError("Este video no tiene entrada de blog escrita.")
+    if not pub.get("blog"):
+        wp = blog.WordPress()
+        pub["blog"] = wp.publicar(entrada, imagenes, str(carpeta / "miniatura.jpg"), _slug(entrada["slug"]))
+        pub.pop("blog_error", None)
+        _guardar(carpeta / "publicado.json", pub)
+    if pub.get("youtube") and not pub.get("video_en_blog"):
+        blog.WordPress().insertar_video(pub["blog"]["id"], pub["youtube"])
+        pub["video_en_blog"] = True
+        _guardar(carpeta / "publicado.json", pub)
+    if pub.get("youtube") and not pub.get("enlace_en_youtube"):
+        try:
+            youtube.agregar_a_descripcion(pub["youtube"], f"Análisis completo: {pub['blog']['link']}")
+            pub["enlace_en_youtube"] = True
+            _guardar(carpeta / "publicado.json", pub)
+        except Exception as exc:  # noqa: BLE001 — el blog ya está; esto es un extra
+            print(f"  · no pude poner el enlace en YouTube: {exc}")
     return pub
 
 
