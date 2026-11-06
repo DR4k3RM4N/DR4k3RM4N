@@ -1,7 +1,7 @@
 // Motor de la oficina isométrica en pixel art: sala, muebles, agentes, selección y globos de texto.
 (() => {
   const K = 2; // densidad: cada "pixel" de diseño de muebles mide K pixeles reales; los personajes usan el detalle completo
-  const COLS = 14, ROWS = 10, TW = 32 * K, TH = 16 * K, MURO = 74, PAD = 16 * K;
+  const COLS = 14, OFI = 10, ROWS = 15, TW = 32 * K, TH = 16 * K, MURO = 74, PAD = 16 * K;
   const ANCHO = (COLS + ROWS) * TW / 2 + PAD * 2;
   const ALTO = MURO * K + (COLS + ROWS) * TH / 2 + PAD * 2 + 14 * K;
   const OX = ROWS * TW / 2 + PAD, OY = MURO * K + PAD + 8 * K;
@@ -22,12 +22,29 @@
   }
   const CAFE = [12, 5];
   const PASEOS = [CAFE, [11, 7], [10, 4], [6, 3], [9, 8], [12, 7]];
+  // patio de descanso (filas 10 a 14): cada lugar con su actividad
+  const ACTIVIDADES = [
+    { id: "ping_a", pos: [1, 12], icono: "🏓", frente: true, mano: true },
+    { id: "ping_b", pos: [4, 12], icono: "🏓", frente: false, mano: true },
+    { id: "arcade", pos: [1, 11], icono: "🎮", frente: false, mano: true },
+    { id: "puf_1", pos: [9, 12], icono: "📱", frente: true, sentado: true, puf: "#f472b6" },
+    { id: "puf_2", pos: [10, 13], icono: "📱", frente: true, sentado: true, puf: "#60a5fa" },
+    { id: "camastro_1", pos: [12, 11], icono: "💤", frente: true, sentado: true, camastro: true },
+    { id: "camastro_2", pos: [12, 13], icono: "💤", frente: true, sentado: true, camastro: true },
+    { id: "mesa_1", pos: [5, 13], icono: "☕", frente: true, sentado: true, silla: true },
+    { id: "mesa_2", pos: [7, 13], icono: "☕", frente: true, sentado: true, silla: true },
+    { id: "fuente", pos: [12, 14], icono: "🌿", frente: false },
+  ];
+  const actividadEn = (p) => ACTIVIDADES.find((x) => igual(x.pos, p));
 
   const bloqueado = new Set();
   const bloquear = (x, y) => bloqueado.add(`${x},${y}`);
   Object.values(ESCRITORIOS).forEach(([x, y]) => bloquear(x, y));
   [[10, 2], [11, 2], [12, 2], [11, 1], [13, 5], [13, 6], [13, 7], [13, 8], [13, 9], [12, 8], [0, 0], [13, 0], [0, 9],
    [0, 3], [0, 4]].forEach(([x, y]) => bloquear(x, y));
+  // jardineras entre la oficina y el patio (con la entrada en x = 6 y 7) y muebles del patio
+  for (let x = 0; x < COLS; x++) if (x !== 6 && x !== 7) bloquear(x, OFI);
+  [[2, 12], [3, 12], [0, 11], [6, 13], [8, 11], [0, 14], [13, 14], [13, 11]].forEach(([x, y]) => bloquear(x, y));
 
   function ruta(desde, hasta) { // BFS sobre la cuadrícula
     const clave = (p) => `${p[0]},${p[1]}`;
@@ -88,6 +105,17 @@
   // ---------- sala ----------
   function piso(estado, t) {
     for (let x = 0; x < COLS; x++) for (let y = 0; y < ROWS; y++) {
+      if (y >= OFI) { // patio: pasto, con un camino de deck desde la puerta
+        const deck = (x === 6 || x === 7) || (y === 13 && x >= 4 && x <= 8) || (y >= 12 && x >= 1 && x <= 4 && y <= 12);
+        const c = deck ? ((x + y) % 2 ? "#c79a6a" : "#bb8d5d") : ((x * 7 + y * 3) % 5 === 0 ? "#6fbf5f" : (x + y) % 2 ? "#7ccb6b" : "#74c263");
+        poligono([iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)], c, deck ? "rgba(90,55,25,.25)" : "rgba(40,90,30,.18)");
+        if (!deck && (x * 13 + y * 7) % 4 === 0) { // matitas de pasto
+          g.fillStyle = "#4f9a43";
+          const [hx, hy] = iso(x + 0.4, y + 0.55);
+          g.fillRect(Math.round(hx), Math.round(hy) - 3, 2, 4); g.fillRect(Math.round(hx) + 3, Math.round(hy) - 2, 2, 3);
+        }
+        continue;
+      }
       const c = (x + y) % 2 ? "#d8b88f" : "#ceac81";
       poligono([iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)], c, "rgba(120,80,40,.16)");
       // vetas de madera
@@ -95,6 +123,9 @@
       const [vx, vy] = iso(x + 0.35, y + 0.5);
       g.fillRect(Math.round(vx), Math.round(vy), 10, 1);
     }
+    // escalón de la puerta al patio y tapete de bienvenida
+    poligono([iso(6, OFI - 0.08), iso(8, OFI - 0.08), iso(8, OFI + 0.08), iso(6, OFI + 0.08)], "#8f6a44");
+    poligono([iso(6.2, OFI + 0.2), iso(7.8, OFI + 0.2), iso(7.8, OFI + 0.8), iso(6.2, OFI + 0.8)], "#a16207");
     // tapete de la sala de descanso
     poligono([iso(10, 6.4), iso(13, 6.4), iso(13, 9.6), iso(10, 9.6)], "#5b6fd6");
     poligono([iso(10.25, 6.65), iso(12.75, 6.65), iso(12.75, 9.35), iso(10.25, 9.35)], "#6f82e8");
@@ -104,8 +135,10 @@
     poligono([iso(10, 0.8), iso(13, 0.8), iso(13, 3.4), iso(10, 3.4)], "#b4384a");
     // borde del piso (grosor)
     const grosor = 6 * K;
-    poligono([iso(0, ROWS), iso(COLS, ROWS), [iso(COLS, ROWS)[0], iso(COLS, ROWS)[1] + grosor], [iso(0, ROWS)[0], iso(0, ROWS)[1] + grosor]], "#8f6a44");
-    poligono([iso(COLS, 0), iso(COLS, ROWS), [iso(COLS, ROWS)[0], iso(COLS, ROWS)[1] + grosor], [iso(COLS, 0)[0], iso(COLS, 0)[1] + grosor]], "#7a5838");
+    poligono([iso(0, ROWS), iso(COLS, ROWS), [iso(COLS, ROWS)[0], iso(COLS, ROWS)[1] + grosor], [iso(0, ROWS)[0], iso(0, ROWS)[1] + grosor]], "#6b4a2b");
+    poligono([iso(COLS, 0), iso(COLS, OFI), [iso(COLS, OFI)[0], iso(COLS, OFI)[1] + grosor], [iso(COLS, 0)[0], iso(COLS, 0)[1] + grosor]], "#7a5838");
+    poligono([iso(COLS, OFI), iso(COLS, ROWS), [iso(COLS, ROWS)[0], iso(COLS, ROWS)[1] + grosor], [iso(COLS, OFI)[0], iso(COLS, OFI)[1] + grosor]], "#5c3f24");
+    poligono([iso(0, OFI), iso(0, ROWS), [iso(0, ROWS)[0] - 0, iso(0, ROWS)[1] + grosor], [iso(0, OFI)[0], iso(0, OFI)[1] + grosor]], "#5c3f24");
     // brillo de los monitores encendidos sobre el piso
     g.save();
     g.globalCompositeOperation = "lighter";
@@ -132,16 +165,16 @@
   const muroI = (y, h) => iso(0, y, h);
 
   function muros(t, estado) {
-    poligono([muroI(0, 0), muroI(ROWS, 0), muroI(ROWS, MURO), muroI(0, MURO)], "#e6d7bd");
+    poligono([muroI(0, 0), muroI(OFI, 0), muroI(OFI, MURO), muroI(0, MURO)], "#e6d7bd");
     poligono([muroD(0, 0), muroD(COLS, 0), muroD(COLS, MURO), muroD(0, MURO)], "#f1e6d2");
     // franja inferior de color
-    poligono([muroI(0, 0), muroI(ROWS, 0), muroI(ROWS, 18), muroI(0, 18)], "#c9b28d");
+    poligono([muroI(0, 0), muroI(OFI, 0), muroI(OFI, 18), muroI(0, 18)], "#c9b28d");
     poligono([muroD(0, 0), muroD(COLS, 0), muroD(COLS, 18), muroD(0, 18)], "#d6bf99");
-    poligono([muroI(0, 18), muroI(ROWS, 18), muroI(ROWS, 19), muroI(0, 19)], "#a88d66");
+    poligono([muroI(0, 18), muroI(OFI, 18), muroI(OFI, 19), muroI(0, 19)], "#a88d66");
     poligono([muroD(0, 18), muroD(COLS, 18), muroD(COLS, 19), muroD(0, 19)], "#b39771");
-    poligono([muroI(0, 0), muroI(ROWS, 0), muroI(ROWS, 3), muroI(0, 3)], "#8f7552");
+    poligono([muroI(0, 0), muroI(OFI, 0), muroI(OFI, 3), muroI(0, 3)], "#8f7552");
     poligono([muroD(0, 0), muroD(COLS, 0), muroD(COLS, 3), muroD(0, 3)], "#9c8059");
-    poligono([muroI(0, MURO - 3), muroI(ROWS, MURO - 3), muroI(ROWS, MURO), muroI(0, MURO)], "#9c7f5a");
+    poligono([muroI(0, MURO - 3), muroI(OFI, MURO - 3), muroI(OFI, MURO), muroI(0, MURO)], "#9c7f5a");
     poligono([muroD(0, MURO - 3), muroD(COLS, MURO - 3), muroD(COLS, MURO), muroD(0, MURO)], "#a88a63");
     // ventanas
     const hora = new Date().getHours();
@@ -328,6 +361,117 @@
     caja(12.1, 8.2, 12.35, 8.45, 6, 1, "#60a5fa", "#2563eb", "#1d4ed8"); // revista
   }
 
+  // ---------- patio de descanso ----------
+  function jardinera(x) {
+    caja(x + 0.08, OFI + 0.2, x + 0.92, OFI + 0.8, 0, 7, "#a16207", "#854d0e", "#713f12");
+    caja(x + 0.12, OFI + 0.25, x + 0.88, OFI + 0.75, 7, 1, "#3f2a14", "#3f2a14", "#3f2a14");
+    const [px, py] = iso(x + 0.5, OFI + 0.5, 8);
+    g.fillStyle = (x % 3) ? "#22c55e" : "#16a34a";
+    for (const [dx, dy, r] of [[-8, -4, 6], [0, -8, 7], [8, -4, 6]]) { g.beginPath(); g.arc(px + dx * K / 2 * 2, py + dy, r * K / 2 * 2, 0, Math.PI * 2); g.fill(); }
+    if (x % 2 === 0) { g.fillStyle = ["#f472b6", "#facc15", "#f87171"][x % 3]; g.fillRect(Math.round(px) - 3, Math.round(py) - 14, 4, 4); g.fillRect(Math.round(px) + 8, Math.round(py) - 8, 4, 4); }
+  }
+
+  function pingpong(t, jugando) {
+    caja(2.1, 12.15, 3.9, 12.85, 0, 11, "#166534", "#14532d", "#14532d");
+    caja(2.1, 12.15, 3.9, 12.85, 11, 1, "#15803d", "#166534", "#166534");
+    poligono([iso(2.1, 12.5, 12), iso(3.9, 12.5, 12), iso(3.9, 12.52, 12), iso(2.1, 12.52, 12)], "#fff");
+    caja(2.97, 12.15, 3.03, 12.85, 12, 4, "rgba(255,255,255,.8)", "rgba(230,230,230,.8)", "rgba(220,220,220,.8)"); // red
+    if (jugando) { // pelotita que va y viene entre los dos jugadores
+      const f = (Math.sin(t * 3.2) + 1) / 2;
+      const x = 1.6 + f * 2.8, z = 14 + Math.abs(Math.sin(t * 6.4)) * 12;
+      const [bx, by] = iso(x, 12.5, z);
+      g.fillStyle = "rgba(0,0,0,.25)"; const [sx, sy] = iso(x, 12.5, 12); g.beginPath(); g.ellipse(sx, sy, 3, 1.5, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#fff"; g.beginPath(); g.arc(bx, by, 3, 0, Math.PI * 2); g.fill();
+    }
+  }
+
+  function arcade(t) {
+    caja(0.15, 11.1, 0.85, 11.9, 0, 40, "#7c3aed", "#5b21b6", "#4c1d95");
+    caja(0.85, 11.2, 0.88, 11.8, 22, 14, "#0f172a", "#0f172a", Math.floor(t * 3) % 2 ? "#22d3ee" : "#a78bfa"); // pantalla
+    caja(0.85, 11.25, 1.05, 11.75, 18, 3, "#1f2937", "#111827", "#111827"); // controles
+    const [jx, jy] = iso(1.0, 11.45, 22);
+    g.fillStyle = "#ef4444"; g.beginPath(); g.arc(jx, jy, 3, 0, Math.PI * 2); g.fill();
+    caja(0.15, 11.1, 0.85, 11.9, 40, 5, "#facc15", "#eab308", "#ca8a04"); // marquesina
+  }
+
+  function puf(x, y, color) {
+    const [cx, cy] = iso(x + 0.5, y + 0.55, 0);
+    g.fillStyle = "rgba(0,0,0,.2)"; g.beginPath(); g.ellipse(cx, cy + 2, 22, 10, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = aclarar(color, 0.75); g.beginPath(); g.ellipse(cx, cy - 6, 22, 13, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = color; g.beginPath(); g.ellipse(cx, cy - 10, 19, 10, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = aclarar(color, 1.3); g.beginPath(); g.ellipse(cx - 6, cy - 13, 6, 3, 0, 0, Math.PI * 2); g.fill();
+  }
+
+  function camastro(x, y) {
+    caja(x + 0.1, y + 0.3, x + 0.9, y + 0.7, 2, 3, "#e5e7eb", "#9ca3af", "#6b7280");
+    caja(x + 0.1, y + 0.3, x + 0.25, y + 0.7, 5, 9, "#f1f5f9", "#cbd5e1", "#94a3b8"); // respaldo inclinado
+    for (const lx of [x + 0.15, x + 0.85]) caja(lx - 0.03, y + 0.32, lx + 0.03, y + 0.38, 0, 2, "#374151", "#1f2937", "#111827");
+    caja(x + 0.3, y + 0.32, x + 0.8, y + 0.68, 5, 1, "#38bdf8", "#0284c7", "#0369a1"); // toalla
+  }
+
+  function mesaSombrilla(t) {
+    caja(6.25, 13.25, 6.75, 13.75, 0, 10, "#f5f5f4", "#d6d3d1", "#a8a29e");
+    caja(6.2, 13.2, 6.8, 13.8, 10, 1, "#fafaf9", "#e7e5e4", "#d6d3d1");
+    caja(6.47, 13.47, 6.53, 13.53, 11, 30, "#78716c", "#57534e", "#44403c"); // palo
+    const [cx, cy] = iso(6.5, 13.5, 44);
+    for (let k = 0; k < 8; k++) { // sombrilla a gajos
+      g.fillStyle = k % 2 ? "#ef4444" : "#fff";
+      g.beginPath(); g.moveTo(cx, cy - 10);
+      g.ellipse(cx, cy, 44, 20, 0, Math.PI + k * Math.PI / 8, Math.PI + (k + 1) * Math.PI / 8); g.closePath(); g.fill();
+    }
+    caja(6.35, 13.3, 6.5, 13.45, 11, 3, "#fff", "#e5e7eb", "#d1d5db"); // tazas
+    caja(6.55, 13.55, 6.7, 13.7, 11, 3, "#fff", "#e5e7eb", "#d1d5db");
+    for (const [sx, sy] of [[5, 13], [7, 13]]) caja(sx + 0.3, sy + 0.3, sx + 0.7, sy + 0.7, 0, 7, "#f5f5f4", "#d6d3d1", "#a8a29e");
+  }
+
+  function arbol(x, y) {
+    caja(x + 0.43, y + 0.43, x + 0.57, y + 0.57, 0, 22, "#92400e", "#78350f", "#713f12");
+    const [px, py] = iso(x + 0.5, y + 0.5, 22);
+    g.fillStyle = "#15803d";
+    for (const [dx, dy, r] of [[0, -20, 22], [-16, -8, 16], [16, -8, 16], [0, 0, 14]]) { g.beginPath(); g.arc(px + dx, py + dy, r, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = "#22c55e";
+    for (const [dx, dy, r] of [[-6, -26, 8], [10, -14, 7]]) { g.beginPath(); g.arc(px + dx, py + dy, r, 0, Math.PI * 2); g.fill(); }
+  }
+
+  function fuente(t) {
+    caja(13.08, 14.08, 13.92, 14.92, 0, 6, "#9ca3af", "#6b7280", "#4b5563");
+    caja(13.18, 14.18, 13.82, 14.82, 5.5, 0.6, "#38bdf8", "#0ea5e9", "#0284c7");
+    caja(13.44, 14.44, 13.56, 14.56, 6, 10, "#d1d5db", "#9ca3af", "#6b7280");
+    g.fillStyle = "rgba(186,230,253,.9)";
+    const [fx, fy] = iso(13.5, 14.5, 16);
+    for (let k = 0; k < 6; k++) {
+      const f = ((t * 1.5 + k / 6) % 1);
+      g.fillRect(Math.round(fx + Math.cos(k) * f * 14), Math.round(fy - 6 + f * f * 24 - f * 10), 2, 2);
+    }
+  }
+
+  function foquitos(t) { // guirnalda de focos sobre el patio
+    const noche = esDeNoche();
+    for (const fila of [10.6, 14.4]) {
+      for (let k = 0; k <= 26; k++) {
+        const x = 0.5 + k * 0.5, z = 62 - Math.sin((k % 13) / 13 * Math.PI) * 10;
+        const [bx, by] = iso(x, fila, z);
+        if (k < 26) { const [nx, ny] = iso(x + 0.5, fila, 62 - Math.sin(((k + 1) % 13) / 13 * Math.PI) * 10); g.strokeStyle = "rgba(40,40,40,.6)"; g.lineWidth = 1; g.beginPath(); g.moveTo(bx, by); g.lineTo(nx, ny); g.stroke(); }
+        const color = ["#fde047", "#fb7185", "#60a5fa", "#4ade80"][k % 4];
+        g.fillStyle = noche ? color : aclarar(color, 0.8);
+        g.beginPath(); g.arc(bx, by + 3, 3, 0, Math.PI * 2); g.fill();
+      }
+    }
+    for (const [x, y] of [[0.3, 10.6], [13.7, 10.6], [0.3, 14.4], [13.7, 14.4]]) caja(x - 0.04, y - 0.04, x + 0.04, y + 0.04, 0, 62, "#57534e", "#44403c", "#292524");
+  }
+
+  function brilloFoquitos() {
+    g.save();
+    g.globalCompositeOperation = "source-atop";
+    for (const fila of [10.6, 14.4]) for (let k = 0; k <= 26; k += 2) {
+      const [bx, by] = iso(0.5 + k * 0.5, fila, 30);
+      const gr = g.createRadialGradient(bx, by, 2, bx, by, 60);
+      gr.addColorStop(0, "rgba(255,220,140,.16)"); gr.addColorStop(1, "rgba(255,220,140,0)");
+      g.fillStyle = gr; g.fillRect(bx - 60, by - 60, 120, 120);
+    }
+    g.restore();
+  }
+
   // ---------- personajes ----------
   const PIEL = { productora: "#f2c6a0", investigador: "#d9a17a", guionista: "#8d5a3b", locutor: "#f5d0b0", disenadora: "#c68863",
                  editor: "#e8b48f", redactora: "#a86b4a", community: "#f0c09a", jefe: "#e0ac85" };
@@ -508,6 +652,18 @@
     agrega(19, () => cafetera(t, hayCafe));
     agrega(20, () => lampara(t));
     agrega(21.5, sillon);
+    for (let x = 0; x < COLS; x++) if (x !== 6 && x !== 7) agrega(x + OFI + 1, () => jardinera(x));
+    const enLugar = (idAct) => Object.values(vivos).some((v) => v.actividad === idAct && !v.camino.length);
+    agrega(14.5 + 0.2, () => pingpong(t, enLugar("ping_a") && enLugar("ping_b")));
+    agrega(11.5 + 0.7, () => arcade(t));
+    for (const a of ACTIVIDADES) {
+      if (a.puf) agrega(a.pos[0] + a.pos[1] + 0.6, () => puf(a.pos[0], a.pos[1], a.puf));
+      if (a.camastro) agrega(a.pos[0] + a.pos[1] + 0.6, () => camastro(a.pos[0], a.pos[1]));
+    }
+    agrega(6.5 + 13.5 + 0.3, () => mesaSombrilla(t));
+    agrega(8.5 + 11.5 + 0.5, () => arbol(8, 11)); agrega(13.5 + 11.5 + 0.5, () => arbol(13, 11)); agrega(0.5 + 14.5 + 0.5, () => arbol(0, 14));
+    agrega(13.5 + 14.5 + 0.5, () => fuente(t));
+    agrega(40, () => foquitos(t));
 
     for (const [id, v] of Object.entries(vivos)) {
       const a = estado.agentes[id];
@@ -528,19 +684,32 @@
       if (id !== "jefe" && a.estado === "libre" && a.ubicacion === "casa" && !v.camino.length && ahora > v.pasearEn
           && !tareasDe(id).some((x) => x.estado === "en_cola")) {
         const enCasa = igual(v.meta, CASA[id]);
-        irA(v, enCasa ? PASEOS[Math.floor(Math.random() * PASEOS.length)] : CASA[id]);
-        v.pasearEn = ahora + (enCasa ? 6000 + Math.random() * 5000 : 25000 + Math.random() * 30000);
+        if (enCasa || Math.random() < 0.5) { // ir a descansar (o cambiar de actividad)
+          const ocupadas = new Set(Object.values(vivos).filter((o) => o !== v).map((o) => o.actividad));
+          const libres = ACTIVIDADES.filter((x) => !ocupadas.has(x.id));
+          const conPareja = libres.filter((x) => x.id.startsWith("ping") && ocupadas.has(x.id === "ping_a" ? "ping_b" : "ping_a"));
+          let elegido = conPareja[0] || (Math.random() < 0.75 && libres.length ? libres[Math.floor(Math.random() * libres.length)] : null);
+          v.actividad = elegido ? elegido.id : null;
+          irA(v, elegido ? elegido.pos : PASEOS[Math.floor(Math.random() * PASEOS.length)]);
+          v.pasearEn = ahora + 18000 + Math.random() * 25000;
+        } else {
+          v.actividad = null;
+          irA(v, CASA[id]);
+          v.pasearEn = ahora + 20000 + Math.random() * 25000;
+        }
       }
       if (a.estado !== "libre" && !v.camino.length) {
         const m = destinoDe(a);
-        if (!igual(m, v.meta)) irA(v, m);
+        if (!igual(m, v.meta)) { v.actividad = null; irA(v, m); } // le llegó trabajo: regresa
       }
       if (v.pendiente && !v.camino.length) { v.globo = { texto: v.pendiente, hasta: ahora + 6500 }; v.pendiente = null; }
       const enSilla = !caminando && (igual(v.meta, CASA[id])) && id !== "jefe";
-      const tecleando = a.estado === "trabajando" && enSilla;
+      const act = !caminando && v.actividad ? ACTIVIDADES.find((x) => x.id === v.actividad) : null;
+      if (act) v.frente = act.frente;
+      const tecleando = (a.estado === "trabajando" && enSilla) || Boolean(act?.mano);
       const [px, py] = iso(v.pos[0], v.pos[1]);
       v.pantalla = [px, py];
-      v.sentado = enSilla || (id === "jefe" && !caminando);
+      v.sentado = enSilla || (id === "jefe" && !caminando) || Boolean(act?.sentado);
       const marcado = id === seleccionado || id === encima;
       agrega(v.pos[0] + v.pos[1] + 0.01, () => {
         if (marcado) aro(px, py, a.color, id === seleccionado, t);
@@ -562,6 +731,7 @@
       g.globalCompositeOperation = "source-atop";
       g.fillStyle = gr; g.fillRect(lx - 150, ly - 150, 300, 300);
       g.restore();
+      brilloFoquitos();
     }
 
     ctx.imageSmoothingEnabled = false;
@@ -616,6 +786,7 @@
       if (id === "productora" && pendientes > 0) ico = "❗";
       else if (actual) ico = ICONO_TRABAJO[id];
       else if (enCola) ico = `⏳${enCola > 1 ? enCola : ""}`;
+      else if (v.actividad && !v.camino.length) ico = ACTIVIDADES.find((x) => x.id === v.actividad)?.icono || "";
       else if (igual(v.meta, CAFE) && !v.camino.length) ico = "☕";
       else if (escala >= 0.75 && id !== "jefe" && a?.estado === "libre" && igual(v.meta, CASA[id]) && !v.camino.length) ico = "💤";
       icono.hidden = !ico || visible;
