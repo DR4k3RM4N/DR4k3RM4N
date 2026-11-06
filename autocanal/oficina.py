@@ -865,7 +865,9 @@ class Oficina:
                     r = estilo.estudiar_miniaturas()
                     resumen = r["descripcion"]
                 elif agente == "editor":
-                    r = estilo.estudiar_video()
+                    if urls:
+                        self.decir(agente, "Bajando el video del enlace…")
+                    r = estilo.estudiar_video(urls[0] if urls else "")
                     resumen = f"{r['descripcion']} (≈{r['cortes_por_minuto']:.0f} cortes por minuto)"
                 else:
                     r = estilo.estudiar_blog(urls)
@@ -1279,8 +1281,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 que = datos.get("que")
                 if que not in ("miniaturas", "blog", "video"):
                     return self._json({"error": "¿qué estudio?"}, 400)
-                if que == "video" and not estilo.archivo("referencia"):
-                    return self._json({"error": "Primero sube un video de referencia."}, 400)
+                if que == "video" and not estilo.archivo("referencia") and not datos.get("urls"):
+                    return self._json({"error": "Primero sube un video de referencia o pega su enlace."}, 400)
                 if que == "miniaturas" and not estilo.referencias():
                     return self._json({"error": "Primero sube ejemplos de miniaturas."}, 400)
                 urls = [str(u)[:500] for u in datos.get("urls", [])][:6]

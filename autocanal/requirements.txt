@@ -6,3 +6,4 @@ requests>=2.32
 python-dotenv>=1.0
 google-api-python-client>=2.150
 google-auth-oauthlib>=1.2
+yt-dlp>=2025.1

@@ -127,7 +127,19 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
         return {"descripcion": "Edición rápida, subtítulos amarillos en mayúsculas de 2 palabras al centro, zoom fuerte (demo).",
                 "subtitulos": "grande", "mayusculas_subtitulo": True, "palabras_subtitulo": 2, "posicion_subtitulo": "centro",
                 "color_subtitulo": "#FFE600", "color_borde_subtitulo": "#000000", "transicion": "corte", "zoom": "fuerte",
-                "barra_progreso": False, "consejos": ["Usa memes y b-roll entre explicaciones", "Cámara en mano en las pruebas"]}
+                "barra_progreso": False, "karaoke": True, "color_resaltado": "#22C55E",
+                "efectos": ["texto_pop", "golpe_zoom", "sello", "sacudida"], "intensidad_motion": "mucho", "consejos": ["Usa memes y b-roll entre explicaciones", "Cámara en mano en las pruebas"]}
+    if "plan" in props:  # Edu: motion graphics por escena
+        return {"plan": [
+            {"escena": 1, "efectos": [{"tipo": "contador", "palabra": "quinientos", "texto": "$500", "sonido": True},
+                                      {"tipo": "golpe_zoom", "palabra": "cierto", "texto": "", "sonido": True}]},
+            {"escena": 2, "efectos": [{"tipo": "cintillo", "palabra": "monedas", "texto": "Monedas por todos lados", "sonido": True}]},
+            {"escena": 3, "efectos": [{"tipo": "marco_alerta", "palabra": "usuarios", "texto": "", "sonido": True},
+                                      {"tipo": "texto_pop", "palabra": "mira", "texto": "¡MIRA ESTO!", "sonido": True}]},
+            {"escena": 4, "efectos": [{"tipo": "sacudida", "palabra": "cincuenta", "texto": "", "sonido": True},
+                                      {"tipo": "flash", "palabra": "mínimo", "texto": "", "sonido": True}]},
+            {"escena": 5, "efectos": [{"tipo": "sello", "palabra": "veredicto", "texto": "NO PAGA", "sonido": True}]},
+        ]}
     if "opcion" in props:
         return {"opcion": random.randint(1, 3), "razon": "Se parece más a tus referencias (demo)."}
     if "acciones" in props:

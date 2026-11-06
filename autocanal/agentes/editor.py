@@ -1,7 +1,8 @@
 """Agente 5 — Editor: arma el video final con ffmpeg.
 
-Escenas con zoom suave, transiciones, voz, subtítulos (estilo shorts o clásicos), barra de progreso,
-música, sonido en los cambios de escena y tu intro/outro. Los ajustes salen de la pestaña Estilo.
+Escenas con zoom suave, motion graphics escena por escena (efectos.py), transiciones, voz, subtítulos
+karaoke (la palabra que se dice se ilumina), barra de progreso, música, sonido en los cambios de escena
+y tu intro/outro. Los ajustes salen de la pestaña Estilo.
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from . import config, estilo, graficos
+from . import config, efectos, estilo, graficos
 
 FPS = 30
 # Pasadas intermedias en modo rápido y casi sin pérdida; solo la final se comprime con cuidado.
@@ -150,6 +151,64 @@ def _ass_color(hex_: str) -> str:
     return f"&H00{h[4:6]}{h[2:4]}{h[0:2]}".upper()
 
 
+def _ass_tiempo(s: float) -> str:
+    s = max(0.0, s)
+    h, r = divmod(s, 3600)
+    m, r = divmod(r, 60)
+    return f"{int(h)}:{int(m):02d}:{r:05.2f}"
+
+
+def _ass_texto(t: str) -> str:
+    return t.replace("\\", "").replace("{", "(").replace("}", ")")
+
+
+def subtitulos_ass(escenas: list[dict], destino: Path, ajustes: dict, color: str, borde: str, resaltado: str,
+                   fuente: str) -> Path:
+    """Subtítulos .ass con los tiempos reales de cada palabra. En modo karaoke la palabra que se está
+    diciendo cambia de color y da un saltito."""
+    grande = ajustes["subtitulos"] == "grande"
+    n = int(ajustes.get("palabras_subtitulo") or 0) or (3 if grande else 7)
+    mayus = bool(ajustes.get("mayusculas_subtitulo"))
+    karaoke = bool(ajustes.get("karaoke", True))
+    centro = ajustes.get("posicion_subtitulo") == "centro"
+    if grande:
+        estilo_ass = (f"Style: Default,{fuente},86,{_ass_color(color)},{_ass_color(color)},{_ass_color(borde)},&H80000000,"
+                      f"-1,0,0,0,100,100,0,0,1,6,2,2,80,80,{470 if centro else 150},1")
+    else:
+        estilo_ass = (f"Style: Default,{fuente},50,{_ass_color(color)},{_ass_color(color)},&H00000000,&H99000000,"
+                      f"-1,0,0,0,100,100,0,0,3,10,0,2,80,80,{470 if centro else 55},1")
+    eventos, base = [], 0.0
+    hl = _ass_color(resaltado)
+    for esc in escenas:
+        pals = efectos.palabras(esc)
+        dur = float(esc["duracion"])
+        for k in range(0, len(pals), n):
+            grupo = pals[k:k + n]
+            sig = pals[k + n]["t"] if k + n < len(pals) else dur
+            fin_grupo = min(sig, grupo[-1]["t"] + grupo[-1]["d"] + 0.6)
+            textos = [_ass_texto(p["w"].upper() if mayus else p["w"]) for p in grupo]
+            if not karaoke:
+                eventos.append((base + grupo[0]["t"], base + fin_grupo, " ".join(textos)))
+                continue
+            for j, p in enumerate(grupo):
+                ini = base + (grupo[0]["t"] if j == 0 else p["t"])
+                fin = base + (grupo[j + 1]["t"] if j + 1 < len(grupo) else fin_grupo)
+                linea = " ".join(
+                    (f"{{\\c{hl}\\fscx118\\fscy118\\t(0,90,\\fscx108\\fscy108)}}{w}{{\\r}}" if q == j else w)
+                    for q, w in enumerate(textos))
+                eventos.append((ini, fin, linea))
+        base += dur
+    cabeza = ("[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\n"
+              "ScaledBorderAndShadow: yes\n\n[V4+ Styles]\n"
+              "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
+              "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
+              f"MarginR, MarginV, Encoding\n{estilo_ass}\n\n[Events]\n"
+              "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+    cuerpo = "".join(f"Dialogue: 0,{_ass_tiempo(a)},{_ass_tiempo(b)},Default,,0,0,0,,{t}\n" for a, b, t in eventos if b > a)
+    destino.write_text(cabeza + cuerpo, encoding="utf-8")
+    return destino
+
+
 def _xfade(partes: list[Path], duraciones: list[float], tipos: list[str], destino: Path, trabajo: Path,
            nombre: str, extra_final: float) -> None:
     """Une pocas piezas con transiciones en un solo ffmpeg. `duraciones` = lo que dura cada pieza sin el
@@ -225,13 +284,15 @@ def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> P
     trabajo = carpeta / "edicion"
     trabajo.mkdir(parents=True, exist_ok=True)
     partes, duraciones = [], []
+    _avance("Edu está planeando los efectos", 0.0)
+    plan = efectos.planear(escenas, carpeta)
     for i, esc in enumerate(escenas, 1):
         # nombre según lo que lleva la escena: si nada cambió y ya existe, se reutiliza
         firma = hashlib.sha1(json.dumps([esc.get("narracion"), esc.get("visual"), esc.get("indice"), esc.get("texto"),
                                          round(esc["duracion"], 3), extra, ajustes.get("zoom"), ajustes.get("corte_cada"),
                                          spec.get("color_acento")], ensure_ascii=False).encode()).hexdigest()[:10]
         seg = trabajo / f"seg_{i:02d}_{firma}.mp4"
-        _avance(f"Escena {i} de {len(escenas)}", 0.6 * (i - 1) / len(escenas))
+        _avance(f"Escena {i} de {len(escenas)}", 0.45 * (i - 1) / len(escenas))
         try:
             if seg.exists() and _duracion(seg) >= esc["duracion"] + extra - 0.2:
                 partes.append(seg)
@@ -251,17 +312,37 @@ def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> P
         duraciones.append(esc["duracion"])
         print(f"  · escena {i}/{len(escenas)} lista")
 
+    # motion graphics del plan de Edu, encima de cada escena
+    for i, (esc, fx) in enumerate(zip(escenas, plan), 1):
+        if not fx:
+            continue
+        base = partes[i - 1]
+        firma = hashlib.sha1(json.dumps([base.name, fx, efectos.colores()["acento"]], ensure_ascii=False, default=str)
+                             .encode()).hexdigest()[:10]
+        con_fx = trabajo / f"fx_{i:02d}_{firma}.mp4"
+        _avance(f"Efectos de la escena {i}", 0.45 + 0.15 * i / len(escenas))
+        try:
+            if not con_fx.exists():
+                efectos.aplicar(base, fx, efectos.palabras(esc), esc["duracion"], esc["duracion"] + extra, con_fx, trabajo, i)
+            partes[i - 1] = con_fx
+            print(f"  · escena {i}: {', '.join(e['tipo'] for e in fx)}")
+        except (subprocess.CalledProcessError, OSError, ValueError) as exc:
+            con_fx.unlink(missing_ok=True)
+            print(f"  · escena {i}: un efecto falló ({str(getattr(exc, 'stderr', '') or exc)[-200:]}); va sin efectos", flush=True)
+
     unido = trabajo / "unido.mp4"
     cambios = _unir(partes, duraciones, ajustes["transicion"], unido, trabajo)
     duracion = _duracion(unido)
 
-    # subtítulos
+    # subtítulos: .srt para YouTube y .ass (karaoke) quemado en el video
     grande = ajustes["subtitulos"] == "grande"
     palabras = int(ajustes.get("palabras_subtitulo") or 0) or (3 if grande else 7)
-    srt = subtitulos(escenas, carpeta / "subtitulos.srt", palabras, bool(ajustes.get("mayusculas_subtitulo")))
-    color_sub = ajustes.get("color_subtitulo") or spec["color_texto"]
+    subtitulos(escenas, carpeta / "subtitulos.srt", palabras, bool(ajustes.get("mayusculas_subtitulo")))
+    color_sub = ajustes.get("color_subtitulo") or (spec["color_texto"] if grande else "#FFFFFF")
     borde_sub = ajustes.get("color_borde_subtitulo") or "#000000"
-    centro = ajustes.get("posicion_subtitulo") == "centro"
+    resaltado = ajustes.get("color_resaltado") or spec["color_acento"]
+    if resaltado.lower() == color_sub.lower():
+        resaltado = "#FFD60A" if resaltado.upper() != "#FFD60A" else "#22C55E"
     fuente_propia = estilo.archivo("fuente")
     nombre_fuente = "DejaVu Sans"
     if fuente_propia:
@@ -269,16 +350,9 @@ def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> P
             nombre_fuente = graficos.ImageFont.truetype(str(fuente_propia), 20).getname()[0]
         except OSError:
             fuente_propia = None
-    if grande:
-        sub = (f"FontName={nombre_fuente},Bold=1,FontSize=24,PrimaryColour={_ass_color(color_sub)},"
-               f"OutlineColour={_ass_color(borde_sub)},BorderStyle=1,Outline=3,Shadow=1,"
-               f"Alignment=2,MarginV={125 if centro else 70}")
-    else:
-        sub = (f"FontName={nombre_fuente},Bold=1,FontSize=13,PrimaryColour={_ass_color(ajustes.get('color_subtitulo') or '#FFFFFF')},"
-               f"OutlineColour=&H00000000,BackColour=&H99000000,BorderStyle=3,Outline=6,Shadow=0,"
-               f"Alignment=2,MarginV={125 if centro else 24}")
-    srt_filtro = srt.resolve().as_posix().replace(":", r"\:")
-    vf = f"subtitles='{srt_filtro}':force_style='{sub}'"
+    ass = subtitulos_ass(escenas, trabajo / "subtitulos.ass", ajustes, color_sub, borde_sub, resaltado, nombre_fuente)
+    ass_filtro = ass.resolve().as_posix().replace(":", r"\:")
+    vf = f"subtitles='{ass_filtro}'"
     if fuente_propia:
         vf += f":fontsdir='{fuente_propia.parent.resolve().as_posix()}'"
 

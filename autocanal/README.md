@@ -29,7 +29,7 @@ Cada "agente" es un archivo en `agentes/`:
 | Investigador | `investigador.py` | Baja ficha, icono, portada, capturas y reseñas. Claude busca en internet (Reddit, Trustpilot, noticias) y arma un **expediente de evidencia** con veredicto y fuentes. |
 | Guionista | `guionista.py` | Guion por escenas con tu estilo, 3 títulos, descripción, etiquetas y texto de miniatura. |
 | Voz | `voz.py` | Narra cada escena. Gratis con Edge TTS o con **tu voz clonada** en ElevenLabs. |
-| Editor | `editor.py` + `graficos.py` | Tarjetas (título, captura, reseña, dato, veredicto), zoom suave, tus grabaciones, subtítulos y música. |
+| Editor | `editor.py` + `efectos.py` + `graficos.py` | Tarjetas (título, captura, reseña, dato, veredicto), zoom, tus grabaciones, motion graphics escena por escena (contadores, textos que saltan, sellos, cintillos, zoom de golpe, sacudidas, destellos), subtítulos karaoke y música. |
 | Blog | `blog.py` | Entrada SEO, sube capturas dentro del texto, pone la imagen destacada de Play Store y deja un hueco para el video. |
 | YouTube | `youtube.py` | Sube el video, la miniatura y los metadatos; enlaza el blog. |
 
@@ -93,11 +93,14 @@ Desde la oficina, sin terminal:
 - **Miniaturas (Dani):** sube de 3 a 10 miniaturas que te gusten, tu cara (PNG sin fondo) y tu
   tipografía. Dani estudia el estilo (fondo, colores, posición del texto, flechas, marcos) y cada
   video sale con **3 opciones**; elige la más parecida a tus referencias y tú la cambias en la revisión.
-- **Edición (Edu):** sube un **video de referencia** con la edición que te gusta y Edu lo estudia: mide
+- **Edición (Edu):** pega el **enlace** de un video (YouTube, TikTok…) o súbelo, con la edición que te gusta, y Edu lo estudia: mide
   su ritmo (cortes por minuto) y revisa cuadros con visión (subtítulos, colores, zoom, transiciones) para
   ajustar todo solo. También a mano: subtítulos grandes o clásicos, palabras por línea, mayúsculas,
   posición, transiciones, movimiento (suave/medio/fuerte), golpes de zoom al ritmo, barra de progreso,
   sonido en los cambios de escena, música, intro y outro.
+  En cada video Edu lee el guion y arma un **plan de motion graphics** escena por escena (qué efecto y en
+  qué palabra exacta, con su sonido); intensidad: sin efectos / pocos / normal / muchos. Los subtítulos son
+  **karaoke**: la palabra que se dice se ilumina, con los tiempos reales de la voz.
 - **Blog (Rosa):** pega enlaces a tus mejores entradas; Rosa aprende cómo escribes. Cada post usa
   investigación SEO de Google (lo que pregunta la gente, búsquedas relacionadas, competencia), elige
   palabra clave y secundarias, y enlaza 2–3 de tus otras entradas.

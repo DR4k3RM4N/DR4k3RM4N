@@ -107,7 +107,7 @@ class Produccion:
         from agentes import voz as voz_mod
 
         if "voz" in self.rehacer:
-            for f in (self.carpeta / "audio").glob("*.mp3"):
+            for f in [*(self.carpeta / "audio").glob("*.mp3"), *(self.carpeta / "audio").glob("*.json")]:
                 f.unlink()
         voz_mod.narrar(self.guion["escenas"], self.carpeta, self.voz)
         _guardar(self.carpeta / "guion.json", self.guion)

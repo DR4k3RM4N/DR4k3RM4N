@@ -8,6 +8,8 @@ sudo -u canal git -C "$REPO" pull --ff-only
 sudo -u canal "$APP/.venv/bin/pip" install -q -r "$APP/requirements.txt"
 # La voz gratis de Microsoft cambia seguido: edge-tts siempre en su última versión.
 sudo -u canal "$APP/.venv/bin/pip" install -q --upgrade edge-tts
+# Igual el que baja videos de referencia (YouTube cambia seguido).
+sudo -u canal "$APP/.venv/bin/pip" install -q --upgrade yt-dlp
 # Memoria de respaldo (swap) de 2 GB: evita que el video se corte si se acaba la RAM.
 if ! swapon --show | grep -q .; then
   echo "  Agregando 2 GB de memoria de respaldo (swap)…"

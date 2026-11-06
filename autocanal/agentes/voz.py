@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import subprocess
@@ -21,13 +22,34 @@ def duracion(ruta: Path) -> float:
     return float(out)
 
 
+def tiempos(audio: Path | str) -> Path:
+    """Archivo con el segundo exacto en que se dice cada palabra (para los subtítulos karaoke y los efectos)."""
+    return Path(audio).with_suffix(".palabras.json")
+
+
 def _edge(texto: str, destino: Path) -> None:
     import edge_tts
 
+    voz, rate = config.env("VOZ_EDGE", "es-MX-JorgeNeural"), config.env("VOZ_VELOCIDAD", "+8%")
+    try:
+        com = edge_tts.Communicate(texto, voz, rate=rate, boundary="WordBoundary")
+    except TypeError:  # edge-tts viejito: sin tiempos por palabra
+        com = edge_tts.Communicate(texto, voz, rate=rate)
+    palabras = []
+
     async def run():
-        await edge_tts.Communicate(texto, config.env("VOZ_EDGE", "es-MX-JorgeNeural"),
-                                   rate=config.env("VOZ_VELOCIDAD", "+8%")).save(str(destino))
+        with open(destino, "wb") as f:
+            async for trozo in com.stream():
+                if trozo["type"] == "audio":
+                    f.write(trozo["data"])
+                elif trozo["type"] == "WordBoundary":
+                    palabras.append({"t": round(trozo["offset"] / 1e7, 3), "d": round(trozo["duration"] / 1e7, 3),
+                                     "w": trozo["text"]})
     asyncio.run(run())
+    if palabras:
+        tiempos(destino).write_text(json.dumps(palabras, ensure_ascii=False), encoding="utf-8")
+    else:
+        tiempos(destino).unlink(missing_ok=True)
 
 
 def _elevenlabs(texto: str, destino: Path) -> None:
@@ -119,6 +141,7 @@ def narrar(escenas: list[dict], carpeta: Path, motor: str | None = None) -> list
         destino = audio / f"escena_{i:02d}.mp3"
         if not _valido(destino):
             destino.unlink(missing_ok=True)
+            tiempos(destino).unlink(missing_ok=True)
             texto = limpiar(esc.get("narracion", ""))
             if not texto:
                 print(f"    voz: la escena {i} no tiene texto para leer; va un silencio corto", flush=True)
@@ -127,5 +150,6 @@ def narrar(escenas: list[dict], carpeta: Path, motor: str | None = None) -> list
                 _narrar_una(fn, motor, texto, destino, i)
         esc["audio"] = str(destino)
         esc["duracion"] = duracion(destino)
+        esc.pop("palabras", None)  # los tiempos viven junto al audio (escena_XX.palabras.json)
         print(f"  · escena {i}/{len(escenas)} ({esc['duracion']:.1f}s)")
     return escenas

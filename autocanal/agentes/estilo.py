@@ -51,6 +51,9 @@ AJUSTES_DEFECTO = {
     "color_borde_subtitulo": "",
     "zoom": "suave",             # suave · medio · fuerte
     "corte_cada": 0,             # segundos entre "golpes" de zoom/encuadre (0 = sin golpes)
+    "karaoke": True,             # la palabra que se dice se ilumina
+    "color_resaltado": "",       # color de esa palabra (vacío = color de acento de tus miniaturas)
+    "motion": "normal",          # motion graphics de Edu por escena: nada · poco · normal · mucho
 }
 
 
@@ -103,6 +106,10 @@ def guardar_archivo(tipo: str, nombre: str, datos: bytes) -> Path:
         DIR.mkdir(parents=True, exist_ok=True)
         destino = DIR / fijo
     destino.write_bytes(datos)
+    if tipo == "referencia":  # ya no es el video del enlace
+        guardado = cargar()
+        if guardado.pop("referencia_url", None):
+            guardar(guardado)
     return destino
 
 
@@ -114,6 +121,10 @@ def borrar(tipo: str, nombre: str = "") -> None:
     elif tipo in TIPOS:
         p = DIR / TIPOS[tipo][0]
         p.unlink(missing_ok=True)
+        if tipo == "referencia":
+            guardado = cargar()
+            if guardado.pop("referencia_url", None):
+                guardar(guardado)
 
 
 def resumen() -> dict:
@@ -123,6 +134,7 @@ def resumen() -> dict:
         "miniaturas": datos.get("miniaturas"),
         "blog": datos.get("blog"),
         "edicion": datos.get("edicion"),
+        "referencia_url": datos.get("referencia_url"),
         "blog_urls": datos.get("blog_urls", []),
         "referencias": [p.name for p in referencias()],
         "archivos": {t: bool(archivo(t)) for t in TIPOS if t != "miniatura"},
@@ -285,11 +297,19 @@ SCHEMA_EDICION = {
         "zoom": {"type": "string", "enum": ["suave", "medio", "fuerte"],
                  "description": "Qué tanto se mueve/acerca la imagen"},
         "barra_progreso": {"type": "boolean"},
+        "karaoke": {"type": "boolean", "description": "¿La palabra que se dice se resalta en otro color?"},
+        "color_resaltado": {"type": "string", "description": "Color #RRGGBB de la palabra resaltada (o vacío)"},
+        "efectos": {"type": "array", "items": {"type": "string", "enum": [
+            "texto_pop", "contador", "sello", "cintillo", "golpe_zoom", "sacudida", "flash", "marco_alerta"]},
+            "description": "Motion graphics que se ven en el video"},
+        "intensidad_motion": {"type": "string", "enum": ["nada", "poco", "normal", "mucho"],
+                              "description": "Qué tanto motion graphics usa"},
         "consejos": {"type": "array", "items": {"type": "string"},
                      "description": "Cosas del estilo que la edición automática no hace y el creador podría agregar"},
     },
     "required": ["descripcion", "subtitulos", "mayusculas_subtitulo", "palabras_subtitulo", "posicion_subtitulo",
-                 "color_subtitulo", "color_borde_subtitulo", "transicion", "zoom", "barra_progreso", "consejos"],
+                 "color_subtitulo", "color_borde_subtitulo", "transicion", "zoom", "barra_progreso", "karaoke",
+                 "color_resaltado", "efectos", "intensidad_motion", "consejos"],
     "additionalProperties": False,
 }
 
@@ -304,14 +324,57 @@ def _medir_cortes(video: Path, segundos: float) -> int:
     return r.stderr.count("pts_time:")
 
 
-def estudiar_video() -> dict:
+def bajar_referencia(url: str) -> Path:
+    """Baja los primeros 2½ minutos de un video (YouTube, TikTok, Instagram…) solo para estudiar su edición."""
+    import subprocess
+    import tempfile
+
+    import yt_dlp
+
+    if not re.match(r"https?://", url or ""):
+        raise ValueError("Pega un enlace que empiece con https://")
+    with tempfile.TemporaryDirectory() as tmp:
+        opciones = {
+            "format": "bv*[height<=480]+ba/b[height<=480]/bv*[height<=720]+ba/b",
+            "outtmpl": str(Path(tmp) / "ref.%(ext)s"), "noplaylist": True, "quiet": True, "no_warnings": True, "noprogress": True,
+            "download_ranges": yt_dlp.utils.download_range_func(None, [(0, 150)]),
+            "max_filesize": 300 * 1024 * 1024, "socket_timeout": 30,
+        }
+        try:
+            with yt_dlp.YoutubeDL(opciones) as ydl:
+                info = ydl.extract_info(url, download=True)
+        except yt_dlp.utils.DownloadError as exc:
+            texto = str(exc)
+            if "Unable to connect" in texto or "timed out" in texto or "Failed to establish" in texto:
+                raise ValueError("No pude conectarme a ese sitio desde el servidor. Intenta otra vez o sube el archivo.") from exc
+            if "Sign in" in texto or "not a bot" in texto or "HTTP Error 403" in texto or "429" in texto:
+                raise ValueError("Ese sitio no dejó bajar el video desde el servidor (lo pide con sesión). "
+                                 "Descárgalo en tu compu y súbelo como archivo.") from exc
+            raise ValueError(f"No pude bajar ese video: {texto[-160:]}") from exc
+        bajados = [p for p in Path(tmp).iterdir() if p.name.startswith("ref.")]
+        if not bajados:
+            raise ValueError("No pude bajar ese video.")
+        DIR.mkdir(parents=True, exist_ok=True)
+        destino = DIR / TIPOS["referencia"][0]
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(bajados[0]), "-t", "150",
+                        "-vf", "scale=-2:'min(720,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+                        "-c:a", "aac", "-b:a", "96k", str(destino)], check=True)
+    datos = cargar()
+    datos["referencia_url"] = {"url": url, "titulo": (info or {}).get("title", "")}
+    guardar(datos)
+    return destino
+
+
+def estudiar_video(url: str = "") -> dict:
     """Mide el ritmo del video de referencia y revisa cuadros con visión para copiar su estilo de edición."""
     import subprocess
     import tempfile
 
+    if url:
+        bajar_referencia(url)
     video = archivo("referencia")
     if not video:
-        raise ValueError("Primero sube un video de referencia.")
+        raise ValueError("Primero sube un video de referencia o pega su enlace.")
     dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)],
                                capture_output=True, text=True).stdout.strip() or 0)
     if dur < 3:
@@ -321,8 +384,8 @@ def estudiar_video() -> dict:
     por_minuto = cortes / analizar * 60
     contenido = []
     with tempfile.TemporaryDirectory() as tmp:
-        for k in range(8):  # 8 cuadros repartidos en lo analizado
-            t = analizar * (k + 0.5) / 8
+        for k in range(12):  # 12 cuadros repartidos en lo analizado
+            t = analizar * (k + 0.5) / 12
             p = Path(tmp) / f"c{k}.jpg"
             subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{t:.2f}", "-i", str(video), "-frames:v", "1",
                             "-vf", "scale=640:-2", str(p)], check=False)
@@ -334,9 +397,12 @@ def estudiar_video() -> dict:
         f"Son cuadros de un video de YouTube cuyo estilo de edición le gusta al creador. Medí {cortes} cambios de "
         f"toma en {analizar:.0f} segundos (≈{por_minuto:.0f} por minuto). Describe su estilo de edición para "
         "reproducirlo: subtítulos (tamaño, mayúsculas, palabras por línea, posición, color de letra y de borde en hex), "
-        "transiciones, qué tanto zoom o movimiento hay, si tiene barra de progreso. En 'consejos' anota lo que "
-        "usa y no se puede automatizar (b-roll, memes, cámara en mano, efectos especiales…).")})
-    spec = claude.json_estructurado("Eres editor de video de YouTube. Analizas el estilo de edición de un video.",
+        "transiciones, qué tanto zoom o movimiento hay, si tiene barra de progreso, si la palabra que se dice se "
+        "resalta (karaoke) y de qué color, y qué motion graphics usa (textos que saltan, contadores, sellos, "
+        "cintillos, zoom de golpe, sacudidas, destellos, bordes de alerta) y con qué intensidad. En 'consejos' anota "
+        "lo que usa y no se puede automatizar (b-roll, memes, cámara en mano, efectos especiales…).")})
+    spec = claude.json_estructurado("Eres editor de video y motion graphics con 30 años de experiencia en videos de "
+                                    "alto impacto para YouTube. Analizas el estilo de edición de un video.",
                                     contenido, SCHEMA_EDICION, tarea="estilo", que="estudiar edición")
     spec["cortes_por_minuto"] = round(por_minuto, 1)
     # ritmo: cada cuánto hay un "golpe" de zoom/encuadre para sentir los cortes del video de referencia
@@ -346,10 +412,12 @@ def estudiar_video() -> dict:
         corte = 0
     spec["corte_cada"] = corte
     cambios = {k: spec[k] for k in ("subtitulos", "mayusculas_subtitulo", "posicion_subtitulo", "transicion", "zoom",
-                                    "barra_progreso")}
+                                    "barra_progreso", "karaoke") if k in spec}
+    if spec.get("intensidad_motion"):
+        cambios["motion"] = spec["intensidad_motion"]
     cambios["palabras_subtitulo"] = max(1, min(7, int(spec.get("palabras_subtitulo") or 3)))
     cambios["corte_cada"] = corte
-    for k in ("color_subtitulo", "color_borde_subtitulo"):
+    for k in ("color_subtitulo", "color_borde_subtitulo", "color_resaltado"):
         if re.fullmatch(r"#[0-9a-fA-F]{6}", spec.get(k, "")):
             cambios[k] = spec[k]
     datos = cargar()
@@ -366,12 +434,13 @@ def ajustar(cambios: dict) -> dict:
         "barra_progreso": (True, False), "sonido_cambios": (True, False), "opciones_miniatura": (1, 2, 3),
         "palabras_subtitulo": (0, 1, 2, 3, 4, 5, 6, 7), "mayusculas_subtitulo": (True, False),
         "posicion_subtitulo": ("abajo", "centro"), "zoom": ("suave", "medio", "fuerte"),
-        "corte_cada": (0, 1.5, 2, 2.5, 3, 4, 5, 6, 8),
+        "corte_cada": (0, 1.5, 2, 2.5, 3, 4, 5, 6, 8), "karaoke": (True, False),
+        "motion": ("nada", "poco", "normal", "mucho"),
     }
     for k, v in cambios.items():
         if k in validos and v in validos[k]:
             datos["ajustes"][k] = v
-        elif k in ("color_subtitulo", "color_borde_subtitulo") and (v == "" or re.fullmatch(r"#[0-9a-fA-F]{6}", str(v))):
+        elif k in ("color_subtitulo", "color_borde_subtitulo", "color_resaltado") and (v == "" or re.fullmatch(r"#[0-9a-fA-F]{6}", str(v))):
             datos["ajustes"][k] = v
     guardar(datos)
     return datos["ajustes"]

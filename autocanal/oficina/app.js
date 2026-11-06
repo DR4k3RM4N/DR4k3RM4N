@@ -476,9 +476,13 @@
       ${tiene ? `<button class="btn btn-mini btn-no" data-borrar="${tipo}">Quitar</button>` : ""}</div>`;
   }
 
+  const NOMBRE_FX = { texto_pop: "textos que saltan", contador: "contadores", sello: "sellos", cintillo: "cintillos",
+    golpe_zoom: "zoom de golpe", sacudida: "sacudidas", flash: "destellos", marco_alerta: "bordes de alerta" };
+  let estado_estilo = null;
   async function pintarEstilo() {
     let e;
     try { e = await api("/api/estilo"); } catch { return; }
+    estado_estilo = e;
     const a = e.ajustes, m = e.miniaturas, b = e.blog;
     const sel = (k, ops) => `<select data-ajuste="${k}">${ops.map(([v, t]) => `<option value="${v}" ${String(a[k]) === String(v) ? "selected" : ""}>${t}</option>`).join("")}</select>`;
     const chk = (k, t) => `<label class="chk"><input type="checkbox" data-ajuste="${k}" ${a[k] ? "checked" : ""}> ${t}</label>`;
@@ -497,12 +501,15 @@
       </section>
       <section class="tarjeta estilo-sec" style="--c:#ef4444">
         <h4>🎬 Edición · Edu</h4>
-        <p class="pista">Sube un video (tuyo o de otro canal) con la edición que te gusta. Edu mide su ritmo, revisa sus
-          subtítulos y movimientos, y ajusta todo esto solo. Hasta 300 MB; con 1 o 2 minutos basta.</p>
-        ${subida("referencia", e.archivos.referencia)}
-        <div class="acciones"><button class="btn btn-primario" data-estudiar="video" ${e.archivos.referencia ? "" : "disabled"}>🎞️ Que Edu estudie la edición</button></div>
+        <p class="pista">Pega el enlace de un video (YouTube, TikTok, Instagram…) o sube el archivo, con la edición que
+          te gusta. Edu (30 años en motion graphics y videos de alto impacto) mide su ritmo, revisa subtítulos,
+          movimientos y efectos, y ajusta todo esto solo. Con 1 o 2 minutos basta.</p>
+        <input id="ref-url" type="url" placeholder="https://www.youtube.com/watch?v=…" value="${esc(e.referencia_url?.url || "")}">
+        ${e.referencia_url ? `<p class="pista">🔗 Último video estudiado por enlace: ${esc(e.referencia_url.titulo || e.referencia_url.url)}</p>` : ""}
+        ${subida("referencia", e.archivos.referencia && !e.referencia_url)}
+        <div class="acciones"><button class="btn btn-primario" data-estudiar="video">🎞️ Que Edu estudie la edición</button></div>
         ${e.edicion ? `<div class="aprendido"><b>Lo que aprendió:</b> ${esc(e.edicion.descripcion)}
-          <br><small>Ritmo: ≈${esc(e.edicion.cortes_por_minuto)} cortes por minuto</small>
+          <br><small>Ritmo: ≈${esc(e.edicion.cortes_por_minuto)} cortes por minuto${(e.edicion.efectos || []).length ? ` · Efectos: ${esc(e.edicion.efectos.map((x) => NOMBRE_FX[x] || x).join(", "))}` : ""}</small>
           ${(e.edicion.consejos || []).length ? `<details><summary>Lo que tendrías que agregar tú</summary><ul>${e.edicion.consejos.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}</div>` : ""}
         <div class="ajustes">
           <label>Subtítulos ${sel("subtitulos", [["grande", "Grandes (estilo shorts)"], ["clasico", "Clásicos"]])}</label>
@@ -511,6 +518,8 @@
           <label>Posición ${sel("posicion_subtitulo", [["abajo", "Abajo"], ["centro", "Centro"]])}</label>
           <label>Movimiento ${sel("zoom", [["suave", "Suave"], ["medio", "Medio"], ["fuerte", "Fuerte"]])}</label>
           <label>Ritmo (golpes de zoom) ${sel("corte_cada", [[0, "Sin golpes"], [1.5, "Cada 1.5 s"], [2, "Cada 2 s"], [3, "Cada 3 s"], [4, "Cada 4 s"], [6, "Cada 6 s"]])}</label>
+          <label>Motion graphics ${sel("motion", [["nada", "Sin efectos"], ["poco", "Pocos"], ["normal", "Normal"], ["mucho", "Muchos (alto impacto)"]])}</label>
+          ${chk("karaoke", "Subtítulos karaoke (se ilumina la palabra que se dice)")}
           ${chk("mayusculas_subtitulo", "Subtítulos en MAYÚSCULAS")}
           ${chk("barra_progreso", "Barra de progreso")}${chk("sonido_cambios", "Sonido en cada cambio de escena")}
         </div>
@@ -566,7 +575,9 @@
       return pintarEstilo();
     }
     if (b.dataset.estudiar) {
-      const urls = $("#blog-urls").value.split(/\s+/).filter((u) => u.startsWith("http"));
+      const fuente = b.dataset.estudiar === "video" ? $("#ref-url").value : $("#blog-urls").value;
+      const urls = fuente.split(/\s+/).filter((u) => u.startsWith("http"));
+      if (b.dataset.estudiar === "video" && !urls.length && !estado_estilo?.archivos?.referencia) return alert("Pega el enlace del video o sube el archivo.");
       try {
         await api("/api/estilo/estudiar", { que: b.dataset.estudiar, urls });
         b.textContent = { miniaturas: "Dani está estudiando…", video: "Edu está viendo el video…" }[b.dataset.estudiar] || "Rosa está leyendo…";
