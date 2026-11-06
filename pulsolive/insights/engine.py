@@ -49,6 +49,19 @@ METRICS = {
     "avg_watch_seconds": "tiempo de visualización",
 }
 
+# Embudo del live: (clave, nombre del paso, numerador, denominador, qué hacer cuando es el paso débil)
+FUNNEL = [
+    ("entry_rate", "Entraron al live", "viewers", "impressions",
+     "Pocos entran cuando ven el live en el feed: cuida la portada y el título, abre con el producto y la oferta "
+     "en pantalla y transmite cuando tus videos ya están jalando gente."),
+    ("product_ctr", "Dieron clic en un producto", "product_clicks", "viewers",
+     "Entran pero no abren los productos: fija el producto en pantalla, pide el clic al carrito con frecuencia "
+     "y muestra el producto en uso desde el primer minuto."),
+    ("click_to_order", "Compraron después del clic", "orders", "product_clicks",
+     "Abren el producto pero no compran: revisa precio, envío y reseñas; usa precio ancla, urgencia real "
+     "(tiempo o piezas) y responde las dudas en voz alta."),
+]
+
 # (columna, etiqueta legible, ¿es atributo del host?)
 FACTORS = [
     ("daypart", "Horario", False),
@@ -63,6 +76,7 @@ FACTORS = [
     ("setting", "Escenario", False),
     ("duration_bucket", "Duración", False),
     ("product_category", "Categoría de producto", False),
+    ("video_day", "Videos de la cuenta ese día", False),
 ]
 
 MIN_N = 3  # mínimo de lives por grupo para opinar
@@ -147,6 +161,13 @@ def build_frame(rows: list[dict]) -> pd.DataFrame:
     df["conversion_rate"] = np.where(df["viewers"] > 0, df["orders"] / df["viewers"].replace(0, 1), 0.0)
     df["aov"] = np.where(df["orders"] > 0, df["gmv"] / df["orders"].replace(0, 1), 0.0)
     df["click_rate"] = np.where(df["viewers"] > 0, df["product_clicks"] / df["viewers"].replace(0, 1), 0.0)
+    for col in ("impressions", "product_impressions", "customers", "video_views_day"):
+        if col not in df:
+            df[col] = 0
+    # Tasas del embudo; NaN cuando el paso anterior no tiene datos (no es lo mismo que cero).
+    for key, _, num, den, _ in FUNNEL:
+        df[key] = np.where(df[den] > 0, df[num] / df[den].where(df[den] > 0, 1), np.nan)
+    df["video_day"] = video_day_labels(df)
     for col, _, _ in FACTORS:
         if col not in df:
             df[col] = ""
@@ -154,6 +175,46 @@ def build_frame(rows: list[dict]) -> pd.DataFrame:
     if "tags" not in df:
         df["tags"] = [[] for _ in range(len(df))]
     return df
+
+
+def video_day_labels(df: pd.DataFrame) -> pd.Series:
+    """Marca los lives hechos en días en que los videos de la cuenta tuvieron muchas vistas (25% más alto)."""
+    views = df.get("video_views_day")
+    if views is None or (views > 0).sum() < 6:
+        return pd.Series([""] * len(df), index=df.index)
+    cut = float(views[views > 0].quantile(0.75))
+    return views.map(lambda v: "Día con videos fuertes" if v >= cut and v > 0 else "Día normal")
+
+
+def funnel(df: pd.DataFrame) -> dict | None:
+    """Embudo agregado del periodo: tasas de cada paso y el paso más débil frente a los mejores lives."""
+    if df.empty or df["impressions"].sum() == 0:
+        return None
+    steps = []
+    for key, label, num, den, advice in FUNNEL:
+        total_den = float(df[den].sum())
+        rate = float(df[num].sum()) / total_den if total_den else None
+        rates = df[key].dropna()
+        top = float(rates.quantile(0.75)) if len(rates) >= 4 else None
+        steps.append({"key": key, "label": label, "rate": rate, "top": top, "advice": advice,
+                      "count": int(df[num].sum()), "base": int(total_den),
+                      "gap": (rate / top - 1) if rate is not None and top else None})
+    weak = min((s for s in steps if s["gap"] is not None), key=lambda s: s["gap"], default=None)
+    return {"impressions": int(df["impressions"].sum()), "steps": steps,
+            "weakest": weak["key"] if weak and weak["gap"] < -0.15 else None}
+
+
+def live_funnel(live_row: dict, peers: pd.DataFrame) -> list[dict]:
+    """Embudo de un live contra la mediana de los demás lives de la marca."""
+    out = []
+    for key, label, num, den, advice in FUNNEL:
+        den_v = live_row.get(den) or 0
+        rate = (live_row.get(num) or 0) / den_v if den_v else None
+        med = float(peers[key].dropna().median()) if not peers.empty and peers[key].notna().any() else None
+        out.append({"key": key, "label": label, "rate": rate, "median": med, "advice": advice,
+                    "count": live_row.get(num) or 0, "base": den_v,
+                    "delta": (rate / med - 1) if rate is not None and med else None})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -649,6 +710,15 @@ def recommendations(df: pd.DataFrame, factors: list[FactorResult], events: list[
             "Tienes audiencia pero poca conversión",
             f"Solo {k['conversion_rate']*100:.2f}% de los espectadores compra. Prueba precio ancla + descuento, "
             "llamadas a la acción explícitas y fijar el producto en pantalla.", "corregir", 2, "Embudo"))
+
+    # Embudo: el paso donde más se pierde la venta
+    fn = funnel(df)
+    if fn and fn["weakest"]:
+        st = next(x for x in fn["steps"] if x["key"] == fn["weakest"])
+        recs.append(Recommendation(
+            f"Donde más se pierde la venta: «{st['label'].lower()}»",
+            f"Solo {st['rate']*100:.1f}% en este paso; tus mejores lives llegan a {st['top']*100:.1f}%. " + st["advice"],
+            "corregir", 2, "Embudo"))
 
     # Hosts
     for h in hosts:

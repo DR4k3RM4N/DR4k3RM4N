@@ -1,0 +1,21 @@
+{% load pulso %}
+<div class="funnel" role="list">
+  <div class="funnel-step first" role="listitem">
+    <div class="label">Vieron el live en el feed</div>
+    <div class="value">{{ impressions|num }}</div>
+    <div class="cap">impresiones</div>
+  </div>
+  {% for st in steps %}
+  <div class="funnel-step{% if st.key == weakest %} weak{% endif %}" role="listitem">
+    <div class="label">{{ st.label }}</div>
+    <div class="value">{% if st.rate is None %}<span class="dash">—</span>{% else %}{{ st.rate|pct:1 }}{% endif %}</div>
+    <div class="cap tabular">{{ st.count|num }} de {{ st.base|num }}
+      {% if compare == "top" and st.top %}· mejores lives: {{ st.top|pct:1 }}{% endif %}
+      {% if compare == "median" and st.median %}· promedio de la marca: {{ st.median|pct:1 }}{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% for st in steps %}{% if st.key == weakest %}
+<p class="funnel-advice"><strong>Aquí se pierde la venta: {{ st.label|lower }}.</strong> {{ st.advice }}</p>
+{% endif %}{% endfor %}

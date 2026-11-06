@@ -105,12 +105,12 @@ def live_list(request):
     if q:
         qs = qs.filter(Q(title__icontains=q) | Q(main_product__icontains=q) | Q(notes__icontains=q))
     if request.GET.get("sin_etiquetar"):
-        qs = qs.filter(Q(host__isnull=True) | Q(script_type=""))
+        qs = qs.filter(Q(host__isnull=True) | Q(script_type="") | Q(promo_type="unknown"))
     order = request.GET.get("orden", "-started_at")
     if order in ("-started_at", "started_at", "-gmv", "gmv", "-orders"):
         qs = qs.order_by(order)
     page = Paginator(qs, 30).get_page(request.GET.get("p"))
-    untagged = LiveSession.objects.filter(organization=org).filter(Q(host__isnull=True) | Q(script_type="")).count()
+    untagged = LiveSession.objects.filter(organization=org).filter(Q(host__isnull=True) | Q(script_type="") | Q(promo_type="unknown")).count()
     return render(request, "lives/live_list.html", {
         "page": page, "brands": org.brands.filter(archived=False), "hosts": org.hosts.all(),
         "untagged": untagged,
@@ -298,7 +298,7 @@ def quick_tag(request):
     """Etiqueta en fila los lives a los que les falta información."""
     org = request.org
     pending = (LiveSession.objects.filter(organization=org)
-               .filter(Q(host__isnull=True) | Q(script_type="")).select_related("brand").order_by("-started_at"))
+               .filter(Q(host__isnull=True) | Q(script_type="") | Q(promo_type="unknown")).select_related("brand").order_by("-started_at"))
     live = pending.first()
     if live is None:
         messages.success(request, "¡Todos tus lives están etiquetados!")
@@ -328,7 +328,8 @@ def import_view(request):
             messages.error(request, f"No pudimos leer el archivo: {exc}")
             return redirect("lives:import")
         if batch.created or batch.updated:
-            messages.success(request, f"Importación lista: {batch.created} lives nuevos, {batch.updated} actualizados.")
+            noun = "días de tendencia" if batch.kind == "trends" else "lives"
+            messages.success(request, f"Importación lista: {batch.created} {noun} nuevos, {batch.updated} actualizados.")
         for e in batch.errors[:8]:
             messages.warning(request, e)
         return render(request, "lives/import_result.html", {"batch": batch, "parsed": parsed})

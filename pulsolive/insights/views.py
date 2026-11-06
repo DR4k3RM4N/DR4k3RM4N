@@ -85,6 +85,7 @@ def dashboard(request):
                   "best": max(range(len(values)), key=values.__getitem__) if any(values) else None},
         "recommendations": history["recommendations"][:6],
         "best_slots": history["best_slots"][:3],
+        "funnel": current["funnel"],
         "events": _with_bars(history["events"][:5], "median_uplift"),
         "top_lives": top_lives,
         "has_lives": has_lives,

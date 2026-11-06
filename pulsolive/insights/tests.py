@@ -185,8 +185,8 @@ class AppFlowTests(TestCase):
     def test_import_flow(self):
         brand = Brand.objects.filter(organization=self.org).first()
         csv = ("ID del live,Hora de inicio,Duración,GMV,Pedidos,Espectadores,Host\n"
-               "abc1,2026-10-20 20:00,90,5000,40,2000,Nuevo Host\n"
-               "abc2,2026-10-21 13:00,60,1200,10,900,\n")
+               "abc1,2026-10-20 20:07,90,5000,40,2000,Nuevo Host\n"
+               "abc2,2026-10-21 13:07,60,1200,10,900,\n")
         f = SimpleUploadedFile("lives.csv", csv.encode())
         r = self.client.post(reverse("lives:import"), {"brand": brand.pk, "file": f})
         self.assertEqual(r.status_code, 200)
@@ -290,3 +290,76 @@ class AppFlowTests(TestCase):
         r = self.client.get(reverse("insights:experiment_detail", args=[exp.pk]))
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.context["ev"]["n_a"], 2)
+
+
+class TikTokExportFormatTests(TestCase):
+    """Formatos reales de TikTok: Excel de LIVE con título y fila vacía antes del encabezado, y CSV de tendencias."""
+
+    def _xlsx(self):
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["2026-09-01 ~ 2026-10-25"])
+        ws.append([])
+        ws.append(["Room ID", "Room Title", "Start Time", "End Time", "Duration", "Attributed GMV",
+                   "Attributed items sold", "Attributed orders", "Customers", "Views", "Impressions",
+                   "Avg. viewing duration", "Product Impressions", "Product clicks", "New followers", "Likes"])
+        ws.append(["111", "FLASH SALE SOLO HOY!!", "2026-10-05 16:01:06", "2026-10-05 20:03:39", "4h02m",
+                   "$1,494.10", "3", "2", "2", "1472", "17031", "61.95", "3366", "93", "8", "3304"])
+        ws.append(["222", "Super promos!!", "2026-10-06 13:00:00", "2026-10-06 13:07:00", "0h07m",
+                   "$0.00", "0", "0", "0", "1", "12", "0", "0", "0", "0", "0"])
+        buf = io.BytesIO()
+        wb.save(buf)
+        # TikTok declara mal el tamaño de la hoja; el lector no debe depender de eso.
+        return SimpleUploadedFile("Creator-Live-Performance.xlsx", buf.getvalue())
+
+    def test_live_export_with_title_rows(self):
+        res = parse_sessions(read_table(self._xlsx()))
+        self.assertEqual(res.missing_required, [])
+        self.assertEqual(len(res.rows), 2)
+        a = res.rows[0].data
+        self.assertEqual(a["external_id"], "111")
+        self.assertEqual(a["duration_minutes"], 242)
+        self.assertEqual(a["gmv"], Decimal("1494.10"))
+        self.assertEqual((a["orders"], a["customers"], a["viewers"], a["impressions"]), (2, 2, 1472, 17031))
+        self.assertEqual((a["product_impressions"], a["product_clicks"], a["avg_watch_seconds"]), (3366, 93, 61))
+        self.assertEqual(a["promo_type"], "flash_sale")
+        # Un título genérico no dice la mecánica de la promoción
+        self.assertEqual(res.rows[1].data["promo_type"], "unknown")
+        self.assertEqual(res.rows[1].data["duration_minutes"], 7)
+
+    def test_trend_csv_spanish_dates_without_year(self):
+        from datetime import date
+
+        from lives.importers import is_trend_table, parse_trends
+
+        csv = ('"Date","Video Views","Profile Views","Likes","Comments","Shares"\n'
+               '"24 de septiembre","180412","205","555","3","28"\n"5 de noviembre","14","1","0","0","0"\n')
+        df = read_table(SimpleUploadedFile("trends.csv", csv.encode()))
+        self.assertTrue(is_trend_table(df))
+        res = parse_trends(df, today=date(2026, 11, 6))
+        self.assertEqual(res.rows[0]["date"], date(2026, 9, 24))
+        self.assertEqual(res.rows[0]["video_views"], 180412)
+        # Una fecha "futura" sin año es del año pasado
+        res = parse_trends(df, today=date(2026, 3, 1))
+        self.assertEqual(res.rows[1]["date"], date(2025, 11, 5))
+
+    def test_import_flow_detects_both_files(self):
+        from lives.models import AccountDay
+
+        user = get_user_model().objects.create_user("a@b.mx", "a@b.mx", "pass12345!")
+        org = Organization.objects.create(name="Afiliado", plan_code="agency", subscription_status="active")
+        Membership.objects.create(user=user, organization=org, role="owner")
+        brand = Brand.objects.create(organization=org, name="Cuenta afiliada")
+        self.client.force_login(user)
+        self.client.post(reverse("lives:import"), {"brand": brand.pk, "file": self._xlsx()})
+        self.assertEqual(LiveSession.objects.filter(brand=brand).count(), 2)
+        csv = '"Date","Video Views","Profile Views","Likes","Comments","Shares"\n"5 de octubre","900","1","0","0","0"\n'
+        self.client.post(reverse("lives:import"), {"brand": brand.pk, "file": SimpleUploadedFile("t.csv", csv.encode())})
+        self.assertEqual(AccountDay.objects.filter(brand=brand).count(), 1)
+        live = LiveSession.objects.get(external_id="111")
+        page = self.client.get(reverse("lives:live_detail", args=[live.pk]))
+        self.assertContains(page, "Embudo de este live")
+        self.assertContains(self.client.get(reverse("insights:dashboard") + "?desde=2026-10-01&hasta=2026-10-31"),
+                            "Embudo del periodo")

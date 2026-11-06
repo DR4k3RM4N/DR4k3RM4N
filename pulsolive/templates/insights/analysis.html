@@ -30,6 +30,12 @@
       {% endfor %}
       <p class="muted" style="font-size:12px;margin-top:12px">El resto se debe a cosas que no están registradas: el producto, la tendencia del día o la suerte. Mientras más etiquetes, más se explica.</p>
     </div>
+    {% if result.funnel %}
+    <div class="card">
+      <div class="card-head"><h2>Embudo</h2><span class="meta">{{ result.kpis.lives }} lives</span></div>
+      {% include "insights/_funnel.html" with impressions=result.funnel.impressions steps=result.funnel.steps weakest=result.funnel.weakest compare="top" %}
+    </div>
+    {% endif %}
     {% if heat_json %}
     <div class="card">
       <div class="card-head"><h2>Día y hora</h2><span class="heat-key"><i style="background:rgba(225,29,116,.15)"></i>menos<i style="background:rgba(225,29,116,1)"></i>más {{ result.metric_label }}</span></div>

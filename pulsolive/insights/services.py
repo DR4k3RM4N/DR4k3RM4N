@@ -65,6 +65,7 @@ def run_analysis(org, brand=None, start: date | None = None, end: date | None = 
         "hosts": hosts,
         "recommendations": recs,
         "heatmap": engine.heatmap(df, metric) if not df.empty else None,
+        "funnel": engine.funnel(df) if not df.empty else None,
         "best_slots": engine.best_slots(df, metric),
         "metric": metric,
         "metric_label": engine.METRICS.get(metric, metric),
@@ -134,4 +135,14 @@ def live_detail_analysis(live: LiveSession) -> dict:
             comparison[key] = {"value": mine, "avg": avg, "delta": (mine / avg - 1) if avg else None}
         rank = int((peer_df["gmv_per_hour"] > live.gmv_per_hour).sum()) + 1
         comparison["rank"] = {"position": rank, "of": len(peer_df) + 1}
-    return {"minutes": minutes, "events": events, "moments": moments, "comparison": comparison}
+    from lives.services import live_to_row
+
+    funnel = engine.live_funnel(live_to_row(live), peer_df) if live.impressions else None
+    weakest = None
+    if funnel:
+        gaps = [f for f in funnel if f["delta"] is not None]
+        if gaps:
+            w = min(gaps, key=lambda f: f["delta"])
+            weakest = w if w["delta"] < -0.15 else None
+    return {"minutes": minutes, "events": events, "moments": moments, "comparison": comparison,
+            "funnel": funnel, "funnel_weakest": weakest}

@@ -74,6 +74,7 @@ class Tag(models.Model):
 
 
 PROMO_CHOICES = [
+    ("unknown", "Sin registrar"),
     ("none", "Sin promoción"),
     ("discount", "Descuento directo"),
     ("flash_sale", "Flash sale / oferta relámpago"),
@@ -131,6 +132,10 @@ class LiveSession(models.Model):
     comments = models.PositiveIntegerField("comentarios", default=0)
     shares = models.PositiveIntegerField("compartidos", default=0)
     product_clicks = models.PositiveIntegerField("clics en producto", default=0)
+    impressions = models.PositiveIntegerField("impresiones del live", default=0,
+                                              help_text="Cuántas veces apareció el live en el feed")
+    product_impressions = models.PositiveIntegerField("impresiones de producto", default=0)
+    customers = models.PositiveIntegerField("clientes", default=0)
 
     # Lo que hizo el equipo (etiquetado)
     promo_type = models.CharField("promoción", max_length=20, choices=PROMO_CHOICES, default="none")
@@ -180,6 +185,19 @@ class LiveSession(models.Model):
     @property
     def click_rate(self) -> float:
         return self.product_clicks / self.viewers if self.viewers else 0.0
+
+    # --- Embudo: lo vieron → entraron → dieron clic al producto → compraron ---
+    @property
+    def entry_rate(self):
+        return self.viewers / self.impressions if self.impressions else None
+
+    @property
+    def product_ctr(self):
+        return self.product_clicks / self.viewers if self.viewers else None
+
+    @property
+    def click_to_order(self):
+        return self.orders / self.product_clicks if self.product_clicks else None
 
     @property
     def is_tagged(self) -> bool:
@@ -254,7 +272,7 @@ class Transcript(models.Model):
 
 
 class ImportBatch(models.Model):
-    KIND_CHOICES = [("sessions", "Resumen de lives"), ("minutes", "Minuto a minuto")]
+    KIND_CHOICES = [("sessions", "Resumen de lives"), ("minutes", "Minuto a minuto"), ("trends", "Tendencias diarias")]
 
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="imports")
     brand = models.ForeignKey(Brand, on_delete=models.CASCADE, related_name="imports")
@@ -268,3 +286,20 @@ class ImportBatch(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class AccountDay(models.Model):
+    """Tendencia diaria de la cuenta (videos): el archivo de Análisis → Tendencias de TikTok."""
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="account_days")
+    brand = models.ForeignKey(Brand, on_delete=models.CASCADE, related_name="days")
+    date = models.DateField()
+    video_views = models.PositiveIntegerField(default=0)
+    profile_views = models.PositiveIntegerField(default=0)
+    likes = models.PositiveIntegerField(default=0)
+    comments = models.PositiveIntegerField(default=0)
+    shares = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = ("brand", "date")
+        ordering = ["date"]

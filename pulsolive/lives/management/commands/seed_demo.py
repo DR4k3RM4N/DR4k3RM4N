@@ -20,7 +20,7 @@ from django.utils import timezone
 from accounts.models import Membership, Organization
 from insights.services import generate_report
 from lives.importers import parse_transcript
-from lives.models import Brand, Host, LiveEvent, LiveMinute, LiveSession, Tag, Transcript
+from lives.models import AccountDay, Brand, Host, LiveEvent, LiveMinute, LiveSession, Tag, Transcript
 
 DEMO_EMAIL = "demo@pulsolive.app"
 DEMO_PASSWORD = "demo12345"
@@ -155,6 +155,9 @@ class Command(BaseCommand):
                     likes=int(viewers * rng.uniform(1.5, 4)), comments=int(viewers * rng.uniform(0.08, 0.2)),
                     shares=int(viewers * rng.uniform(0.003, 0.01)),
                     product_clicks=int(viewers * rng.uniform(0.12, 0.25)),
+                    impressions=int(viewers / (0.06 * (1.25 if hour >= 19 else 1.0) * rng.uniform(0.6, 1.4))),
+                    product_impressions=int(viewers * rng.uniform(1.6, 3.2)),
+                    customers=max(0, orders - rng.randint(0, max(1, orders // 12))),
                     promo_type=promo, script_type=script, format=fmt, setting=setting,
                     main_product=rng.choice(b["products"]), product_category=b["category"],
                     avg_price=Decimal(str(round(price, 2))), source="demo",
@@ -170,6 +173,15 @@ class Command(BaseCommand):
                 if day_offset > opts["days"] - 50 and rng.random() < 0.7:
                     lives_with_minutes.append(live)
                 total += 1
+
+        # Tendencia diaria de videos de cada cuenta: base estable con algunos videos que pegan.
+        for brand in org.brands.all():
+            AccountDay.objects.bulk_create([
+                AccountDay(organization=org, brand=brand, date=start_day + timedelta(days=d),
+                           video_views=int(rng.lognormvariate(8, 0.6) * (rng.choice([1] * 12 + [6, 15]))),
+                           profile_views=rng.randint(5, 120), likes=rng.randint(10, 400),
+                           comments=rng.randint(0, 20), shares=rng.randint(0, 25))
+                for d in range(opts["days"] + 1)])
 
         for live in lives_with_minutes:
             self._minutes_and_events(live, rng)

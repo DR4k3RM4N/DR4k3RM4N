@@ -20,6 +20,13 @@
 {% if c.rank %}<p class="muted" style="font-size:13px;margin:8px 0 0">Lugar {{ c.rank.position }} de {{ c.rank.of }} lives de {{ live.brand.name }} por ventas por hora.</p>{% endif %}
 {% endwith %}
 
+{% if analysis.funnel %}
+<div class="card" style="margin-top:var(--gap)">
+  <div class="card-head"><h2>Embudo de este live</h2><span class="meta">contra el promedio de {{ live.brand.name }}</span></div>
+  {% include "insights/_funnel.html" with impressions=live.impressions steps=analysis.funnel weakest=analysis.funnel_weakest.key compare="median" %}
+</div>
+{% endif %}
+
 <div class="overview" style="margin-top:var(--gap)">
 <div class="col">
 <div class="card">

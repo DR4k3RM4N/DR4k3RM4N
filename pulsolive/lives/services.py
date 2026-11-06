@@ -1,8 +1,8 @@
 from django.db import transaction
 from django.utils import timezone
 
-from .importers import parse_minutes, parse_sessions, read_table
-from .models import EVENT_LABELS, Host, ImportBatch, LiveMinute, LiveSession
+from .importers import is_trend_table, parse_minutes, parse_sessions, parse_trends, read_table
+from .models import EVENT_LABELS, AccountDay, Host, ImportBatch, LiveMinute, LiveSession
 
 
 def live_to_row(live: LiveSession) -> dict:
@@ -21,11 +21,15 @@ def live_to_row(live: LiveSession) -> dict:
         "avg_watch_seconds": live.avg_watch_seconds,
         "new_followers": live.new_followers,
         "product_clicks": live.product_clicks,
+        "impressions": live.impressions,
+        "product_impressions": live.product_impressions,
+        "customers": live.customers,
+        "video_views_day": getattr(live, "_video_views_day", 0),
         "host": host.name if host else "",
         "host_gender": host.get_gender_display() if host and host.gender != "unspecified" else "",
         "host_style": host.get_style_display() if host and host.style else "",
         "host_experience": host.get_experience_display() if host and host.experience else "",
-        "promo_type": live.get_promo_type_display(),
+        "promo_type": "" if live.promo_type == "unknown" else live.get_promo_type_display(),
         "script_type": live.get_script_type_display() if live.script_type else "",
         "format": live.get_format_display(),
         "setting": live.get_setting_display() if live.setting else "",
@@ -50,9 +54,16 @@ def lives_queryset(org, brand=None, start=None, end=None):
 def rows_for(qs):
     lives = list(qs)
     with_minutes = set(LiveMinute.objects.filter(live__in=lives).values_list("live_id", flat=True).distinct())
+    days = {}
+    if lives:
+        dates = [timezone.localtime(l.started_at).date() for l in lives]
+        for d in AccountDay.objects.filter(brand_id__in={l.brand_id for l in lives},
+                                           date__gte=min(dates), date__lte=max(dates)):
+            days[(d.brand_id, d.date)] = d.video_views
     rows = []
     for live in lives:
         live._has_minutes = live.id in with_minutes
+        live._video_views_day = days.get((live.brand_id, timezone.localtime(live.started_at).date()), 0)
         rows.append(live_to_row(live))
     return rows
 
@@ -77,8 +88,29 @@ def _get_or_create_host(org, name, cache):
 
 
 @transaction.atomic
+def import_trends_table(org, brand, df, filename):
+    parsed = parse_trends(df)
+    batch = ImportBatch(organization=org, brand=brand, kind="trends", filename=filename[:200])
+    for row in parsed.rows:
+        _, created = AccountDay.objects.update_or_create(
+            organization=org, brand=brand, date=row["date"],
+            defaults={k: row[k] for k in ("video_views", "profile_views", "likes", "comments", "shares")})
+        if created:
+            batch.created += 1
+        else:
+            batch.updated += 1
+    batch.skipped = len(parsed.errors)
+    batch.errors = parsed.errors[:50]
+    batch.save()
+    return batch, parsed
+
+
+@transaction.atomic
 def import_sessions_file(org, brand, uploaded_file, default_host=None):
+    """Importa el archivo de lives, o el de tendencias diarias si eso es lo que se subió."""
     df = read_table(uploaded_file)
+    if is_trend_table(df):
+        return import_trends_table(org, brand, df, uploaded_file.name)
     parsed = parse_sessions(df)
     batch = ImportBatch(organization=org, brand=brand, kind="sessions", filename=uploaded_file.name[:200])
     if parsed.missing_required:

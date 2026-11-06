@@ -6,6 +6,7 @@ normalizamos formatos de dinero, duración y fecha.
 """
 from __future__ import annotations
 
+import csv
 import io
 import re
 import unicodedata
@@ -23,22 +24,22 @@ def norm(text: str) -> str:
 
 
 SESSION_ALIASES = {
-    "external_id": ["id del live", "live id", "room id", "id de transmision", "id"],
-    "title": ["titulo", "title", "nombre del live", "live name", "nombre"],
+    "external_id": ["id del live", "live id", "room id", "id de sala", "id de transmision", "id"],
+    "title": ["titulo", "title", "room title", "titulo de la sala", "titulo del live", "nombre del live", "live name", "nombre"],
     "started_at": ["hora de inicio", "fecha de inicio", "inicio", "start time", "live start time", "launched time",
                    "fecha y hora", "fecha", "date", "start"],
     "ended_at": ["hora de fin", "hora de finalizacion", "fin", "end time", "live end time"],
     "duration_minutes": ["duracion", "duracion min", "duracion del live", "duration", "live duration",
                          "duracion minutos", "minutos"],
-    "gmv": ["gmv", "ventas", "ventas mxn", "gmv mxn", "ingresos", "revenue", "gross merchandise value",
+    "gmv": ["attributed gmv", "gmv atribuido", "gmv", "ventas", "ventas mxn", "gmv mxn", "ingresos", "revenue", "gross merchandise value",
             "monto de ventas", "valor bruto de mercancia", "gmv total", "live gmv"],
-    "orders": ["pedidos", "orders", "sku orders", "ordenes", "pedidos de sku", "pedidos pagados", "paid orders"],
-    "units_sold": ["piezas vendidas", "units sold", "articulos vendidos", "unidades vendidas", "items sold"],
+    "orders": ["attributed orders", "pedidos atribuidos", "pedidos", "orders", "sku orders", "ordenes", "pedidos de sku", "pedidos pagados", "paid orders"],
+    "units_sold": ["attributed items sold", "articulos vendidos atribuidos", "piezas vendidas", "units sold", "articulos vendidos", "unidades vendidas", "items sold"],
     "viewers": ["espectadores", "viewers", "vistas", "views", "visualizaciones", "espectadores unicos",
                 "unique viewers", "total viewers", "vistas del live"],
     "peak_viewers": ["pico de espectadores", "peak viewers", "max viewers", "espectadores simultaneos maximos",
                      "maximo de espectadores", "pcu"],
-    "avg_watch_seconds": ["tiempo promedio de visualizacion", "tiempo medio de visualizacion",
+    "avg_watch_seconds": ["avg viewing duration", "avg viewing duration per view", "duracion media de visualizacion por vista", "tiempo promedio de visualizacion", "tiempo medio de visualizacion",
                           "avg watch time", "average view duration", "average watch time",
                           "duracion media de visualizacion", "tiempo promedio"],
     "new_followers": ["nuevos seguidores", "new followers", "seguidores nuevos", "seguidores ganados"],
@@ -47,6 +48,9 @@ SESSION_ALIASES = {
     "shares": ["compartidos", "shares", "veces compartido"],
     "product_clicks": ["clics en producto", "clics de producto", "product clicks", "clics en productos",
                        "product click"],
+    "impressions": ["impressions", "impresiones", "impresiones del live", "live impressions"],
+    "product_impressions": ["product impressions", "impresiones de producto", "impresiones de productos"],
+    "customers": ["customers", "clientes", "compradores", "buyers"],
     "host": ["host", "presentador", "presentadora", "anfitrion", "anfitriona", "creador", "creator"],
     "promo_type": ["promocion", "promo", "tipo de promocion"],
     "script_type": ["guion", "script", "tipo de guion"],
@@ -55,11 +59,20 @@ SESSION_ALIASES = {
     "notes": ["notas", "notes", "comentarios internos"],
 }
 
+TREND_ALIASES = {
+    "date": ["date", "fecha", "dia"],
+    "video_views": ["video views", "vistas de video", "visualizaciones de video", "reproducciones de video"],
+    "profile_views": ["profile views", "visitas al perfil", "vistas del perfil"],
+    "likes": ["likes", "me gusta"],
+    "comments": ["comments", "comentarios"],
+    "shares": ["shares", "compartidos", "veces compartido"],
+}
+
 MINUTE_ALIASES = {
     "minute": ["minuto", "minute", "min", "tiempo", "time", "timestamp", "hora"],
     "viewers": ["espectadores", "viewers", "espectadores en linea", "online viewers", "concurrent viewers"],
-    "orders": ["pedidos", "orders", "ordenes"],
-    "gmv": ["gmv", "ventas", "revenue", "ingresos"],
+    "orders": ["attributed orders", "pedidos atribuidos", "pedidos", "orders", "ordenes"],
+    "gmv": ["attributed gmv", "gmv atribuido", "gmv", "ventas", "revenue", "ingresos"],
     "comments": ["comentarios", "comments"],
 }
 
@@ -164,7 +177,7 @@ def parse_duration_seconds(value, assume_unit="minutes") -> int:
         # mm:ss para tiempos de visualización, hh:mm para duraciones
         return parts[0] * 60 + parts[1] if assume_unit == "seconds" else parts[0] * 3600 + parts[1] * 60
     total, found = 0, False
-    for amount, unit in re.findall(r"(\d+(?:\.\d+)?)\s*(h|hr|hrs|hora|horas|m|min|mins|minutos|s|seg|segundos|sec)\b", s):
+    for amount, unit in re.findall(r"(\d+(?:\.\d+)?)\s*(h|hr|hrs|hora|horas|m|min|mins|minutos|s|seg|segundos|sec)(?![a-z])", s):
         found = True
         amount = float(amount)
         if unit.startswith("h"):
@@ -202,23 +215,55 @@ def parse_datetime(value) -> datetime | None:
     return dt
 
 
-def read_table(uploaded_file) -> pd.DataFrame:
+def _raw_rows(uploaded_file) -> list[list[str]]:
+    """Lee CSV o Excel como filas de texto, sin suponer dónde está el encabezado."""
     name = (getattr(uploaded_file, "name", "") or "").lower()
     raw = uploaded_file.read()
-    if name.endswith((".xlsx", ".xls")):
-        df = pd.read_excel(io.BytesIO(raw))
-    else:
-        text = None
-        for enc in ("utf-8-sig", "latin-1"):
-            try:
-                text = raw.decode(enc)
-                break
-            except UnicodeDecodeError:
+    if name.endswith((".xlsx", ".xlsm")):
+        import openpyxl
+
+        # Sin read_only: los archivos de TikTok declaran un tamaño de hoja falso ("A1") y el modo rápido
+        # solo vería esa celda.
+        wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+        ws = wb.worksheets[0]
+        return [["" if v is None else str(v).strip() for v in row] for row in ws.iter_rows(values_only=True)]
+    if name.endswith(".xls"):
+        df = pd.read_excel(io.BytesIO(raw), header=None, dtype=str)
+        return df.fillna("").astype(str).values.tolist()
+    text = None
+    for enc in ("utf-8-sig", "utf-16", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            if "\x00" in text:
                 continue
-        sep = ";" if text.count(";") > text.count(",") else ","
-        df = pd.read_csv(io.StringIO(text), sep=sep, dtype=str, keep_default_na=False)
-    df = df.dropna(how="all")
-    df.columns = [str(c).strip() for c in df.columns]
+            break
+        except UnicodeDecodeError:
+            continue
+    first = "\n".join(text.splitlines()[:20])
+    sep = max((";", ",", "\t"), key=first.count)
+    return [[c.strip() for c in row] for row in csv.reader(io.StringIO(text), delimiter=sep)]
+
+
+def _header_score(row) -> int:
+    known = {n for names in (*SESSION_ALIASES.values(), *MINUTE_ALIASES.values(), *TREND_ALIASES.values())
+             for n in names}
+    return sum(1 for c in row if norm(c) in known)
+
+
+def read_table(uploaded_file) -> pd.DataFrame:
+    """Tabla con el encabezado correcto aunque el archivo traiga títulos o filas vacías antes."""
+    rows = [r for r in _raw_rows(uploaded_file)]
+    if not rows:
+        return pd.DataFrame()
+    head = max(range(min(len(rows), 15)), key=lambda i: _header_score(rows[i]))
+    if _header_score(rows[head]) < 2:
+        head = 0
+    header = [str(c).strip() for c in rows[head]]
+    width = len(header)
+    body = [(r + [""] * width)[:width] for r in rows[head + 1:]]
+    df = pd.DataFrame(body, columns=header)
+    df = df.loc[:, [c for c in df.columns if c]]
+    df = df[~(df.astype(str).apply(lambda col: col.str.strip()) == "").all(axis=1)].reset_index(drop=True)
     return df
 
 
@@ -279,6 +324,9 @@ def parse_sessions(df: pd.DataFrame) -> ParseResult:
             "comments": parse_int(get(row, "comments")),
             "shares": parse_int(get(row, "shares")),
             "product_clicks": parse_int(get(row, "product_clicks")),
+            "impressions": parse_int(get(row, "impressions")),
+            "product_impressions": parse_int(get(row, "product_impressions")),
+            "customers": parse_int(get(row, "customers")),
             "title": str(get(row, "title") or "")[:200],
             "external_id": str(get(row, "external_id") or "")[:120],
             "main_product": str(get(row, "main_product") or "")[:150],
@@ -287,6 +335,8 @@ def parse_sessions(df: pd.DataFrame) -> ParseResult:
         }
         if "promo_type" in mapping:
             data["promo_type"] = _match_choice(get(row, "promo_type"), PROMO_ALIASES, "none")
+        else:
+            data["promo_type"] = promo_from_title(data["title"]) or "unknown"
         if "script_type" in mapping:
             data["script_type"] = _match_choice(get(row, "script_type"), SCRIPT_ALIASES, "other")
         result.rows.append(ParsedSession(row_number=n, data=data, host_name=str(get(row, "host") or "").strip()))
@@ -421,3 +471,84 @@ def keyword_events(segments: list[dict]) -> list[dict]:
                 last_by_kind[kind] = minute
                 found.append({"minute": minute, "kind": kind, "quote": seg["text"][:280], "description": ""})
     return found
+
+
+# Palabras del título del live que dicen qué promoción hubo ("FLASH SALE SOLO HOY!!", "Super descuentos").
+TITLE_PROMOS = [
+    ("flash_sale", ["flash", "relampago"]),
+    ("bundle", ["2x1", "3x2", "combo", "paquete"]),
+    ("gift", ["regalo", "obsequio"]),
+    ("free_shipping", ["envio gratis"]),
+    ("coupon", ["cupon", "codigo"]),
+    ("giveaway", ["sorteo", "giveaway"]),
+    # "promo", "descuento" u "oferta" aparecen en casi cualquier título y no dicen la mecánica: no se deducen.
+]
+
+
+def promo_from_title(title: str) -> str | None:
+    t = norm(title)
+    if not t:
+        return None
+    for code, words in TITLE_PROMOS:
+        if any(w in t for w in words):
+            return code
+    return None
+
+
+MONTHS = {"enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
+          "septiembre": 9, "setiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+          "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6, "july": 7, "august": 8,
+          "september": 9, "october": 10, "november": 11, "december": 12,
+          "ene": 1, "feb": 2, "mar": 3, "abr": 4, "jun": 6, "jul": 7, "ago": 8, "sep": 9, "sept": 9, "oct": 10,
+          "nov": 11, "dic": 12, "jan": 1, "apr": 4, "aug": 8, "dec": 12}
+
+
+def parse_day(value, today=None):
+    """Fecha de un día. Acepta '7 de septiembre' (sin año: el más reciente que no sea futuro), ISO y dd/mm/aaaa."""
+    from datetime import date
+
+    today = today or timezone.localdate()
+    s = norm(value)
+    m = re.fullmatch(r"(\d{1,2}) (?:de )?([a-z]+)(?: (?:de )?(\d{4}))?", s) or None
+    if not m:
+        m2 = re.fullmatch(r"([a-z]+) (\d{1,2})(?: (\d{4}))?", s)
+        if m2:
+            m = (m2.group(2), m2.group(1), m2.group(3))
+    else:
+        m = (m.group(1), m.group(2), m.group(3))
+    if m and m[1] in MONTHS:
+        day, month = int(m[0]), MONTHS[m[1]]
+        if m[2]:
+            return date(int(m[2]), month, day)
+        year = today.year
+        candidate = date(year, month, day)
+        if candidate > today:
+            candidate = date(year - 1, month, day)
+        return candidate
+    dt = parse_datetime(value)
+    return timezone.localtime(dt).date() if dt else None
+
+
+def is_trend_table(df: pd.DataFrame) -> bool:
+    mapping = map_columns(df.columns, TREND_ALIASES)
+    return "date" in mapping and "video_views" in mapping
+
+
+def parse_trends(df: pd.DataFrame, today=None) -> ParseResult:
+    result = ParseResult()
+    mapping = map_columns(df.columns, TREND_ALIASES)
+    result.mapping = mapping
+    if "date" not in mapping or "video_views" not in mapping:
+        result.missing_required.append("fecha y vistas de video")
+        return result
+    for i, row in df.iterrows():
+        day = parse_day(row[mapping["date"]], today)
+        if not day:
+            result.errors.append(f"Fila {int(i) + 2}: no se entendió la fecha «{row[mapping['date']]}».")
+            continue
+        result.rows.append({
+            "date": day,
+            **{k: parse_int(row[mapping[k]]) if k in mapping else 0
+               for k in ("video_views", "profile_views", "likes", "comments", "shares")},
+        })
+    return result

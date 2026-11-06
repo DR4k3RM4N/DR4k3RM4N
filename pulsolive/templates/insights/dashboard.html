@@ -6,7 +6,7 @@
   <div>
     <h1>Panel{% if brand %} · {{ brand.name }}{% endif %}</h1>
     {% if has_lives and recommendations %}
-      <p class="sub"><strong>{{ recommendations.0.title }}.</strong> {{ recommendations.0.detail|truncatechars:150 }}</p>
+      <p class="sub"><strong>{{ recommendations.0.title }}.</strong> {{ recommendations.0.detail|brief }}.</p>
     {% else %}
       <p class="sub">Del {{ start|date:"j \d\e F" }} al {{ end|date:"j \d\e F Y" }}</p>
     {% endif %}
@@ -46,6 +46,13 @@
       <div class="kpi"><div class="label">Pedidos</div><div class="value">{{ kpis.orders.value|num }}</div><div class="cap">{% include "insights/_delta.html" with d=kpis.orders.delta %}</div></div>
       <div class="kpi"><div class="label">Conversión</div><div class="value">{{ kpis.conversion_rate.value|pct:2 }}</div><div class="cap">{% include "insights/_delta.html" with d=kpis.conversion_rate.delta %}</div></div>
     </div>
+
+    {% if funnel %}
+    <div class="card">
+      <div class="card-head"><h2>Embudo del periodo</h2><span class="meta">de verlo en el feed a comprar</span></div>
+      {% include "insights/_funnel.html" with impressions=funnel.impressions steps=funnel.steps weakest=funnel.weakest compare="top" %}
+    </div>
+    {% endif %}
 
     <div class="card">
       <div class="card-head"><h2>Ventas por día</h2><span class="meta tabular">{{ kpis.lives.value }} lives · {{ kpis.hours.value|floatformat:0 }} h al aire · ticket {{ kpis.aov.value|money }}</span></div>
