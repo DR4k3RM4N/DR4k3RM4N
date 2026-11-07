@@ -84,6 +84,9 @@ PrivateTmp=true
 WantedBy=multi-user.target
 UNIT
 
+paso "Creando el servicio de la oficina de TikTok Shop"
+bash "$APP/despliegue/tienda.sh" || true
+
 paso "Configurando HTTPS para $DOMINIO"
 bash "$APP/despliegue/caddy.sh" "$DOMINIO"
 

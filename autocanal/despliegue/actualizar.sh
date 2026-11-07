@@ -21,6 +21,8 @@ URL="$(grep '^OFICINA_URL=' "$APP/.env" | cut -d= -f2- || true)"
 DOMINIO="${URL#https://}"
 if [ -n "$DOMINIO" ] && [ -f "$APP/despliegue/caddy.sh" ]; then bash "$APP/despliegue/caddy.sh" "$DOMINIO"; fi
 systemctl restart oficina
+# La oficina de TikTok Shop (ala derecha del edificio)
+if [ -f "$APP/despliegue/tienda.sh" ]; then bash "$APP/despliegue/tienda.sh"; fi
 # Revisar que todo quedó prendido (la oficina y Caddy, que la deja entrar desde internet).
 sleep 3
 for servicio in oficina caddy; do
