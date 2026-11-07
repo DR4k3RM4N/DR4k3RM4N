@@ -114,3 +114,20 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
 - Preguntas para Miguel al arrancar: ¿graba él los productos (manos/cara/voz propia) o todo con voz IA e imágenes?,
   ¿qué nichos/productos?, ¿cuántos videos al día?, ¿cómo ve sus ventas (panel de TikTok Shop / afiliados) para
   que la oficina aprenda qué vende?, ¿repo nuevo o carpeta nueva en este repo?
+
+### 6.1 Lo que Miguel decidió (nov 2026) y avance
+- **Él graba, la IA edita**: la oficina le da la lista de tomas, él graba con el cel y sube los clips; el editor
+  monta en vertical con subtítulos, efectos y voz. Productos: **los que le mandan las marcas** (marcar contenido de
+  marca) + hogar/cocina y tecnología. **Solo cuando él pida** (sin agenda automática). Ventas: las ve en el
+  **panel de afiliados** de TikTok Shop → botón "📊 Registrar resultado" donde copia vistas/clics/ventas/comisión.
+- **Carpeta nueva en este repo** (`tiktokshop/`, misma rama), reusando el motor de `autocanal/`.
+- **Un edificio, dos alas** (una dirección, una contraseña): ala izquierda YouTube, pasillo al centro con el
+  despacho del jefe y la sala de juntas, ala derecha TikTok Shop, patio de descanso compartido abajo. Por dentro
+  siguen siendo dos oficinas separadas (cada una con su gasto, tope y `.env`); cola común para editar video (RAM).
+- **Equipo TikTok** (ids `tt_…`): Toño (cazador de productos), Sofi (guionista de Shop), Diego (director de
+  grabación), **Chris (editor vertical, con lentes y copete — Miguel lo pidió así)**, Vale (portadas), Ana (analista).
+- Orden de trabajo: 1) edificio en demo ✅ (`oficina/oficina.js`: rejilla 31×15, mamparas de vidrio con puertas,
+  botones 🏢 Todo / ▶ YouTube / 🛒 TikTok Shop; el equipo TikTok está "en obra": pasea y al picarlo muestra su
+  ficha) · 2) ala TikTok con servidor propio (botón "📦 Me llegó un producto", guion con 3 ganchos, lista de tomas)
+  · 3) editor vertical 1080×1920 con sus clips · 4) registrar resultados y aprender · 5) servidor (puerto 8766,
+  Caddy con ruta `/tiktok/` en el mismo sitio; **ojo: `despliegue/caddy.sh` hoy reescribe todo el Caddyfile**).

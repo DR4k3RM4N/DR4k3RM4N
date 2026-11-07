@@ -429,11 +429,30 @@
   }
 
   function verAgente(id) {
+    const fichaTT = !estado?.agentes.some((a) => a.id === id) && window.Oficina.ficha(id);
+    if (fichaTT) return verAgenteEnObra(fichaTT);
     agenteVisto = id;
     window.Oficina.seleccionar(id);
     abrirPestana("equipo");
     pintarEquipo(true);
     $("#tab-equipo").scrollTop = 0;
+  }
+
+  // El equipo de TikTok Shop todavía no tiene su oficina conectada: se muestra su ficha
+  function verAgenteEnObra(a) {
+    $("#modal-cuerpo").innerHTML = `
+      <div class="obra" style="--c:${a.color}">
+        <canvas class="retrato grande" data-retrato="${esc(a.id)}" width="108" height="228"></canvas>
+        <div>
+          <h2 id="modal-titulo">${esc(a.nombre)}</h2>
+          <p class="rol">${esc(a.rol)} · Ala TikTok Shop</p>
+          <p class="desc">${esc(a.desc)}</p>
+          <p class="aviso">🚧 Esta ala todavía está en obra. ${esc(a.nombre)} empieza a trabajar cuando conectemos la oficina de TikTok Shop.</p>
+        </div>
+      </div>`;
+    window.Oficina.retrato(a.id, $("#modal-cuerpo canvas"));
+    $("#modal").hidden = false;
+    $("#modal-cerrar").focus();
   }
 
   $("#equipo").addEventListener("click", (e) => {

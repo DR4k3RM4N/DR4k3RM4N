@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Oficina AutoCanal</title>
+<title>Edificio AutoCanal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/estilo.css">
 </head>
 <body>
 <header class="barra">
-  <div class="marca"><span class="logo">▶</span> Oficina AutoCanal <span id="modo" class="chip chip-demo" hidden>MODO DEMO</span></div>
+  <div class="marca"><span class="logo">▶</span> Edificio AutoCanal <span id="modo" class="chip chip-demo" hidden>MODO DEMO</span></div>
   <div class="derecha">
     <div class="gasto" id="gasto" title="Lo que llevas gastado en Claude (aproximado)" hidden></div>
     <div class="conexion" id="conexion">conectando…</div>
@@ -19,6 +19,11 @@
 
 <main class="layout">
   <section class="sala" id="sala">
+    <div class="alas" role="group" aria-label="Qué parte del edificio ver">
+      <button class="ala" data-ala="todo" type="button">🏢 Todo</button>
+      <button class="ala" data-ala="youtube" type="button">▶ YouTube</button>
+      <button class="ala" data-ala="tiktok" type="button">🛒 TikTok Shop</button>
+    </div>
     <div class="escenario">
       <canvas id="lienzo"></canvas>
       <div id="capas"></div>
