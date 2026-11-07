@@ -1198,22 +1198,61 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"error": str(exc)}, 400)
             return self._json({"ok": True, "archivo": p.name})
 
-        def _tienda(self, metodo: str, cuerpo: bytes | None = None):
-            """Pasa la petición a la oficina de TikTok Shop (misma contraseña que esta)."""
+        def _tienda(self, metodo: str, cuerpo=None, tipo: str = "application/json", largo: int | None = None):
+            """Pasa la petición a la oficina de TikTok Shop (misma contraseña que esta). Los videos y los clips
+            pasan en trozos, sin cargarlos completos en memoria."""
             ruta = urlparse(self.path)
-            destino = TIENDA_URL + ruta.path[len("/tiktok"):]
-            if not ruta.path.startswith("/tiktok/api/"):
+            if not ruta.path.startswith(("/tiktok/api/", "/tiktok/salida/")):
                 return self._json({"error": "no encontrado"}, 404)
+            destino = TIENDA_URL + self.path[len("/tiktok"):]
+            cabeceras = {"Content-Type": tipo} if cuerpo is not None else {}
+            if largo is not None:
+                cabeceras["Content-Length"] = str(largo)
+            if self.headers.get("Range"):
+                cabeceras["Range"] = self.headers["Range"]
             try:
-                r = requests.request(metodo, destino, data=cuerpo, timeout=15,
-                                     headers={"Content-Type": "application/json"} if cuerpo is not None else {})
+                r = requests.request(metodo, destino, data=cuerpo, headers=cabeceras, stream=True,
+                                     timeout=(10, 1800 if largo else 60))
             except requests.RequestException:
                 return self._json({"error": "La oficina de TikTok Shop está apagada.", "apagada": True}, 503)
             self.send_response(r.status_code)
-            self.send_header("Content-Type", r.headers.get("Content-Type", "application/json"))
-            self.send_header("Content-Length", str(len(r.content)))
+            for clave in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control"):
+                if r.headers.get(clave):
+                    self.send_header(clave, r.headers[clave])
             self.end_headers()
-            self.wfile.write(r.content)
+            try:
+                for trozo in r.iter_content(65536):
+                    self.wfile.write(trozo)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                r.close()
+
+        def _tienda_subir(self):
+            """Un clip desde el cel → oficina de TikTok, en trozos. Va en binario: otra página no lo puede
+            mandar sin permiso del navegador (protege contra CSRF), igual que las subidas de estilo."""
+            if "application/octet-stream" not in self.headers.get("Content-Type", ""):
+                return self._json({"error": "tipo no permitido"}, 403)
+            origen = self.headers.get("Origin")
+            if origen and urlparse(origen).netloc != self.headers.get("Host"):
+                return self._json({"error": "origen no permitido"}, 403)
+            largo = int(self.headers.get("Content-Length") or 0)
+
+            class Lector:  # requests lo manda con su tamaño exacto, leyendo de a poco
+                def __init__(self, f, n):
+                    self.f, self.n = f, n
+
+                def __len__(self):
+                    return self.n
+
+                def read(self, cuantos=-1):
+                    if self.n <= 0:
+                        return b""
+                    trozo = self.f.read(self.n if cuantos is None or cuantos < 0 else min(cuantos, self.n))
+                    self.n -= len(trozo)
+                    return trozo
+
+            return self._tienda("POST", Lector(self.rfile, largo), "application/octet-stream", largo)
 
         def _texto(self, texto: str, codigo: int = 200):
             cuerpo = texto.encode()
@@ -1291,11 +1330,13 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return
             if urlparse(self.path).path == "/api/estilo/subir":
                 return self._subir()
+            if urlparse(self.path).path == "/tiktok/api/subir":
+                return self._tienda_subir()
             if not self._mismo_origen():
                 return self._json({"error": "origen no permitido"}, 403)
             largo = int(self.headers.get("Content-Length") or 0)
             if urlparse(self.path).path.startswith("/tiktok/"):
-                return self._tienda("POST", self.rfile.read(min(largo, 100_000)))
+                return self._tienda("POST", self.rfile.read(min(largo, 100_000)), largo=None)
             try:
                 datos = json.loads(self.rfile.read(largo) or b"{}")
             except json.JSONDecodeError:

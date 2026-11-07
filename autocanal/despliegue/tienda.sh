@@ -9,6 +9,11 @@ REPO="$(cd "$APP/.." && pwd)"
 TIENDA="$REPO/tiktokshop"
 USR="$(stat -c %U "$APP")"
 [ -f "$TIENDA/tienda.py" ] || { echo "  No encontré $TIENDA/tienda.py (¿falta actualizar el código?)"; exit 1; }
+# El "oído" de Cris (Whisper) para los subtítulos karaoke con tu voz. La primera vez baja ~500 MB.
+if [ -f "$TIENDA/requirements.txt" ]; then
+  echo "  Instalando lo que necesita la oficina de TikTok (la primera vez tarda unos minutos)…"
+  sudo -u "$USR" "$APP/.venv/bin/pip" install -q -r "$TIENDA/requirements.txt" || echo "  ⚠ No se pudo instalar Whisper: Cris editará sin subtítulos."
+fi
 cat > /etc/systemd/system/tienda.service <<UNIT
 [Unit]
 Description=Oficina TikTok Shop

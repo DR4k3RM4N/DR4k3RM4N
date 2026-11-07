@@ -284,6 +284,13 @@ def _normalizar(entrada: Path, destino: Path) -> Path:
 
 
 def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> Path:
+    """Edita el video, esperando su turno si Cris (TikTok Shop) está editando al mismo tiempo."""
+    from . import cola_video
+    with cola_video.turno("Edu (YouTube)", lambda texto: _avance(texto, 0.0)):
+        return _editar(escenas, ctx, carpeta, clips)
+
+
+def _editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> Path:
     datos = estilo.cargar()
     ajustes, spec = datos["ajustes"], {**graficos.ESTILO_DEFECTO, **(datos.get("miniaturas") or {})}
     extra = 0.0 if ajustes["transicion"] == "corte" else TRANSICION

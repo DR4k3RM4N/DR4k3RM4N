@@ -128,8 +128,12 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   grabación), **Cris (editor vertical, con lentes y copete — Miguel lo pidió así; si cambia de idea: "Cris2k")**, Vale (portadas), Ana (analista).
 - Orden de trabajo: 1) edificio en demo ✅ (`oficina/oficina.js`: rejilla 31×15, mamparas de vidrio con puertas,
   botones 🏢 Todo / ▶ YouTube / 🛒 TikTok Shop; si la oficina TikTok está apagada su equipo sale "en obra")
-  · 2) ala TikTok con servidor propio ✅ (`tiktokshop/tienda.py` + `shop.py`; pestaña Shop con "📦 Me llegó un producto";
+  · 2) ala TikTok con servidor propio ✅ (gancho elegible A/B/C/los 3; Diego filtra tomas por gancho) (`tiktokshop/tienda.py` + `shop.py`; pestaña Shop con "📦 Me llegó un producto";
   Toño ficha con fuentes → Sofi guion 3 ganchos → Diego lista de tomas; `oficina.py` hace de puerta en `/tiktok/api/…`
   hacia `TIENDA_URL` y en `--demo` prende la tienda sola; el edificio consulta su estado cada 2 s)
-  · 3) editor vertical 1080×1920 con sus clips · 4) registrar resultados y aprender · 5) servidor (puerto 8766,
+  · 3) editor vertical ✅ (Miguel habla en sus clips; sube un clip por toma O el video completo; `tiktokshop/cris.py`:
+  Whisper local `faster-whisper` (WHISPER_MODELO, default small) para karaoke de su voz, piezas en orden del guion,
+  cortes con acercamiento cada ~2.2 s, texto de Sofi arriba en zona segura, loudnorm, un video por gancho elegido;
+  con video completo quita silencios/tomas repetidas y Haiku clasifica trozos; Vale hace portada de un cuadro limpio;
+  cola común con Edu en `agentes/cola_video.py` (flock en /opt/canal/.cola_video.lock); sin música: tendencia en TikTok) · 4) registrar resultados y aprender · 5) servidor (puerto 8766,
   Caddy con ruta `/tiktok/` en el mismo sitio; **ojo: `despliegue/caddy.sh` hoy reescribe todo el Caddyfile**).

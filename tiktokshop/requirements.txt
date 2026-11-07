@@ -1,0 +1,2 @@
+# Oído de Cris: escucha tus clips para los subtítulos karaoke (gratis, corre en el servidor)
+faster-whisper>=1.0

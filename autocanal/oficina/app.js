@@ -606,8 +606,9 @@
 
   // ---------- TikTok Shop (ala derecha): su oficina corre aparte y se consulta cada 2 s ----------
   let estadoTT = null, versionTT = -1;
-  const ETAPAS_TT = [["ficha", "Toño investiga"], ["guion", "Sofi escribe"], ["tomas", "Diego arma tomas"]];
-  const ESTADO_TT = { trabajando: "En proceso", listo: "Listo para grabar", error: "Con problema" };
+  const ETAPAS_TT = [["ficha", "Toño investiga"], ["guion", "Sofi escribe"], ["tomas", "Diego arma tomas"],
+                     ["video", "Cris edita"], ["portada", "Vale: portada"]];
+  const ESTADO_TT = { trabajando: "En proceso", listo: "Listo para grabar", error: "Con problema", video_listo: "🎬 Video listo" };
   const FORMATO_TT = { problema_solucion: "Problema → solución", antes_despues: "Antes y después", resena: "Reseña",
                        unboxing: "Unboxing", tutorial: "Tutorial", objecion: "Objeción / FAQ", asmr: "ASMR" };
   const BLOQUE_TT = { puente: "Puente", problema: "Problema", solucion: "Solución / demo", beneficios: "Beneficios", cta: "Carrito naranja" };
@@ -623,7 +624,12 @@
   async function consultarTT() {
     try {
       const n = await apiTT("/api/estado");
-      if (n.version !== versionTT || !estadoTT) { versionTT = n.version; estadoTT = n; window.Oficina.actualizarTT(n); pintarShop(); }
+      if (n.version !== versionTT || !estadoTT) {
+        versionTT = n.version; estadoTT = n; window.Oficina.actualizarTT(n); pintarShop();
+        const abierto = guionAbierto && n.productos.find((x) => x.id === guionAbierto.id);
+        if (abierto && !Object.keys(subiendo).length && !$("#modal").hidden && $("#modal-cuerpo .guion-shop")
+            && (abierto.estado !== guionAbierto.estado || JSON.stringify(abierto.etapas) !== JSON.stringify(guionAbierto.etapas))) refrescarGuionTT();
+      }
     } catch {
       if (estadoTT !== null || versionTT === -1) { estadoTT = null; versionTT = -2; window.Oficina.actualizarTT(null); pintarShop(); }
     }
@@ -642,13 +648,14 @@
     $("#cuenta-shop").textContent = nuevos;
     if (!estadoTT.productos.length) { $("#shop-lista").innerHTML = `<p class="vacio">Todavía no hay productos. Cuando te llegue uno, ponlo arriba.</p>`; return; }
     $("#shop-lista").innerHTML = estadoTT.productos.map((p) => `<article class="tarjeta ${p.estado === "error" ? "tarjeta-error" : ""}">
-        <div class="cabeza"><h4>${esc(p.nombre)}</h4><span class="chip ${p.estado === "listo" ? "chip-estado-publicado" : p.estado === "error" ? "chip-estado-error" : ""}">${esc(ESTADO_TT[p.estado] || p.estado)}</span></div>
-        <ol class="pasos-shop">${ETAPAS_TT.map(([e, txt]) => `<li class="${esc(p.etapas?.[e] || "")}">${esc(txt)}</li>`).join("")}</ol>
+        <div class="cabeza"><h4>${esc(p.nombre)}</h4><span class="chip ${["listo", "video_listo"].includes(p.estado) ? "chip-estado-publicado" : p.estado === "error" ? "chip-estado-error" : ""}">${esc(ESTADO_TT[p.estado] || p.estado)}</span></div>
+        <ol class="pasos-shop">${ETAPAS_TT.filter(([e]) => !["video", "portada"].includes(e) || p.etapas?.[e]).map(([e, txt]) => `<li class="${esc(p.etapas?.[e] || "")}">${esc(txt)}</li>`).join("")}</ol>
+        ${p.clips && !p.videos ? `<p class="pista">📤 ${p.clips} clip(s) subido(s)</p>` : ""}
         ${p.guion_id ? `<p class="pista">${esc(FORMATO_TT[p.formato] || p.formato || "")} · 🪝 ${p.gancho && p.gancho !== "todos" ? `Gancho ${esc(p.gancho)}` : "Los 3 ganchos"} · <code>${esc(p.guion_id)}</code></p>` : ""}
         ${p.error ? `<p class="error">${esc(p.error)}</p>` : ""}
         ${p.costo ? `<div class="costo">💰 ${dinero(p.costo)}</div>` : ""}
         <div class="fila">
-          ${p.etapas?.guion === "hecha" ? `<button class="btn btn-primario" data-ver-tt="${esc(p.id)}">Ver guion y tomas</button>` : ""}
+          ${p.etapas?.guion === "hecha" ? `<button class="btn btn-primario" data-ver-tt="${esc(p.id)}">${p.videos ? "🎬 Ver videos" : p.estado === "listo" ? "Guion, tomas y subir clips" : "Ver guion y tomas"}</button>` : ""}
           ${p.estado !== "trabajando" ? `<button class="btn btn-mini" data-rehacer-tt="${esc(p.id)}">${p.estado === "error" ? "Reintentar" : "Otro guion"}</button>
             <button class="btn btn-mini" data-borrar-tt="${esc(p.id)}">Borrar</button>` : ""}
         </div>
@@ -694,6 +701,72 @@
     pintarShop();
   }
 
+  const ruta = (pid, archivo, v) => `/tiktok/salida/${encodeURIComponent(pid)}/${encodeURIComponent(archivo)}${v ? `?v=${v}` : ""}`;
+  // Casilla para subir el clip de una toma (o el video completo)
+  function slotSubida(clave, c) {
+    if (subiendo[clave] != null) return `<span class="subida"><span class="barra-subida"><b style="width:${subiendo[clave]}%"></b></span> ${subiendo[clave]} %</span>`;
+    if (c) return `<span class="subida ok" title="${esc(c.nombre || "")}">✔ ${esc(c.segundos)} s · ${esc(c.mb)} MB
+      <button type="button" class="btn btn-mini" data-quitar-clip="${esc(clave)}" aria-label="Quitar clip">✕</button></span>`;
+    return `<label class="btn btn-mini subir">📤 Subir<input type="file" accept="video/*" hidden data-subir-clip="${esc(clave)}"></label>`;
+  }
+
+  function seccionEdicion(p, clips, letras) {
+    const nTomas = Object.keys(clips.tomas || {}).length;
+    const trabajando = p.estado === "trabajando";
+    const modo = p.modo_edicion || (nTomas ? "tomas" : clips.completo ? "completo" : "tomas");
+    const videos = p.videos || [];
+    return `<div class="edicion">
+      <h3>📤 ¿Grabaste todo seguido? Sube el video completo</h3>
+      <p class="pista">Cris le quita los silencios y las tomas repetidas (se queda con la última). Habla mientras haces la demo: lo que quede callado mucho rato se corta.</p>
+      <p>${slotSubida("completo", clips.completo)}</p>
+      <h3>✂️ Edición de Cris</h3>
+      ${nTomas || clips.completo ? `<div class="fila modos">
+          <label><input type="radio" name="modo-ed" value="tomas" ${modo === "tomas" ? "checked" : ""} ${nTomas ? "" : "disabled"}> Mis clips por toma (${nTomas})</label>
+          <label><input type="radio" name="modo-ed" value="completo" ${modo === "completo" ? "checked" : ""} ${clips.completo ? "" : "disabled"}> Mi video completo</label>
+        </div>
+        <p class="pista">Va a sacar ${letras.length > 1 ? "un video por cada gancho que hayas grabado (A, B y C)" : `el video con el gancho ${esc(letras[0])}`}: vertical, con tus textos, subtítulos karaoke de tu voz y cortes rápidos. Sin música: ponle un sonido en tendencia desde TikTok.</p>
+        <button type="button" class="btn btn-primario" data-editar ${trabajando || Object.keys(subiendo).length ? "disabled" : ""}>${trabajando ? "Cris está editando…" : videos.length ? "✂️ Volver a editar" : "✂️ Que Cris lo edite"}</button>`
+      : `<p class="vacio">Sube tus clips en la lista de tomas (📤 Subir) o el video completo arriba, y aquí le das a Cris.</p>`}
+      ${videos.length ? `<h3>🎬 Tus videos</h3><div class="videos-tt">${videos.map((v) => `<figure class="video-tt">
+          <video controls playsinline preload="metadata" poster="${v.portada ? ruta(p.id, v.portada, v.v) : ""}" src="${ruta(p.id, v.video, v.v)}"></video>
+          <figcaption><span><b>${v.gancho ? `Gancho ${esc(v.gancho)}` : "Video"}</b> · ${esc(v.segundos)} s</span> <span class="id">${esc(p.guion.id)}${v.gancho ? `-${esc(v.gancho)}` : ""}</span>
+            <span class="fila"><a class="btn btn-mini btn-primario" href="${ruta(p.id, v.video, v.v)}" download="${esc(p.guion.id)}${v.gancho ? `-${esc(v.gancho)}` : ""}.mp4">⬇️ Video</a>
+            ${v.portada ? `<a class="btn btn-mini" href="${ruta(p.id, v.portada, v.v)}" download="${esc(p.guion.id)}${v.gancho ? `-${esc(v.gancho)}` : ""}_portada.jpg">⬇️ Portada</a>` : ""}</span>
+          </figcaption></figure>`).join("")}</div>
+        <p class="pista">Bájalo al cel, súbelo a TikTok, ponle el caption, fija el comentario${p.de_marca ? " y activa \"Contenido de marca\"" : ""}. Para la portada: en TikTok, "Editar portada" → sube la imagen.</p>` : ""}
+    </div>`;
+  }
+
+  // Subir un clip con barra de avance (se puede seguir usando la oficina mientras sube)
+  const subiendo = {};
+  function subirClip(pid, clave, archivo) {
+    subiendo[clave] = 0;
+    pintarGuionTT();
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/tiktok/api/subir?producto=${encodeURIComponent(pid)}&toma=${encodeURIComponent(clave)}&nombre=${encodeURIComponent(archivo.name)}`);
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    let ultimo = 0;
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      subiendo[clave] = Math.min(99, Math.round(e.loaded / e.total * 100));
+      if (subiendo[clave] - ultimo >= 2) { ultimo = subiendo[clave]; pintarGuionTT(); }
+    };
+    xhr.onloadend = async () => {
+      delete subiendo[clave];
+      let j = {};
+      try { j = JSON.parse(xhr.responseText); } catch { /* sin respuesta */ }
+      if (xhr.status !== 200) alert(j.error || "No se pudo subir el clip. Revisa tu conexión y vuelve a intentar.");
+      await refrescarGuionTT();
+    };
+    xhr.send(archivo);
+  }
+  async function refrescarGuionTT() {
+    if (!guionAbierto) return;
+    try { guionAbierto = await apiTT(`/api/producto/${encodeURIComponent(guionAbierto.id)}`); } catch { /* sigue con lo que hay */ }
+    if (!$("#modal").hidden && $("#modal-cuerpo .guion-shop")) pintarGuionTT();
+    consultarTT();
+  }
+
   function pintarGuionTT() {
     const p = guionAbierto, g = p.guion, f = p.ficha || {}, t = p.tomas;
     const elegido = p.gancho || "todos";
@@ -702,6 +775,7 @@
     const caption = `${g.caption}\n\n${(g.hashtags || []).join(" ")}`;
     const tomas = (t?.tomas || []).filter((x) => !letraDeToma(x) || letras.includes(letraDeToma(x)));
     const segundos = Math.round(tomas.reduce((s, x) => s + (Number(x.segundos) || 0), 0));
+    const clips = p.clips || {};
     const fila = (c, etiqueta) => `<tr><td>${esc(c.tiempo)}<br><small>${esc(etiqueta)}</small></td><td>${esc(c.toma)}</td>
       <td class="texto-pantalla">${esc(c.texto_pantalla)}</td><td>${esc(c.voz || "(sin voz)")}</td></tr>`;
     const caja = $(".modal-caja"), scroll = caja.scrollTop;
@@ -729,10 +803,12 @@
       ${t ? `<h3>🎥 Tomas de Diego ${gancho ? `para el gancho ${esc(gancho.letra)}` : "para los 3 ganchos"}</h3>
         <p class="pista">${tomas.length} tomas · unos ${segundos} s de grabación · en orden de grabación (por lugar)</p>
         ${t.material?.length ? `<p><b>Ten a la mano:</b> ${t.material.map(esc).join(", ")}</p>` : ""}
-        <ul class="tomas-lista">${tomas.map((x, k) => `<li><input type="checkbox" aria-label="Toma ${k + 1} grabada"><div>
+        <ul class="tomas-lista">${tomas.map((x, k) => { const c = clips.tomas?.[x.n]; return `<li><input type="checkbox" aria-label="Toma ${k + 1} grabada" ${c ? "checked" : ""}><div>
           <b>${k + 1}. ${esc(x.que_grabar)}</b> <small>· ${esc(x.lugar)} · ${esc(x.encuadre)} · ${esc(x.segundos)} s · para ${esc(x.para)}</small>
-          ${x.tip ? `<br><small>💡 ${esc(x.tip)}</small>` : ""}</div></li>`).join("")}</ul>
+          ${x.tip ? `<br><small>💡 ${esc(x.tip)}</small>` : ""}</div>
+          ${slotSubida(String(x.n), c)}</li>`; }).join("")}</ul>
         ${t.consejos?.length ? `<ul class="fuentes">${t.consejos.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}` : ""}
+      ${t ? seccionEdicion(p, clips, letras) : ""}
       <h3>🔎 Ficha de Toño</h3>
       <p>${esc(f.resumen || "")}</p>
       <p><b>Problema:</b> ${esc(f.problema || "—")} · <b>Público:</b> ${esc(f.publico || "—")} · <b>Duda principal:</b> ${esc(f.objecion || "—")}${f.precio ? ` · <b>Precio:</b> ${esc(f.precio)}` : ""}</p>
@@ -746,7 +822,27 @@
     </div>`;
     caja.scrollTop = scroll;
   }
+  $("#modal-cuerpo").addEventListener("change", (e) => {
+    const input = e.target.closest("[data-subir-clip]");
+    if (input?.files?.[0] && guionAbierto) subirClip(guionAbierto.id, input.dataset.subirClip, input.files[0]);
+  });
   $("#modal-cuerpo").addEventListener("click", (e) => {
+    const quitar = e.target.closest("[data-quitar-clip]");
+    if (quitar && guionAbierto) {
+      if (!confirm("¿Quitar este clip?")) return;
+      apiTT(`/api/producto/${encodeURIComponent(guionAbierto.id)}`, { accion: "quitar_clip", desde: quitar.dataset.quitarClip })
+        .then(refrescarGuionTT).catch((err) => alert(err.message));
+      return;
+    }
+    const editar = e.target.closest("[data-editar]");
+    if (editar && guionAbierto) {
+      editar.disabled = true;
+      const modo = $("#modal-cuerpo input[name=modo-ed]:checked")?.value || "tomas";
+      apiTT(`/api/producto/${encodeURIComponent(guionAbierto.id)}`, { accion: "editar", desde: modo })
+        .then(() => { window.Oficina.verAla("tiktok"); return refrescarGuionTT(); })
+        .catch((err) => { alert(err.message); editar.disabled = false; });
+      return;
+    }
     const gb = e.target.closest("[data-gancho]");
     if (gb && guionAbierto) {
       guionAbierto.gancho = gb.dataset.gancho;

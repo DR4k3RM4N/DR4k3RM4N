@@ -13,13 +13,14 @@ import argparse
 import datetime as dt
 import json
 import random
+import shutil
 import sys
 import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from zoneinfo import ZoneInfo
 
 AQUI = Path(__file__).resolve().parent
@@ -33,6 +34,7 @@ except ImportError:  # pragma: no cover
 from agentes import claude as ia  # noqa: E402
 from agentes import config  # noqa: E402
 
+import cris  # noqa: E402
 import shop  # noqa: E402
 
 ESTADO = AQUI / "tienda_estado.json"
@@ -44,16 +46,20 @@ EQUIPO = [
     ("tt_cazador", "Toño", "Cazador de productos", "#0ea5e9", "corto", "Busca el producto en Google: precio, reseñas y la duda que frena la compra. Solo guarda datos con enlace."),
     ("tt_guionista", "Sofi", "Guionista de Shop", "#f43f5e", "largo", "Escribe guiones que venden: 3 ganchos, cuerpo, caption, hashtags y comentario fijado."),
     ("tt_director", "Diego", "Director de grabación", "#a3e635", "rizos", "Te arma la lista de tomas para grabar todo en una sola sesión con tu celular."),
-    ("tt_editor", "Cris", "Editor vertical", "#f97316", "copete", "Edita tus clips en vertical: cortes rápidos, subtítulos karaoke y efectos. (Llega en el paso 3.)"),
-    ("tt_disenadora", "Vale", "Diseñadora de portadas", "#d946ef", "bob", "Hace la portada del video para tu perfil. (Llega en el paso 3.)"),
+    ("tt_editor", "Cris", "Editor vertical", "#f97316", "copete", "Edita tus clips en vertical: los ordena según el guion, quita silencios, cortes rápidos, textos y subtítulos karaoke con tu voz."),
+    ("tt_disenadora", "Vale", "Diseñadora de portadas", "#d946ef", "bob", "Saca la portada de un cuadro de tu video con el texto del gancho, para que se vea chida en tu perfil."),
     ("tt_analista", "Ana", "Analista de ventas", "#22c55e", "chongo", "Lee lo que vendió cada video y le dice al equipo qué repetir. (Llega en el paso 4.)"),
 ]
 ETAPAS = [("ficha", "tt_cazador"), ("guion", "tt_guionista"), ("tomas", "tt_director")]
-ACCION = {"ficha": "Investigar el producto", "guion": "Escribir el guion con 3 ganchos", "tomas": "Armar la lista de tomas"}
+ACCION = {"ficha": "Investigar el producto", "guion": "Escribir el guion con 3 ganchos", "tomas": "Armar la lista de tomas",
+          "video": "Editar tu video vertical", "portada": "Hacer la portada"}
+MAX_SUBIDA = 1536 * 1024 * 1024  # 1.5 GB por clip
 FRASES = {
     "tt_cazador": ["Buscando reseñas reales…", "¿Cuánto cuesta en otras tiendas?", "¿Qué duda tiene la gente?"],
     "tt_guionista": ["Probando ganchos…", "¿Problema → solución o antes y después?", "Puliendo el caption…"],
     "tt_director": ["Ordenando tomas por lugar…", "Close-up de manos aquí…", "Que se entienda sin sonido…"],
+    "tt_editor": ["Escuchando tus clips…", "Quitando silencios…", "Cortes cada 2 segundos…", "Subtítulos karaoke…"],
+    "tt_disenadora": ["Buscando el mejor cuadro…", "Más grande el texto…"],
 }
 ACTIVAS = ("esperando", "trabajando")
 
@@ -75,7 +81,10 @@ class Tienda:
         self.gasto: dict = datos.get("gasto", {})
         for p in self.productos.values():  # lo que quedó a medias al apagar
             if p["estado"] == "trabajando":
-                p["estado"], p["error"] = "error", "Se interrumpió al apagar la oficina. Dale Rehacer."
+                p["estado"], p["error"] = "error", "Se interrumpió al apagar la oficina. Dale Reintentar."
+                for e, v in p["etapas"].items():
+                    if v == "trabajando":
+                        p["etapas"][e] = "fallo"
         for t in self.tareas:
             if t["estado"] in ACTIVAS:
                 t["estado"], t["error"] = "cancelada", "Se interrumpió al apagar la oficina."
@@ -105,7 +114,9 @@ class Tienda:
                 productos.append({k: p.get(k) for k in ("id", "nombre", "estado", "etapas", "error", "costo", "creado",
                                                          "de_marca", "duracion", "enlace", "precio", "gancho")}
                                  | {"formato": (p.get("guion") or {}).get("formato"),
-                                    "guion_id": (p.get("guion") or {}).get("id")})
+                                    "guion_id": (p.get("guion") or {}).get("id"),
+                                    "videos": len(p.get("videos") or []),
+                                    "clips": len((p.get("clips") or {}).get("tomas", {})) + bool((p.get("clips") or {}).get("completo"))})
             return {"version": self.version, "demo": self.demo, "ahora": time.time(),
                     "agentes": list(self.agentes.values()), "productos": productos,
                     "tareas": [t for t in self.tareas[-120:] if t["estado"] in ACTIVAS]
@@ -181,10 +192,41 @@ class Tienda:
             with self.lock:
                 del self.productos[pid]
                 self._tocar()
+            shutil.rmtree(cris.SALIDA / pid, ignore_errors=True)
+            return {"ok": True}
+        if accion == "quitar_clip":
+            clips = p.get("clips") or {}
+            archivo = clips.get("completo") if desde == "completo" else clips.get("tomas", {}).get(desde)
+            if not archivo:
+                return {"error": "Ese clip no está."}
+            (cris.SALIDA / pid / "clips" / archivo["archivo"]).unlink(missing_ok=True)
+            with self.lock:
+                if desde == "completo":
+                    clips.pop("completo", None)
+                else:
+                    clips["tomas"].pop(desde, None)
+                self._tocar()
+            return {"ok": True}
+        if accion == "editar" or (accion == "rehacer" and desde == "video"):
+            if p["estado"] == "trabajando":
+                return {"error": "Ya están trabajando en él."}
+            modo = desde if desde in ("tomas", "completo") else p.get("modo_edicion", "tomas")
+            clips = p.get("clips") or {}
+            if modo == "completo" and not clips.get("completo"):
+                return {"error": "Primero sube tu video completo."}
+            if modo == "tomas" and not clips.get("tomas"):
+                return {"error": "Primero sube al menos un clip de las tomas."}
+            with self.lock:
+                p["estado"], p["error"], p["modo_edicion"] = "trabajando", None, modo
+                p["etapas"].update(video="pendiente", portada="pendiente")
+                self._tocar()
+            threading.Thread(target=self._editar, args=(pid,), daemon=True).start()
             return {"ok": True}
         if accion == "rehacer":
             if p["estado"] == "trabajando":
                 return {"error": "Ya están trabajando en él."}
+            if desde not in ("ficha", "guion", "tomas") and p["etapas"].get("video") == "fallo":
+                return self.accion(pid, "editar", p.get("modo_edicion", "tomas"))
             etapas = [e for e, _ in ETAPAS]
             if desde not in etapas:  # desde donde falló, o el guion si todo salió bien
                 desde = next((e for e in etapas if p["etapas"].get(e) != "hecha"), "guion")
@@ -196,6 +238,157 @@ class Tienda:
             threading.Thread(target=self._producir, args=(pid, desde), daemon=True).start()
             return {"ok": True}
         return {"error": "Acción inválida."}
+
+    def subir(self, pid: str, toma: str, nombre: str, entrada, largo: int) -> dict:
+        """Guarda un clip que mandaste desde el cel (va directo al disco, sin llenar la memoria)."""
+        p = self.productos.get(pid)
+        if not p:
+            return {"error": "No encontré ese producto."}
+        if not (toma == "completo" or toma.isdigit()):
+            return {"error": "¿De qué toma es?"}
+        if largo <= 0 or largo > MAX_SUBIDA:
+            return {"error": "El clip debe pesar menos de 1.5 GB."}
+        if shutil.disk_usage(AQUI).free < largo + 1024 ** 3:
+            return {"error": "Ya casi no queda espacio en el servidor. Borra productos viejos y vuelve a intentar."}
+        ext = Path(nombre).suffix.lower()
+        ext = ext if ext in cris.EXTENSIONES else ".mp4"
+        carpeta = cris.SALIDA / pid / "clips"
+        carpeta.mkdir(parents=True, exist_ok=True)
+        clips = p.setdefault("clips", {"tomas": {}})
+        clips.setdefault("tomas", {})
+        anterior = clips.get("completo") if toma == "completo" else clips["tomas"].get(toma)
+        destino = carpeta / f"{'completo' if toma == 'completo' else f'toma_{int(toma):02d}'}_{uuid.uuid4().hex[:4]}{ext}"
+        restante = largo
+        with open(destino, "wb") as f:
+            while restante > 0:
+                trozo = entrada.read(min(1024 * 1024, restante))
+                if not trozo:
+                    break
+                f.write(trozo)
+                restante -= len(trozo)
+        if restante:
+            destino.unlink(missing_ok=True)
+            return {"error": "La subida se cortó. Vuelve a intentar."}
+        try:
+            segundos = round(cris.duracion(destino), 1)
+        except cris.ErrorEdicion as exc:
+            destino.unlink(missing_ok=True)
+            return {"error": str(exc)}
+        if anterior:
+            (carpeta / anterior["archivo"]).unlink(missing_ok=True)
+        info = {"archivo": destino.name, "mb": round(largo / 1024 / 1024, 1), "segundos": segundos, "nombre": nombre[:80]}
+        with self.lock:
+            if toma == "completo":
+                clips["completo"] = info
+            else:
+                clips["tomas"][toma] = info
+            self._tocar()
+        return {"ok": True, **info}
+
+    def _editar(self, pid: str) -> None:
+        """Cris edita (un video por gancho elegido) y Vale hace la portada de cada uno."""
+        p = self.productos[pid]
+        g, carpeta = p["guion"], cris.SALIDA / pid
+        letras = ["A", "B", "C"] if p.get("gancho", "todos") == "todos" else [p["gancho"]]
+        pista = " ".join([*(x["voz"] for x in g["ganchos"]), *(c["voz"] for c in g["cuerpo"])])
+        modo = p.get("modo_edicion", "tomas")
+        clips = p.get("clips") or {}
+
+        def tarea(etapa, agente):
+            t = {"id": uuid.uuid4().hex[:8], "agente": agente, "etapa": etapa, "accion": ACCION[etapa], "proyecto": pid,
+                 "titulo": p["nombre"], "estado": "trabajando", "creado": time.time(), "inicio": time.time(),
+                 "fin": None, "error": None}
+            with self.lock:
+                self.tareas.append(t)
+                p["etapas"][etapa] = "trabajando"
+                self._tocar()
+            self.poner(agente, estado="trabajando", ubicacion="casa")
+            self.decir(agente, random.choice(FRASES[agente]))
+            return t
+
+        def fallo(t, etapa, agente, exc):
+            with self.lock:
+                t.update(estado="fallo", fin=time.time(), error=str(exc)[:300])
+                p["etapas"][etapa] = "fallo"
+                p["estado"], p["error"] = "error", str(exc)[:300]
+                self._tocar()
+            self.poner(agente, estado="libre")
+            self.decir(agente, "No pude terminar, jefe. Revisa el mensaje y dale Reintentar.")
+
+        t = tarea("video", "tt_editor")
+        ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = pid, "video", t
+
+        def avance(paso, fraccion):
+            with self.lock:
+                t.update(paso=paso, avance=round(fraccion, 3))
+                self._tocar()
+
+        videos = []
+        for viejo in [*carpeta.glob("video_*"), *carpeta.glob("portada_*")]:  # que no queden videos de la edición anterior
+            viejo.unlink(missing_ok=True)
+        try:
+            from agentes import cola_video
+            with cola_video.turno("Cris (TikTok Shop)", lambda texto: (avance(texto, 0.0), self.decir("tt_editor", texto))):
+                if not cris.whisper_disponible() and not self.demo:
+                    self.decir("tt_editor", "No tengo el oído instalado (Whisper): edito sin subtítulos esta vez.")
+                avance("Escuchando tus clips", 0.02)
+                for k, letra in enumerate(letras):
+                    if modo == "completo":
+                        piezas = cris.piezas_por_completo(carpeta / "clips" / clips["completo"]["archivo"], g, letra, pista)
+                    else:
+                        archivos = {n: carpeta / "clips" / c["archivo"] for n, c in clips.get("tomas", {}).items()}
+                        piezas = cris.piezas_por_tomas((p.get("tomas") or {}).get("tomas", []), archivos, letra, pista)
+                    if len(letras) > 1 and not any(x["bloque"] == f"gancho_{letra}" for x in piezas):
+                        continue  # de este gancho no hay toma: no se hace su video
+                    destino = carpeta / f"video_{letra}.mp4"
+                    base, parte = k / len(letras), 1 / len(letras)
+                    dur = cris.render(piezas, g, letra, destino, pista,
+                                      lambda paso, f, letra=letra, base=base, parte=parte:
+                                      avance(f"Gancho {letra}: {paso}", base + f * parte))
+                    videos.append({"gancho": letra, "video": destino.name, "segundos": round(dur, 1), "v": int(time.time())})
+                if not videos:  # no subió tomas de ningún gancho: un solo video con el cuerpo
+                    piezas = (cris.piezas_por_completo(carpeta / "clips" / clips["completo"]["archivo"], g, None, pista)
+                              if modo == "completo" else
+                              cris.piezas_por_tomas((p.get("tomas") or {}).get("tomas", []),
+                                                    {n: carpeta / "clips" / c["archivo"] for n, c in clips.get("tomas", {}).items()},
+                                                    None, pista))
+                    destino = carpeta / "video_cuerpo.mp4"
+                    dur = cris.render(piezas, g, None, destino, pista, avance)
+                    videos.append({"gancho": "", "video": destino.name, "segundos": round(dur, 1), "v": int(time.time())})
+        except Exception as exc:  # noqa: BLE001
+            ia.contexto.tarea = None
+            return fallo(t, "video", "tt_editor", exc)
+        ia.contexto.tarea = None
+        if cris.ultimo_error:
+            self.decir("tt_editor", "No pude escuchar tus clips, así que esta vez van sin subtítulos karaoke. 😕")
+            cris.ultimo_error = ""
+        with self.lock:
+            t.update(estado="hecha", fin=time.time(), resultado=f"{len(videos)} video(s) · " +
+                     ", ".join(f"{v['segundos']} s" for v in videos), paso=None)
+            p["etapas"]["video"] = "hecha"
+            self._tocar()
+        self.poner("tt_editor", estado="libre", ubicacion="visita:tt_disenadora")
+        self.decir("tt_editor", "Vale, ya está el video. ¿Me haces la portada?")
+        time.sleep(4)
+        self.poner("tt_editor", ubicacion="casa")
+
+        t = tarea("portada", "tt_disenadora")
+        try:
+            for v in videos:
+                gancho = next((x for x in g["ganchos"] if x["letra"] == v["gancho"]), None)
+                texto = gancho["texto_pantalla"] if gancho else p["nombre"]
+                nombre = f"portada_{v['gancho'] or 'cuerpo'}.jpg"
+                cris.portada(carpeta / v["video"], texto, carpeta / nombre)
+                v["portada"] = nombre
+        except Exception as exc:  # noqa: BLE001
+            return fallo(t, "portada", "tt_disenadora", exc)
+        with self.lock:
+            t.update(estado="hecha", fin=time.time(), resultado=f"{len(videos)} portada(s)")
+            p["etapas"]["portada"] = "hecha"
+            p["videos"], p["estado"] = videos, "video_listo"
+            self._tocar()
+        self.poner("tt_disenadora", estado="libre")
+        self.decir("tt_disenadora", f"¡Listo, jefe! {'Tus ' + str(len(videos)) + ' videos' if len(videos) > 1 else 'Tu video'} de {p['nombre']} ya se pueden subir 🎬")
 
     def detalle(self, pid: str) -> dict:
         with self.lock:
@@ -297,7 +490,20 @@ def activar_demo() -> None:
                 "tomas": [dict(zip(("lugar", "que_grabar", "encuadre", "segundos", "para", "tip"), x), n=i) for i, x in enumerate(lista, 1)],
                 "consejos": ["Celular en vertical y con la lente limpia.", "Nada importante arriba ni abajo del cuadro: ahí van los botones de TikTok."]}
 
+    def transcribir(ruta, pista=""):  # demo: reparte las palabras del guion a lo largo del clip
+        if not cris.tiene_audio(ruta):
+            return []
+        dur = cris.duracion(ruta)
+        palabras = (pista or "hola").split()[:max(3, int(dur * 2.2))]
+        paso = (dur - 0.6) / max(1, len(palabras))
+        return [{"w": w, "t": round(0.3 + i * paso, 3), "d": round(paso * 0.8, 3)} for i, w in enumerate(palabras)]
+
+    def clasificar(trozos, guion):
+        orden = ["gancho_A", "gancho_B", "gancho_C", *cris.BLOQUES]
+        return [orden[min(i, len(orden) - 1)] for i in range(len(trozos))]
+
     shop.ficha, shop.guion, shop.tomas = ficha, guion, tomas
+    cris.transcribir, cris.clasificar = transcribir, clasificar
     ia.json_estructurado = lambda *a, **k: (_ for _ in ()).throw(ia.ErrorIA("modo demo"))
 
 
@@ -321,9 +527,53 @@ def crear_servidor(tienda: Tienda, puerto: int) -> ThreadingHTTPServer:
             if ruta.startswith("/api/producto/"):
                 r = tienda.detalle(ruta.rsplit("/", 1)[-1])
                 return self._json(r, 200 if r.get("id") else 404)
+            if ruta.startswith("/salida/"):
+                return self._archivo(ruta[len("/salida/"):])
             self._json({"error": "no encontrado"}, 404)
 
+        def _archivo(self, relativa: str):
+            """Videos y portadas terminados (con rangos, para poder adelantar el video)."""
+            ruta = (cris.SALIDA / relativa).resolve()
+            if not ruta.is_relative_to(cris.SALIDA.resolve()) or not ruta.is_file() or "clips" in ruta.parts:
+                return self._json({"error": "no encontrado"}, 404)
+            tam = ruta.stat().st_size
+            ini, fin = 0, tam - 1
+            rango = self.headers.get("Range", "")
+            if rango.startswith("bytes="):
+                a, _, b = rango[6:].partition("-")
+                ini = int(a) if a else max(0, tam - int(b or 0))
+                fin = min(tam - 1, int(b)) if a and b else tam - 1
+                self.send_response(206)
+                self.send_header("Content-Range", f"bytes {ini}-{fin}/{tam}")
+            else:
+                self.send_response(200)
+            self.send_header("Content-Type", "video/mp4" if ruta.suffix == ".mp4" else "image/jpeg")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(fin - ini + 1))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            with open(ruta, "rb") as f:
+                f.seek(ini)
+                restante = fin - ini + 1
+                try:
+                    while restante > 0:
+                        trozo = f.read(min(65536, restante))
+                        if not trozo:
+                            break
+                        self.wfile.write(trozo)
+                        restante -= len(trozo)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
         def do_POST(self):
+            url = urlparse(self.path)
+            if url.path == "/api/subir":
+                if "application/octet-stream" not in self.headers.get("Content-Type", ""):
+                    return self._json({"error": "tipo no permitido"}, 403)
+                q = parse_qs(url.query)
+                r = tienda.subir(q.get("producto", [""])[0], q.get("toma", [""])[0], q.get("nombre", ["clip.mp4"])[0],
+                                 self.rfile, int(self.headers.get("Content-Length") or 0))
+                return self._json(r, 400 if "error" in r else 200)
             if "application/json" not in self.headers.get("Content-Type", ""):
                 return self._json({"error": "tipo no permitido"}, 403)
             try:

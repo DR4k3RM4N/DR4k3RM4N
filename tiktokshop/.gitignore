@@ -1,3 +1,4 @@
 .env
 tienda_estado*.json
 __pycache__/
+salida/
