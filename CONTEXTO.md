@@ -1,0 +1,116 @@
+# Contexto completo del proyecto (para continuar en un chat nuevo)
+
+Última actualización: noviembre 2026. Rama de trabajo: `claude/keen-johnson-v42a39`.
+
+## 1. Qué es
+
+`autocanal/` es una **agencia automática de agentes de IA** para el canal de YouTube "Apps que sí pagan"
+(público de México). Busca apps que prometen pagar dinero (y desde hace poco **cualquier tema**: videojuegos,
+películas, tecnología…), las investiga, escribe el guion, narra, edita el video, hace miniaturas, escribe el blog
+con SEO y publica en YouTube y WordPress.
+
+Se ve como una **oficina isométrica en pixel art** (original, parecida en espíritu a Habbo, sin copiarlo) en el
+navegador, donde los agentes caminan, trabajan en paralelo, platican, se van al **patio de descanso** cuando no
+tienen trabajo, y **Paola (productora) le propone ideas al jefe y le pide su opinión/aprobación**.
+
+### El equipo
+| id | Nombre | Rol |
+|---|---|---|
+| productora | Paola | Ideas, entiende lo que pide el jefe, propone y pregunta |
+| investigador | Iván | Play Store + Google (Serper/Tavily), expediente con evidencia |
+| guionista | Gabi | Guion por escenas, títulos, textos de miniatura |
+| locutor | Leo | Voz (Edge TTS gratis, con tiempos por palabra; o ElevenLabs) |
+| disenadora | Dani | Miniaturas (3 opciones con el estilo aprendido; elige la más parecida a tus referencias) |
+| editor | Edu | Video con ffmpeg: motion graphics por escena, subtítulos karaoke, transiciones, música |
+| redactora | Rosa | Blog SEO (preguntas de Google, búsquedas relacionadas, enlaces internos) |
+| community | Carla | Sube a YouTube (y WordPress) |
+| jefe | Tú (Miguel) | Aprueba, opina, pide cambios |
+
+## 2. Cómo está hecho (autocanal/)
+- `oficina.py`: servidor (Python stdlib, `ThreadingHTTPServer`), estado, tareas, propuestas, proyectos, gasto,
+  SSE `/eventos`, contraseña (OFICINA_PASSWORD), chat por Telegram/WhatsApp, tope diario, reanudar trabajos
+  interrumpidos (hasta 2 veces), agenda de ideas diaria. Flags: `--demo`, `--host`, `--puerto`,
+  `--configurar-telegram`, `--configurar-whatsapp`, `--probar-whatsapp`, `--probar-wordpress`.
+- `canal.py`: la producción (`Produccion`) con etapas y dependencias (`DEPENDE`): investigar → {guion, blog};
+  guion → {voz, miniatura}; voz → video. Varias corren al mismo tiempo. `publicar()` sigue con YouTube aunque falle
+  WordPress (el blog queda pendiente con botón "Subir blog" → `publicar_blog()`).
+  Ids de proyecto: `com.app` (Play Store), `com.app~2` (segundo video), `web:slug` (app fuera de Play Store),
+  `tema:slug` (tema libre).
+- `agentes/`:
+  - `claude.py`: llamadas al API (salidas JSON estructuradas, costo por llamada, tope diario). Modelo por tarea en
+    `TAREAS` (todo Haiku 5.5, `estilo` en Sonnet 5.5); se cambia con `MODELO_<TAREA>` en `.env`.
+  - `buscador.py`: entiende el pedido (`idea` / `app` / `tema` de apps / `libre` = cualquier tema / general).
+  - `temas.py`: temas libres: ideas con lo que se busca en Google ahora, investigación, imágenes.
+  - `investigador.py`, `playstore.py`, `buscar_web.py` (Serper/Tavily: búsqueda, SEO, imágenes).
+  - `guionista.py` (modo apps y modo tema), `voz.py`, `graficos.py` (tarjetas y miniaturas con Pillow),
+    `editor.py` (ffmpeg; transiciones por grupos de 6 para no quedarse sin RAM; caché de escenas; avance en vivo),
+    `efectos.py` (plan de motion graphics de Edu: contador, texto que salta, sello, cintillo, zoom de golpe,
+    sacudida, destello, borde de alerta; con sonidos generados), `estilo.py` (estilo aprendido: miniaturas, blog,
+    video de referencia por archivo o **enlace con yt-dlp**), `blog.py` (WordPress REST), `youtube.py`,
+    `telegram.py`, `whatsapp.py`, `chat_jefe.py`, `simulado.py` (modo demo sin APIs).
+- `oficina/`: `index.html`, `app.js` (pestañas Bandeja, Equipo, Proyectos, Estilo, Chat; revisión con 3
+  miniaturas y SEO), `oficina.js` (motor isométrico en canvas + patio), `estilo.css`.
+- `despliegue/`: `instalar.sh`, `actualizar.sh`, `caddy.sh`, guías `GUIA_SERVIDOR.md`, `GUIA_WHATSAPP.md`,
+  `GUIA_YOUTUBE.md`.
+- No se suben a GitHub: `.env`, `estilo/`, `salida/`, `entrada/`, tokens.
+
+## 3. El servidor (ya funcionando)
+- **OVH VPS-1** (Europa/UK), Ubuntu. Entra con `ssh ubuntu@51.195.201.84`.
+- Código en `/opt/canal` (clon de la rama `claude/keen-johnson-v42a39`), app en `/opt/canal/autocanal`,
+  usuario de servicio `canal`, servicio systemd `oficina`, **Caddy** (HTTPS) → `127.0.0.1:8765`,
+  dirección `https://51-195-201-84.sslip.io`, firewall ufw, swap de 2 GB (se agregó por un corte por falta de RAM).
+- `.env` en `/opt/canal/autocanal/.env` (leerlo/editarlo con `sudo`).
+- Actualizar: `sudo bash /opt/canal/autocanal/despliegue/actualizar.sh` (baja código, instala dependencias,
+  actualiza edge-tts y yt-dlp, revisa Caddy y la oficina).
+- Logs: `sudo journalctl -u oficina -n 50` · `sudo journalctl -u caddy -n 30`.
+- Conectado: Anthropic, Serper y Tavily, Telegram (chat con el equipo), YouTube (OAuth hecho, la app de Google Cloud
+  ya está publicada). WhatsApp Cloud API está programado (opcional).
+
+## 4. Pendientes y problemas conocidos
+- **WordPress da 401 `rest_cannot_create`**: el hosting le quita el encabezado `Authorization` a las peticiones.
+  Arreglo: agregar al `.htaccess` del blog
+  `SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1`
+  (o `RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]`). **En pausa**: Miguel no puede entrar al
+  administrador de archivos ahorita. Mientras, los videos se publican y el blog queda "pendiente".
+  Diagnóstico: `sudo -u canal /opt/canal/autocanal/.venv/bin/python oficina.py --probar-wordpress`.
+- Descargar referencias de YouTube con yt-dlp puede fallar desde el VPS ("confirma que no eres un bot"): el sistema
+  avisa y se sube el archivo.
+- Ideas ofrecidas y no hechas: sección "🎤 Tu forma de hablar" para Gabi (ejemplos de cómo habla Miguel + pasada
+  de humor).
+
+## 5. Lo que le gusta / no le gusta a Miguel (aprendido en el camino)
+- Que todo sea **automático** y que no se detenga por una sola cosa (ej. que el blog no frene YouTube).
+- Ver **qué está haciendo cada agente** en tiempo real (pestaña Equipo, avance del editor en %).
+- **Gasto mínimo**: le molestó cuando la investigación costó $0.19; ahora cada video cuesta centavos.
+- Que **piense lo que pide**: "hazme un video de Marvel Rivals" debe dar ideas buenas y concretas, no genéricas.
+- Visual bonito, agentes que se pueden picar, oficina viva.
+- Edición de alto impacto (motion graphics, karaoke), aprender estilos de referencias.
+
+## 6. Siguiente proyecto: oficina para TikTok Shop
+Miguel quiere una **segunda oficina, igual de automática, para vender productos de TikTok Shop México como
+afiliado/creador**. Lo que ya se sabe y lo que conviene:
+
+- Ya existe una skill suya, **`guion-tiktok-shop`** (en su cuenta de Claude, no en este repo), con las reglas de
+  guiones que venden en Shop: estructura de 35–50 s (gancho 0–3 s con capas visual/texto/voz → puente → problema →
+  solución/demo antes del segundo 30 → 2–3 beneficios con prueba social real → "pícale al carrito naranja"),
+  versión corta de 15–25 s para productos de impulso, formatos (problema→solución, antes/después, reseña,
+  unboxing, tutorial, objeción/FAQ, ASMR), **3 ganchos A/B/C con el mismo cuerpo** (advertencia, curiosidad, demo
+  muda), cambio de toma cada 1.5–2.5 s, texto en zona segura (no arriba 15 %, abajo 20 %, derecha 15 %), que se
+  entienda sin sonido, tono de recomendación a un compa en español mexicano, honesto, precios en pesos, nada de
+  promesas médicas ni reseñas inventadas, marcar contenido de marca/afiliado. Entrega: ángulo, 3 ganchos, cuerpo
+  en tabla, caption + hashtags, comentario fijado, ID `AAAA-MM-DD_producto_formato`. Registra resultados (vendió /
+  no vendió) para aprender. **La oficina debe seguir esas reglas y aprender de lo que vende.**
+- **Reutilizar el motor**: misma base de `autocanal` (oficina isométrica, agentes, tareas en paralelo, costos,
+  tope diario, Telegram, voz con tiempos por palabra, editor con motion graphics y karaoke, aprendizaje de estilo).
+  Hay que agregar video **vertical 1080x1920** (hoy el editor es 1920x1080).
+- **Mismo VPS, separado**: otra carpeta (ej. `/opt/tiktok`), otro servicio systemd, otro puerto (ej. 8766) y otro
+  sitio en Caddy (ej. `https://tiktok.51-195-201-84.sslip.io`, sslip resuelve subdominios). Su propio `.env`,
+  estado y tope de gasto. Ojo con la RAM si las dos oficinas editan video a la vez (que se turnen o cola común).
+- Agentes posibles: cazador de productos en tendencia (comisión, precio, ventas, reseñas), guionista de Shop
+  (con la skill), director de grabación (lista de tomas para que Miguel grabe con el producto), editor vertical,
+  diseñador de portada, analista de resultados (qué vendió → aprende).
+- **Publicación**: subir a TikTok por API requiere aprobación de TikTok (Content Posting API con auditoría); al
+  inicio lo práctico es dejar el video listo para que Miguel lo suba desde el celular, o como borrador.
+- Preguntas para Miguel al arrancar: ¿graba él los productos (manos/cara/voz propia) o todo con voz IA e imágenes?,
+  ¿qué nichos/productos?, ¿cuántos videos al día?, ¿cómo ve sus ventas (panel de TikTok Shop / afiliados) para
+  que la oficina aprenda qué vende?, ¿repo nuevo o carpeta nueva en este repo?
