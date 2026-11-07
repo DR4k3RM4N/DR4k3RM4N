@@ -398,3 +398,36 @@ td, th { overflow-wrap: break-word; }
 .funnel-advice { margin: 12px 0 0 !important; font-size: 13px; color: var(--muted); }
 .funnel-advice strong { color: var(--text); font-weight: 500; }
 @media (max-width: 900px) { .funnel { grid-template-columns: 1fr 1fr; gap: 6px; } .funnel-step + .funnel-step::before, .funnel-step + .funnel-step::after { display: none; } }
+
+/* ---------- Calendario de datos cargados ---------- */
+.datacal { --blue: #2f70bb; --blue-soft: #dce8f7; }
+.datacal-months { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 16px 24px; }
+.datacal-name { font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.datacal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; font-variant-numeric: tabular-nums; }
+.datacal-wd { font-size: 11px; color: var(--faint); text-align: center; }
+.datacal-day { height: 24px; border-radius: 5px; display: grid; place-items: center; font-size: 11px; color: var(--faint); background: var(--raised); opacity: .5; }
+.datacal-day.in { opacity: 1; }
+.datacal-day.trend { background: var(--blue-soft); color: #1e4d86; }
+.datacal-day.live { background: var(--blue); color: #fff; font-weight: 600; }
+.datacal-day.in { box-shadow: inset 0 0 0 1.5px var(--text); }
+.datacal-day.none.in { box-shadow: inset 0 0 0 1px var(--control); }
+.datacal-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 14px; font-size: 12px; color: var(--muted); }
+.datacal-key { display: inline-flex; align-items: center; gap: 6px; }
+.datacal-key i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.datacal-key i.live { background: var(--blue); }
+.datacal-key i.trend { background: var(--blue-soft); }
+.datacal-key i.none { background: var(--raised); }
+.datacal-key i.in-key { box-shadow: inset 0 0 0 1.5px var(--text); }
+@media (max-width: 600px) { .datacal-months { grid-template-columns: 1fr 1fr; gap: 12px; } .datacal-day { height: 22px; } }
+.chart-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--muted); margin: 0 0 4px; }
+.chart-title .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.chart-title .sw.blue { background: #2f70bb; }
+.chart-title .sw.pink { background: var(--chart-1); }
+.sub-finding { font-size: 13px; margin: -4px 0 12px !important; }
+.overview > .col > .kpis + .kpis { margin-top: calc(-1 * var(--gap) + 8px); }
+.allmetrics > summary { font-size: 14px; }
+.kv-grid { grid-template-columns: repeat(4, auto minmax(0, 1fr)); gap: 8px 16px; margin: 14px 0 0; }
+.kv-grid dt { white-space: nowrap; }
+.kv-grid dd { text-align: right; padding-right: 16px; }
+@media (max-width: 1100px) { .kv-grid { grid-template-columns: repeat(2, auto minmax(0, 1fr)); } }
+@media (max-width: 600px) { .kv-grid { grid-template-columns: auto minmax(0, 1fr); } .kv-grid dd { padding-right: 0; } }

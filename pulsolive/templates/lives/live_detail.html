@@ -20,6 +20,31 @@
 {% if c.rank %}<p class="muted" style="font-size:13px;margin:8px 0 0">Lugar {{ c.rank.position }} de {{ c.rank.of }} lives de {{ live.brand.name }} por ventas por hora.</p>{% endif %}
 {% endwith %}
 
+<details class="card allmetrics" style="margin-top:var(--gap)">
+  <summary>Todas las métricas de este live</summary>
+  <dl class="kv kv-grid">
+    <dt>Inicio</dt><dd>{{ live.started_at|date:"d/m/Y H:i" }}</dd>
+    <dt>Duración</dt><dd>{{ live.duration_minutes }} min</dd>
+    <dt>Ventas (GMV)</dt><dd>{{ live.gmv|money }}</dd>
+    <dt>Pedidos</dt><dd>{{ live.orders|num }}</dd>
+    <dt>Piezas vendidas</dt><dd>{{ live.units_sold|num }}</dd>
+    <dt>Clientes</dt><dd>{% if live.customers %}{{ live.customers|num }}{% else %}<span class="dash">—</span>{% endif %}</dd>
+    <dt>Ticket promedio</dt><dd>{{ live.aov|money }}</dd>
+    <dt>Ventas por hora</dt><dd>{{ live.gmv_per_hour|money }}</dd>
+    <dt>Impresiones del live</dt><dd>{% if live.impressions %}{{ live.impressions|num }}{% else %}<span class="dash">—</span>{% endif %}</dd>
+    <dt>Espectadores</dt><dd>{{ live.viewers|num }}</dd>
+    <dt>Pico de espectadores</dt><dd>{% if live.peak_viewers %}{{ live.peak_viewers|num }}{% else %}<span class="dash">—</span>{% endif %}</dd>
+    <dt>Visualización promedio</dt><dd>{{ live.avg_watch_seconds|mmss }} min</dd>
+    <dt>Impresiones de producto</dt><dd>{% if live.product_impressions %}{{ live.product_impressions|num }}{% else %}<span class="dash">—</span>{% endif %}</dd>
+    <dt>Clics en producto</dt><dd>{{ live.product_clicks|num }}</dd>
+    <dt>Seguidores nuevos</dt><dd>{{ live.new_followers|num }}</dd>
+    <dt>Likes</dt><dd>{{ live.likes|num }}</dd>
+    <dt>Comentarios</dt><dd>{{ live.comments|num }}</dd>
+    <dt>Compartidos</dt><dd>{{ live.shares|num }}</dd>
+    {% if live.external_id %}<dt>ID de TikTok</dt><dd><code>{{ live.external_id }}</code></dd>{% endif %}
+  </dl>
+</details>
+
 {% if analysis.funnel %}
 <div class="card" style="margin-top:var(--gap)">
   <div class="card-head"><h2>Embudo de este live</h2><span class="meta">contra el promedio de {{ live.brand.name }}</span></div>

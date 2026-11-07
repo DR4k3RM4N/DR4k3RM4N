@@ -1,4 +1,4 @@
-// charts.js: copiado de taste-skill (github.com/leonxlnx/taste-skill, licencia MIT).
+// charts.js: copiado de taste-skill (github.com/leonxlnx/taste-skill, licencia MIT). Cambio local: etiqueta de picos en español.
 // tasteskill / charts.js — small, dependency-free charts for app screens, drawn in SVG from your data.
 // They follow references/app-screens.md: one question per chart, one series that matters, 3–5 quiet
 // horizontal gridlines, round ticks that top out above the largest value, 2px straight lines with no
@@ -263,7 +263,7 @@
       const x = (i) => padL + (i * (w - padL - padR)) / Math.max(1, labels.length - 1);
       // the peaks clipped by max are labelled in the rows above the plot, where the line leaves it
       const peaks = [];
-      series.forEach((sr, k) => sr.values.forEach((v, i) => { if (v != null && v > yt.at(-1) && (i === 0 || sr.values[i - 1] == null || sr.values[i - 1] <= yt.at(-1))) { let j = i, peak = v; while (j < sr.values.length && sr.values[j] != null && sr.values[j] > yt.at(-1)) { peak = Math.max(peak, sr.values[j]); j++; } peaks.push({ x: x(i), label: format(peak) + ' at ' + labels[i], colour: colourOf(sr, k) }); } }));
+      series.forEach((sr, k) => sr.values.forEach((v, i) => { if (v != null && v > yt.at(-1) && (i === 0 || sr.values[i - 1] == null || sr.values[i - 1] <= yt.at(-1))) { let j = i, peak = v; while (j < sr.values.length && sr.values[j] != null && sr.values[j] > yt.at(-1)) { peak = Math.max(peak, sr.values[j]); j++; } peaks.push({ x: x(i), label: format(peak) + ' el ' + labels[i], colour: colourOf(sr, k) }); } }));
       const scale = (N) => { const padT = LANE(N.rows); return { padT, y: (v) => padT + (h - padT - padB) * (1 - (v - yt[0]) / (yt.at(-1) - yt[0])) }; };
       const linesAt = (y) => series.map((sr) => { const out = []; sr.values.forEach((v, i) => { if (v == null) { out.push(null); return; } const p = [x(i), y(Math.min(v, yt.at(-1)))]; const prev = out.at(-1); if (step && prev) out.push([p[0], prev[1]]); out.push(p); }); return out; }).concat([].concat(reference || []).map((r) => [[padL, y(r.value)], [w, y(r.value)]]));
       let N = prepNotes(s, annotations, x, w, peaks), { padT, y } = scale(N), todayBox = null;

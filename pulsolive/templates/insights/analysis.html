@@ -12,6 +12,7 @@
   <div class="title-actions"><a class="btn" href="{% url 'lives:quick_tag' %}">Etiquetar lives</a><a class="btn btn-primary" href="{% url 'insights:experiment_list' %}">Crear prueba A/B</a></div>
 </div>
 {% include "insights/_filters.html" %}
+<div style="margin-top:var(--gap)">{% include "insights/_calendar.html" %}</div>
 
 {% if result.kpis.lives < 2 %}
   <div class="empty" style="margin-top:var(--gap)">Se necesitan al menos 2 lives en el periodo. <a href="{% url 'lives:import' %}">Importa más lives</a> o amplía las fechas.</div>

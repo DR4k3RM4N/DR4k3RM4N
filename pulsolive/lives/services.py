@@ -20,6 +20,9 @@ def live_to_row(live: LiveSession) -> dict:
         "peak_viewers": live.peak_viewers,
         "avg_watch_seconds": live.avg_watch_seconds,
         "new_followers": live.new_followers,
+        "likes": live.likes,
+        "comments": live.comments,
+        "shares": live.shares,
         "product_clicks": live.product_clicks,
         "impressions": live.impressions,
         "product_impressions": live.product_impressions,
@@ -170,3 +173,25 @@ def import_minutes_file(live: LiveSession, uploaded_file):
     batch.errors = parsed.errors[:50]
     batch.save()
     return batch, parsed
+
+
+def data_coverage(org, brand=None):
+    """Días con lives y con tendencia de videos, para el calendario de datos y el rango por defecto."""
+    from collections import defaultdict
+
+    lives = LiveSession.objects.filter(organization=org)
+    days = AccountDay.objects.filter(organization=org)
+    if brand is not None:
+        lives, days = lives.filter(brand=brand), days.filter(brand=brand)
+    live_days = defaultdict(lambda: {"n": 0, "gmv": 0.0})
+    for started, gmv in lives.values_list("started_at", "gmv"):
+        d = timezone.localtime(started).date()
+        live_days[d]["n"] += 1
+        live_days[d]["gmv"] += float(gmv)
+    trend_days = {d: v for d, v in days.values_list("date", "video_views")}
+    all_days = set(live_days) | set(trend_days)
+    if not all_days:
+        return None
+    return {"live_days": dict(live_days), "trend_days": trend_days,
+            "first": min(all_days), "last": max(all_days),
+            "first_live": min(live_days) if live_days else None, "last_live": max(live_days) if live_days else None}

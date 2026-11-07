@@ -19,6 +19,25 @@
       Charts.bars(el, opts);
     },
 
+    // Vistas diarias de los videos de la cuenta, alineadas con las ventas por día.
+    videos: function (id, data) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      // Un video viral aplana todo lo demás: si un pico es mucho mayor que el resto, se recorta y se etiqueta.
+      var vals = data.videos.filter(function (v) { return v !== null; }).sort(function (a, b) { return a - b; });
+      var p90 = vals.length ? vals[Math.floor(vals.length * 0.9)] : 0;
+      var top = vals.length ? vals[vals.length - 1] : 0;
+      var cap = p90 > 0 && top > p90 * 4 ? Math.ceil(p90 * 1.6) : undefined;
+      Charts.line(el, {
+        max: cap,
+        labels: data.labels,
+        series: [{ name: "Vistas de videos", values: data.videos }],
+        format: function (v) { return Math.round(v).toLocaleString("es-MX") + " vistas"; },
+        tickFormat: function (v) { return v >= 1000 ? Math.round(v / 1000).toLocaleString("es-MX") + " mil" : String(Math.round(v)); },
+        height: 120
+      });
+    },
+
     // Pedidos por minuto (la serie principal) con los momentos del live marcados en el eje.
     liveOrders: function (id, data) {
       var el = document.getElementById(id);

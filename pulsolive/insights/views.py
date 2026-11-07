@@ -13,7 +13,7 @@ from accounts.decorators import feature_required, org_required
 from accounts.plans import (F_AI_REPORTS, F_EXPERIMENTS, F_HOST_SCORECARDS, F_PLAYBOOKS, F_SHARE_LINKS,
                             F_WHITE_LABEL)
 from lives.models import Brand, LiveSession
-from lives.services import lives_queryset, rows_for
+from lives.services import data_coverage, lives_queryset, rows_for
 
 from . import ai, engine
 from .models import Experiment, Report
@@ -34,13 +34,54 @@ def _parse_date(value, default):
         return default
 
 
-def _range_from_request(request, default_days=30):
+def _range_from_request(request, default_days=30, coverage=None):
+    """Rango pedido en la URL; si no hay, el periodo donde sí hay datos (no "los últimos días desde hoy")."""
     today = timezone.localdate()
-    end = _parse_date(request.GET.get("hasta"), today)
-    start = _parse_date(request.GET.get("desde"), end - timedelta(days=default_days - 1))
+    end_default = min(coverage["last"], today) if coverage else today
+    span = max(default_days, 90) if coverage else default_days
+    start_default = end_default - timedelta(days=span - 1)
+    if coverage:
+        start_default = max(start_default, coverage["first"])
+    end = _parse_date(request.GET.get("hasta"), end_default)
+    start = _parse_date(request.GET.get("desde"), start_default)
     if start > end:
         start, end = end, start
     return start, end
+
+
+MONTH_NAMES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
+               "octubre", "noviembre", "diciembre"]
+
+
+def _calendar(coverage, start, end, months_max=4):
+    """Meses con cada día marcado: con live, con tendencia de videos, sin datos; y si está en el rango elegido."""
+    if not coverage:
+        return None
+    last = max(coverage["last"], end)
+    first_month = max(coverage["first"].replace(day=1), (last.replace(day=1) - timedelta(days=31 * (months_max - 1))).replace(day=1))
+    months, m = [], first_month
+    while m <= last:
+        nxt = (m + timedelta(days=32)).replace(day=1)
+        weeks, week = [], [None] * m.weekday()
+        d = m
+        while d < nxt:
+            live = coverage["live_days"].get(d)
+            views = coverage["trend_days"].get(d)
+            state = "live" if live else "trend" if views is not None else "none"
+            week.append({"day": d.day, "date": d, "state": state, "in_range": start <= d <= end,
+                         "title": d.strftime("%d/%m") + (f" · {live['n']} live(s), ${live['gmv']:,.0f}" if live else "")
+                         + (f" · {views:,} vistas de videos" if views is not None else "")
+                         + ("" if live or views is not None else " · sin datos")})
+            if len(week) == 7:
+                weeks.append(week)
+                week = []
+            d += timedelta(days=1)
+        if week:
+            weeks.append(week + [None] * (7 - len(week)))
+        months.append({"name": f"{MONTH_NAMES[m.month - 1]} {m.year}", "weeks": weeks})
+        m = nxt
+    return {"months": months, "first": coverage["first"], "last": coverage["last"],
+            "lives_days": len(coverage["live_days"]), "trend_days": len(coverage["trend_days"])}
 
 
 def _with_bars(rows, key):
@@ -49,11 +90,27 @@ def _with_bars(rows, key):
     return [{**r, "bar": max(4, round(max(r[key], 0) / top * 100))} for r in rows]
 
 
+def _video_finding(result):
+    """Una frase sobre si los días con videos fuertes venden más en el live."""
+    f = next((x for x in result["factors"] if x.key == "video_day"), None)
+    if not f:
+        return None
+    strong = next((lv for lv in f.levels if lv.level.startswith("Día con")), None)
+    if not strong:
+        return None
+    sure = {"alta": "", "media": " (confianza media)", "baja": " (todavía con pocos lives, confianza baja)"}[strong.confidence]
+    if abs(strong.lift) < 0.05:
+        return f"Los días con videos fuertes, tus lives venden casi igual que los demás días{sure}."
+    word = "más" if strong.lift > 0 else "menos"
+    return f"Los días con videos fuertes, tus lives venden {abs(strong.lift) * 100:.0f}% {word} por hora{sure}."
+
+
 @org_required
 def dashboard(request):
     org = request.org
     brand = _brand_from_request(request)
-    start, end = _range_from_request(request, 30)
+    coverage = data_coverage(org, brand)
+    start, end = _range_from_request(request, 30, coverage)
     days = (end - start).days + 1
     prev_start, prev_end = start - timedelta(days=days), start - timedelta(days=1)
 
@@ -67,11 +124,13 @@ def dashboard(request):
     per_day = defaultdict(float)
     for r in current["rows"]:
         per_day[r["started_at"].date()] += r["gmv"]
-    labels, values = [], []
+    labels, values, video_views = [], [], []
+    trend = coverage["trend_days"] if coverage else {}
     for i in range(days):
         d = start + timedelta(days=i)
         labels.append(d.strftime("%d/%m"))
         values.append(round(per_day.get(d, 0.0), 2))
+        video_views.append(trend.get(d))
 
     # Patrones con 90 días de historia (más confiable que 30)
     history = run_analysis(org, brand, end - timedelta(days=89), end) if current["kpis"]["lives"] < 40 else current
@@ -81,7 +140,10 @@ def dashboard(request):
     return render(request, "insights/dashboard.html", {
         "brand": brand, "brands": org.brands.filter(archived=False), "start": start, "end": end,
         "kpis": k,
+        "calendar": _calendar(coverage, start, end),
+        "video_finding": _video_finding(history),
         "chart": {"labels": labels, "values": values,
+                  "videos": video_views if any(v is not None for v in video_views) else None,
                   "best": max(range(len(values)), key=values.__getitem__) if any(values) else None},
         "recommendations": history["recommendations"][:6],
         "best_slots": history["best_slots"][:3],
@@ -99,7 +161,8 @@ def dashboard(request):
 def analysis(request):
     org = request.org
     brand = _brand_from_request(request)
-    start, end = _range_from_request(request, 90)
+    coverage = data_coverage(org, brand)
+    start, end = _range_from_request(request, 90, coverage)
     metric = request.GET.get("metrica", "gmv_per_hour")
     if metric not in engine.METRICS:
         metric = "gmv_per_hour"
@@ -110,6 +173,7 @@ def analysis(request):
         "metric": metric, "metrics": engine.METRICS, "result": result,
         "factors": result["factors"],
         "heat_json": json.dumps(heat) if heat else "",
+        "calendar": _calendar(coverage, start, end),
     })
 
 

@@ -226,7 +226,7 @@ def kpis(df: pd.DataFrame) -> dict:
         return {
             "lives": 0, "gmv": 0.0, "orders": 0, "hours": 0.0, "viewers": 0,
             "gmv_per_hour": 0.0, "conversion_rate": 0.0, "aov": 0.0, "avg_watch_seconds": 0.0,
-            "new_followers": 0,
+            "new_followers": 0, "impressions": 0, "interactions": 0, "product_clicks": 0,
         }
     hours = float(df["duration_minutes"].sum()) / 60
     gmv = float(df["gmv"].sum())
@@ -243,6 +243,9 @@ def kpis(df: pd.DataFrame) -> dict:
         "aov": gmv / orders if orders else 0.0,
         "avg_watch_seconds": float(df["avg_watch_seconds"].mean()),
         "new_followers": int(df["new_followers"].sum()),
+        "impressions": int(df["impressions"].sum()) if "impressions" in df else 0,
+        "interactions": int(sum(int(df[c].sum()) for c in ("likes", "comments", "shares") if c in df)),
+        "product_clicks": int(df["product_clicks"].sum()),
     }
 
 

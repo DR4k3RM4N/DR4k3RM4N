@@ -1,0 +1,27 @@
+{% if calendar %}
+<section class="card datacal" aria-labelledby="datacal-h">
+  <div class="card-head">
+    <h2 id="datacal-h">Datos cargados</h2>
+    <span class="meta">del {{ calendar.first|date:"j M Y" }} al {{ calendar.last|date:"j M Y" }} · {{ calendar.lives_days }} día{{ calendar.lives_days|pluralize }} con live{% if calendar.trend_days %} · {{ calendar.trend_days }} días de videos{% endif %}</span>
+  </div>
+  <div class="datacal-months">
+    {% for m in calendar.months %}
+    <div class="datacal-month">
+      <div class="datacal-name">{{ m.name|capfirst }}</div>
+      <div class="datacal-grid" role="grid" aria-label="{{ m.name }}">
+        {% for wd in "LMMJVSD" %}<span class="datacal-wd" aria-hidden="true">{{ wd }}</span>{% endfor %}
+        {% for week in m.weeks %}{% for d in week %}{% if d %}<span class="datacal-day {{ d.state }}{% if d.in_range %} in{% endif %}" title="{{ d.title }}" role="gridcell" aria-label="{{ d.title }}">{{ d.day }}</span>{% else %}<span></span>{% endif %}{% endfor %}{% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="datacal-foot">
+    <span class="datacal-key"><i class="live"></i>día con live</span>
+    {% if calendar.trend_days %}<span class="datacal-key"><i class="trend"></i>día con datos de videos</span>{% endif %}
+    <span class="datacal-key"><i class="none"></i>sin datos</span>
+    <span class="datacal-key"><i class="in-key"></i>periodo que estás viendo</span>
+    <span class="spacer"></span>
+    <a class="btn btn-sm" href="?{% if brand %}marca={{ brand.pk }}&{% endif %}desde={{ calendar.first|date:'Y-m-d' }}&hasta={{ calendar.last|date:'Y-m-d' }}">Ver todo el periodo con datos</a>
+  </div>
+</section>
+{% endif %}

@@ -18,6 +18,7 @@
 </div>
 
 {% include "insights/_filters.html" %}
+<div style="margin-top:var(--gap)">{% include "insights/_calendar.html" %}</div>
 
 {% if not has_lives %}
 <div class="grid grid-2" style="margin-top:var(--gap)">
@@ -46,6 +47,12 @@
       <div class="kpi"><div class="label">Pedidos</div><div class="value">{{ kpis.orders.value|num }}</div><div class="cap">{% include "insights/_delta.html" with d=kpis.orders.delta %}</div></div>
       <div class="kpi"><div class="label">Conversión</div><div class="value">{{ kpis.conversion_rate.value|pct:2 }}</div><div class="cap">{% include "insights/_delta.html" with d=kpis.conversion_rate.delta %}</div></div>
     </div>
+    <div class="kpis" role="group" aria-label="Audiencia del periodo">
+      <div class="kpi"><div class="label">Impresiones del live</div><div class="value">{% if kpis.impressions.value %}{{ kpis.impressions.value|num }}{% else %}<span class="dash">—</span>{% endif %}</div><div class="cap">veces que apareció en el feed</div></div>
+      <div class="kpi"><div class="label">Espectadores</div><div class="value">{{ kpis.viewers.value|num }}</div><div class="cap">{% include "insights/_delta.html" with d=kpis.viewers.delta %}</div></div>
+      <div class="kpi"><div class="label">Visualización promedio</div><div class="value">{{ kpis.avg_watch_seconds.value|mmss }}<span class="unit">min</span></div><div class="cap">{% include "insights/_delta.html" with d=kpis.avg_watch_seconds.delta %}</div></div>
+      <div class="kpi"><div class="label">Seguidores nuevos</div><div class="value">{{ kpis.new_followers.value|num }}</div><div class="cap">{{ kpis.interactions.value|num }} likes, comentarios y compartidos</div></div>
+    </div>
 
     {% if funnel %}
     <div class="card">
@@ -55,7 +62,13 @@
     {% endif %}
 
     <div class="card">
-      <div class="card-head"><h2>Ventas por día</h2><span class="meta tabular">{{ kpis.lives.value }} lives · {{ kpis.hours.value|floatformat:0 }} h al aire · ticket {{ kpis.aov.value|money }}</span></div>
+      <div class="card-head"><h2>{% if chart.videos %}Tus videos y tus lives, día por día{% else %}Ventas por día{% endif %}</h2><span class="meta tabular">{{ kpis.lives.value }} lives · {{ kpis.hours.value|floatformat:0 }} h al aire · ticket {{ kpis.aov.value|money }}</span></div>
+      {% if chart.videos %}
+        {% if video_finding %}<p class="sub-finding">{{ video_finding }}</p>{% endif %}
+        <h3 class="chart-title"><i class="sw blue"></i>Vistas de tus videos</h3>
+        <div id="videosChart" class="chart" style="height:120px;--chart-1:#2f70bb" aria-label="Vistas de videos por día"></div>
+        <h3 class="chart-title" style="margin-top:12px"><i class="sw pink"></i>Ventas de tus lives</h3>
+      {% endif %}
       <div id="dailyChart" class="chart" style="height:220px" aria-label="Ventas por día del periodo"></div>
     </div>
 
@@ -108,4 +121,4 @@
 </div>
 {% endif %}
 {% endblock %}
-{% block scripts %}{% if has_lives %}{{ chart|json_script:"daily-data" }}<script>PulsoCharts.daily("dailyChart", JSON.parse(document.getElementById("daily-data").textContent));</script>{% endif %}{% endblock %}
+{% block scripts %}{% if has_lives %}{{ chart|json_script:"daily-data" }}<script>(function(){var d=JSON.parse(document.getElementById("daily-data").textContent);PulsoCharts.daily("dailyChart",d);if(d.videos)PulsoCharts.videos("videosChart",d);})();</script>{% endif %}{% endblock %}
