@@ -89,8 +89,6 @@ button, input, textarea { font: inherit; color: inherit; }
 .fuentes a { color: var(--acento); }
 #shop-gasto { margin: 8px 0; }
 .marca-aviso { background: rgba(249,115,22,.12); border-left: 3px solid #f97316; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
-.obra { display: grid; grid-template-columns: 108px 1fr; gap: 14px; align-items: center; }
-.obra .aviso { background: rgba(249,115,22,.12); border-left: 3px solid #f97316; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
 .ayuda { font-size: 12px; color: var(--suave); margin-top: 6px; }
 
 .nombre, .globo, .alerta { position: absolute; left: 0; top: 0; will-change: transform; }

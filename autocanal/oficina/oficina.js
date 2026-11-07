@@ -982,11 +982,44 @@
     moverCamara(dt);
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    reflector(ahora);
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, lienzo.width, lienzo.height);
     ctx.drawImage(buf, cam.x, cam.y, cam.w, cam.h, offX, offY, cam.w * escala, cam.h * escala);
     capasDom(ahora);
     requestAnimationFrame(cuadro);
+  }
+
+  // Al elegir un agente: la oficina se oscurece un momento con un reflector sobre él y le queda una flechita encima
+  const sinMovimiento = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  let foco = null; // { id, desde }
+  function reflector(ahora) {
+    const v = seleccionado && vivos[seleccionado];
+    if (!v?.pantalla) return;
+    const [px, py] = v.pantalla;
+    const color = estado.agentes[seleccionado]?.color || "#ffd23f";
+    if (foco?.id === seleccionado) {
+      const t = (ahora - foco.desde) / 1000, dura = sinMovimiento ? 1.2 : 2.2;
+      if (t < dura) {
+        const sube = sinMovimiento ? 1 : Math.min(1, t / 0.25);
+        const baja = 1 - Math.max(0, (t - dura + 0.8) / 0.8);
+        const radio = 46 + (sinMovimiento ? 0 : (1 - Math.min(1, t / 0.5)) * 120);
+        g.save();
+        g.fillStyle = `rgba(8,10,24,${0.5 * sube * baja})`;
+        g.beginPath();
+        g.rect(0, 0, ANCHO, ALTO);
+        g.ellipse(px, py - 30, radio, radio * 1.15, 0, 0, Math.PI * 2);
+        g.fill("evenodd");
+        g.restore();
+      }
+    }
+    const brinco = sinMovimiento ? 0 : Math.abs(Math.sin(ahora / 260)) * 7;
+    const y0 = py - 88 - brinco;
+    g.save();
+    g.fillStyle = color; g.strokeStyle = "#1b1a26"; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(px - 9, y0 - 12); g.lineTo(px + 9, y0 - 12); g.lineTo(px, y0); g.closePath();
+    g.fill(); g.stroke();
+    g.restore();
   }
 
   function aro(px, py, color, fijo, t) {
@@ -1095,6 +1128,7 @@
     try { localStorage.setItem("ala", ala); } catch { /* sin almacenamiento: solo no se recuerda */ }
     document.querySelectorAll("[data-ala]").forEach((b) => b.classList.toggle("activa", b.dataset.ala === ala));
     ajustar();
+    window.dispatchEvent(new CustomEvent("ala", { detail: ala }));
   }
   document.querySelectorAll("[data-ala]").forEach((b) => b.addEventListener("click", () => verAla(b.dataset.ala)));
   window.addEventListener("resize", ajustar);
@@ -1137,10 +1171,15 @@
     agenteEn, retrato,
     escala: () => escala,
     posicion: (id) => vivos[id]?.pantalla,
-    seleccionar: (id) => { seleccionado = id; },
+    seleccionar: (id) => {
+      if (id && id !== seleccionado) foco = { id, desde: performance.now() };
+      seleccionado = id;
+      // si el agente está en la otra ala, la cámara se va para allá
+      if (id && ala !== "todo" && (esTT(id) ? "tiktok" : "youtube") !== ala && id !== "jefe") verAla(esTT(id) ? "tiktok" : "youtube");
+    },
+    ala: () => ala,
+    equipoTT: () => equipoTT,
     encima: (id) => { encima = id; },
-    // datos de un agente que no está en el servidor de esta oficina (el equipo de TikTok mientras está en obra)
-    ficha: (id) => equipoTT.find((a) => a.id === id) || null,
     verAla,
   };
 })();

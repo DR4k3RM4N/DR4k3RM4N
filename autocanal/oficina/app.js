@@ -341,7 +341,16 @@
     const s = reloj() - t;
     return s < 60 ? "hace un momento" : s < 3600 ? `hace ${Math.floor(s / 60)} min` : s < 86400 ? `hace ${Math.floor(s / 3600)} h` : `hace ${Math.floor(s / 86400)} d`;
   }
-  const tareasDe = (id) => (estado.tareas || []).filter((t) => t.agente === id);
+  // Los dos equipos juntos (YouTube + TikTok Shop) y el filtro según el ala que estás viendo
+  const esTT = (id) => id.startsWith("tt_");
+  const todasLasTareas = () => [...(estado.tareas || []), ...(estadoTT?.tareas || [])];
+  const tareasDe = (id) => todasLasTareas().filter((t) => t.agente === id);
+  const equipoCompleto = () => [...estado.agentes, ...(window.Oficina.equipoTT?.() || [])];
+  function equipoVisible() {
+    const ala = window.Oficina.ala?.() || "todo";
+    return equipoCompleto().filter((a) => ala === "todo" || a.id === "jefe" || (ala === "tiktok") === esTT(a.id));
+  }
+  const TITULO_ALA = { todo: "Todo el edificio", youtube: "▶ Equipo YouTube", tiktok: "🛒 Equipo TikTok Shop" };
   function estadoAgente(a) {
     const ts = tareasDe(a.id);
     if (ts.some((t) => t.estado === "trabajando")) return ["Trabajando", "trab"];
@@ -363,9 +372,11 @@
     const cont = $("#equipo");
     if (!agenteVisto) {
       const terminadas = (estado.tareas || []).filter((t) => ["hecha", "fallo", "cancelada"].includes(t.estado)).length;
-      cont.innerHTML = `<div class="equipo-cabeza"><p class="pista">Pícale a un agente (aquí o en la oficina) para ver sus tareas.</p>
-        ${terminadas ? `<button class="btn btn-mini" data-limpiar="">🧹 Borrar terminadas (${terminadas})</button>` : ""}</div>
-        <div class="equipo-lista">${estado.agentes.map((a) => {
+      const lista = equipoVisible();
+      const ala = window.Oficina.ala?.() || "todo";
+      cont.innerHTML = `<div class="equipo-cabeza"><p class="pista"><b>${esc(TITULO_ALA[ala])}</b> · ${lista.length} · Pícale a un agente (aquí o en la oficina) para ver sus tareas.</p>
+        ${terminadas && ala !== "tiktok" ? `<button class="btn btn-mini" data-limpiar="">🧹 Borrar terminadas (${terminadas})</button>` : ""}</div>
+        <div class="equipo-lista">${lista.map((a) => {
           const [txt, cls] = estadoAgente(a);
           const actual = tareasDe(a.id).find((t) => t.estado === "trabajando");
           const fila = tareasDe(a.id).filter((t) => ["en_cola", "esperando"].includes(t.estado)).length;
@@ -374,18 +385,19 @@
             <span class="agente-info">
               <b>${esc(a.id === "jefe" ? "Tú" : a.nombre)}</b> <small>${esc(a.rol)}</small>
               <span class="estado-chip ${cls}">${esc(txt)}</span>
-              <span class="agente-ahora">${actual ? `${esc(actual.accion)} · ${esc(actual.titulo)}` : a.id === "jefe" ? "Revisa tu bandeja" : "—"}</span>
+              <span class="agente-ahora">${actual ? `${esc(actual.accion)} · ${esc(actual.titulo)}` : a.id === "jefe" ? "Revisa tu bandeja" : a.enObra ? "🚧 Su oficina está apagada" : "—"}</span>
               ${fila ? `<span class="agente-fila">${fila} en fila</span>` : ""}
             </span>
           </button>`;
         }).join("")}</div>`;
     } else {
-      const a = estado.agentes.find((x) => x.id === agenteVisto);
+      const a = equipoCompleto().find((x) => x.id === agenteVisto);
+      if (!a) { agenteVisto = null; return pintarEquipo(true); }
       const ts = tareasDe(a.id).slice().reverse();
       const actual = ts.filter((t) => t.estado === "trabajando");
       const fila = ts.filter((t) => ["en_cola", "esperando"].includes(t.estado)).reverse();
       const hechas = ts.filter((t) => ["hecha", "fallo", "cancelada"].includes(t.estado)).slice(0, 10);
-      const frases = estado.log.filter((m) => m.quien === a.id).slice(-3).reverse();
+      const frases = [...estado.log, ...(estadoTT?.log || [])].filter((m) => m.quien === a.id).slice(-3).reverse();
       const [txt, cls] = estadoAgente(a);
       const tarjeta = (t, viva) => `<li class="tarea tarea-${t.estado}">
           <div class="tarea-cabeza"><b>${esc(t.accion)}</b><span class="estado-chip ${t.estado}">${esc(ESTADO_TAREA[t.estado] || t.estado)}</span></div>
@@ -406,19 +418,19 @@
             <h3>${esc(a.id === "jefe" ? "Tú" : a.nombre)}</h3>
             <p class="rol">${esc(a.rol)}</p>
             <span class="estado-chip ${cls}">${esc(txt)}</span>
-            <p class="desc">${esc(DESCRIPCION[a.id] || "")}</p>
+            <p class="desc">${esc(DESCRIPCION[a.id] || a.desc || "")}</p>
           </div>
         </div>
-        ${a.id === "jefe" ? `<p class="vacio">Tus pendientes están en la Bandeja.</p>` : `
+        ${a.id === "jefe" ? `<p class="vacio">Tus pendientes están en la Bandeja.</p>` : a.enObra ? `<p class="vacio">🚧 La oficina de TikTok Shop está apagada: ${esc(a.nombre)} trabaja cuando esté prendida.</p>` : `
         <h4 class="seccion-mini">Ahora</h4>
         ${actual.length ? `<ul class="tareas">${actual.map((t) => tarjeta(t, true)).join("")}</ul>` : `<p class="vacio">${a.estado === "libre" ? "Sin tareas: está libre." : "Entregando trabajo a un compañero."}</p>`}
         <h4 class="seccion-mini">En fila ${fila.length ? `(${fila.length})` : ""}</h4>
         ${fila.length ? `<ul class="tareas">${fila.map((t) => tarjeta(t, false)).join("")}</ul>` : `<p class="vacio">Nada en fila.</p>`}
-        <h4 class="seccion-mini">Terminadas ${hechas.length ? `<button class="btn btn-mini" data-limpiar="${esc(a.id)}">🧹 Borrar</button>` : ""}</h4>
+        <h4 class="seccion-mini">Terminadas ${hechas.length && !esTT(a.id) ? `<button class="btn btn-mini" data-limpiar="${esc(a.id)}">🧹 Borrar</button>` : ""}</h4>
         ${hechas.length ? `<ul class="tareas">${hechas.map((t) => tarjeta(t, false)).join("")}</ul>` : `<p class="vacio">Todavía nada.</p>`}`}
         ${frases.length ? `<h4 class="seccion-mini">Lo último que dijo</h4><ul class="frases">${frases.map((m) => `<li>“${esc(m.texto)}” <small>${hora(m.t)}</small></li>`).join("")}</ul>` : ""}`;
       // barra de avance aproximada
-      const DUR = { ideas: 30, investigar: 90, guion: 60, voz: 45, miniatura: 8, video: 150, blog: 60, publicar: 60 };
+      const DUR = { ficha: 25, tomas: 25, ideas: 30, investigar: 90, guion: 60, voz: 45, miniatura: 8, video: 150, blog: 60, publicar: 60 };
       cont.querySelectorAll(".tarea-trabajando .barra-tarea b").forEach((b, k) => {
         const t = actual[k];
         const av = t.avance != null ? t.avance : 1 - Math.exp(-(reloj() - t.inicio) / (DUR[t.etapa] || 60) * 1.6);
@@ -429,40 +441,11 @@
   }
 
   function verAgente(id) {
-    const fichaTT = !estado?.agentes.some((a) => a.id === id) && (estadoTT?.agentes.find((a) => a.id === id) || window.Oficina.ficha(id));
-    if (fichaTT) return verAgenteEnObra(fichaTT);
     agenteVisto = id;
     window.Oficina.seleccionar(id);
     abrirPestana("equipo");
     pintarEquipo(true);
     $("#tab-equipo").scrollTop = 0;
-  }
-
-  // El equipo de TikTok Shop todavía no tiene su oficina conectada: se muestra su ficha
-  function verAgenteEnObra(a) {
-    $("#modal-cuerpo").innerHTML = `
-      <div class="obra" style="--c:${a.color}">
-        <canvas class="retrato grande" data-retrato="${esc(a.id)}" width="108" height="228"></canvas>
-        <div>
-          <h2 id="modal-titulo">${esc(a.nombre)}</h2>
-          <p class="rol">${esc(a.rol)} · Ala TikTok Shop</p>
-          <p class="desc">${esc(a.desc)}</p>
-          ${a.enObra ? `<p class="aviso">🚧 La oficina de TikTok Shop está apagada. ${esc(a.nombre)} trabaja cuando esté prendida.</p>`
-            : tareaTT(a.id)}
-        </div>
-      </div>`;
-    window.Oficina.retrato(a.id, $("#modal-cuerpo canvas"));
-    $("#modal").hidden = false;
-    $("#modal-cerrar").focus();
-  }
-
-  function tareaTT(id) {
-    const ts = (estadoTT?.tareas || []).filter((t) => t.agente === id);
-    const ahora = ts.find((t) => t.estado === "trabajando");
-    const ultimas = ts.filter((t) => t.estado !== "trabajando").slice(-3).reverse();
-    return `<p><b>${ahora ? `Ahora: ${esc(ahora.accion)} · ${esc(ahora.titulo)}` : "Libre"}</b></p>
-      ${ultimas.length ? `<ul class="frases">${ultimas.map((t) => `<li>${t.estado === "hecha" ? "✔" : "✖"} ${esc(t.accion)} · ${esc(t.titulo)}
-        ${t.costo ? `<small>💰 ${dinero(t.costo)}</small>` : ""}${t.error ? `<br><small>${esc(t.error)}</small>` : ""}</li>`).join("")}</ul>` : ""}`;
   }
 
   $("#equipo").addEventListener("click", (e) => {
@@ -478,6 +461,10 @@
     if (t) verAgente(t.dataset.agente);
   });
   setInterval(() => { if (agenteVisto || !$("#tab-equipo").hidden) pintarEquipo(); }, 1000);
+  window.addEventListener("ala", () => pintarEquipo(true));
+  // pasar el mouse por una tarjeta del equipo marca al agente en la oficina
+  $("#equipo").addEventListener("mouseover", (e) => window.Oficina.encima(e.target.closest("[data-agente]")?.dataset.agente || null));
+  $("#equipo").addEventListener("mouseleave", () => window.Oficina.encima(null));
 
   $("#lienzo").addEventListener("click", (e) => {
     const id = window.Oficina.agenteEn(e.clientX, e.clientY);
