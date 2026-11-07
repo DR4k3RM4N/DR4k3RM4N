@@ -34,6 +34,7 @@
   <aside class="panel">
     <nav class="pestanas" role="tablist">
       <button class="pestana activa" data-tab="bandeja" role="tab">Bandeja <span id="cuenta" class="cuenta" hidden>0</span></button>
+      <button class="pestana" data-tab="shop" role="tab">Shop <span id="cuenta-shop" class="cuenta" hidden>0</span></button>
       <button class="pestana" data-tab="equipo" role="tab">Equipo</button>
       <button class="pestana" data-tab="proyectos" role="tab">Proyectos</button>
       <button class="pestana" data-tab="estilo" role="tab">Estilo</button>
@@ -50,6 +51,31 @@
         </div>
       </form>
       <div id="bandeja"></div>
+    </div>
+    <div class="contenido" id="tab-shop" hidden>
+      <p class="vacio" id="shop-apagada" hidden>La oficina de TikTok Shop está apagada. Préndela en el servidor (te digo cómo en la guía) y aquí aparece.</p>
+      <form class="pedir" id="form-producto">
+        <label for="p-nombre">📦 Me llegó un producto</label>
+        <p class="pista">Dime qué es: Toño lo investiga, Sofi te escribe el guion con 3 ganchos y Diego te arma la lista de tomas para grabarlo.</p>
+        <input id="p-nombre" required maxlength="120" placeholder="Producto (ej. organizador de cables)">
+        <input id="p-enlace" type="url" maxlength="500" placeholder="Enlace de TikTok Shop (opcional)">
+        <div class="fila">
+          <input id="p-precio" inputmode="decimal" maxlength="20" placeholder="Precio $ MXN (opcional)">
+          <input id="p-comision" inputmode="decimal" maxlength="10" placeholder="Comisión %">
+        </div>
+        <textarea id="p-notas" rows="2" maxlength="1500" placeholder="¿Qué tiene de especial o qué viste al probarlo? (opcional)"></textarea>
+        <label class="check"><input type="checkbox" id="p-marca" checked> Me lo mandó una marca (contenido de marca)</label>
+        <div class="fila">
+          <select id="p-duracion" aria-label="Duración del video">
+            <option value="auto">Duración: que decida Sofi</option>
+            <option value="normal">Normal (35–50 s)</option>
+            <option value="corta">Corta (15–25 s, producto barato)</option>
+          </select>
+          <button class="btn btn-primario" type="submit">Mandar al equipo</button>
+        </div>
+      </form>
+      <div id="shop-gasto" class="pista"></div>
+      <div id="shop-lista"></div>
     </div>
     <div class="contenido" id="tab-equipo" hidden><div id="equipo"></div></div>
     <div class="contenido" id="tab-proyectos" hidden><div id="proyectos"></div></div>

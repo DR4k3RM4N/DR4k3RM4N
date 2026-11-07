@@ -45,6 +45,8 @@ NIVEL_AVISOS = config.env("AVISOS_NIVEL") or config.env("WHATSAPP_NIVEL", "impor
 IDEAS_HORA = config.env("IDEAS_HORA")          # ej. 09:00 — vacío = no buscar solas
 IDEAS_ZONA = config.env("IDEAS_ZONA", "America/Mexico_City")
 IDEAS_GUIA = config.env("IDEAS_GUIA")
+# Oficina de TikTok Shop (ala derecha del edificio): corre aparte y se entra por aquí en /tiktok/
+TIENDA_URL = config.env("TIENDA_URL", "http://127.0.0.1:8766").rstrip("/")
 LIMPIAR_DIAS = int(config.env("LIMPIAR_DIAS", "30") or 30)
 # Tope de gasto en Claude por día (USD). Al llegar, los agentes paran y Paola te avisa. 0 = sin tope.
 LIMITE_DIARIO = float(config.env("LIMITE_DIARIO", "1") or 0)
@@ -1196,6 +1198,23 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"error": str(exc)}, 400)
             return self._json({"ok": True, "archivo": p.name})
 
+        def _tienda(self, metodo: str, cuerpo: bytes | None = None):
+            """Pasa la petición a la oficina de TikTok Shop (misma contraseña que esta)."""
+            ruta = urlparse(self.path)
+            destino = TIENDA_URL + ruta.path[len("/tiktok"):]
+            if not ruta.path.startswith("/tiktok/api/"):
+                return self._json({"error": "no encontrado"}, 404)
+            try:
+                r = requests.request(metodo, destino, data=cuerpo, timeout=15,
+                                     headers={"Content-Type": "application/json"} if cuerpo is not None else {})
+            except requests.RequestException:
+                return self._json({"error": "La oficina de TikTok Shop está apagada.", "apagada": True}, 503)
+            self.send_response(r.status_code)
+            self.send_header("Content-Type", r.headers.get("Content-Type", "application/json"))
+            self.send_header("Content-Length", str(len(r.content)))
+            self.end_headers()
+            self.wfile.write(r.content)
+
         def _texto(self, texto: str, codigo: int = 200):
             cuerpo = texto.encode()
             self.send_response(codigo)
@@ -1231,6 +1250,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json(oficina.detalle(ruta.rsplit("/", 1)[-1]))
             if ruta == "/eventos":
                 return self._eventos()
+            if ruta.startswith("/tiktok/"):
+                return self._tienda("GET")
             self._json({"error": "no encontrado"}, 404)
 
         def _eventos(self):
@@ -1273,6 +1294,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             if not self._mismo_origen():
                 return self._json({"error": "origen no permitido"}, 403)
             largo = int(self.headers.get("Content-Length") or 0)
+            if urlparse(self.path).path.startswith("/tiktok/"):
+                return self._tienda("POST", self.rfile.read(min(largo, 100_000)))
             try:
                 datos = json.loads(self.rfile.read(largo) or b"{}")
             except json.JSONDecodeError:
@@ -1319,6 +1342,25 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
     return ThreadingHTTPServer((host, puerto), Manejador)
 
 
+def prender_tienda_demo() -> None:
+    """En modo demo prende también la oficina de TikTok Shop (si no está ya prendida), para ver el edificio completo."""
+    import atexit
+    import subprocess
+    import sys
+
+    script = config.BASE.parent / "tiktokshop" / "tienda.py"
+    if not script.exists():
+        return
+    try:
+        requests.get(TIENDA_URL + "/api/estado", timeout=1)
+        return  # ya está prendida
+    except requests.RequestException:
+        pass
+    puerto = urlparse(TIENDA_URL).port or 8766
+    proceso = subprocess.Popen([sys.executable, str(script), "--demo", "--puerto", str(puerto)], cwd=script.parent)
+    atexit.register(proceso.terminate)
+
+
 def main() -> None:
     global ESTADO
     p = argparse.ArgumentParser(description="Oficina visual de agentes")
@@ -1349,6 +1391,7 @@ def main() -> None:
 
         simulado.activar()
         ESTADO = config.BASE / "oficina_estado_demo.json"
+        prender_tienda_demo()
     oficina = Oficina(a.demo)
     servidor = crear_servidor(oficina, a.puerto, a.host)
     url = f"http://localhost:{a.puerto}"

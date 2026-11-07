@@ -59,6 +59,36 @@ button, input, textarea { font: inherit; color: inherit; }
 }
 .ala:active { transform: scale(.97); }
 .ala.activa { background: var(--acento); color: var(--borde); }
+#form-producto input:not([type=checkbox]), #form-producto textarea { width: 100%; margin-bottom: 6px; }
+.tomas-lista input, #form-producto input[type=checkbox] { width: 18px; height: 18px; margin: 2px 0 0; padding: 0; accent-color: var(--acento); }
+#form-producto .fila input { flex: 1; min-width: 0; }
+#form-producto .fila select { flex: 1; min-width: 0; }
+#form-producto label.check { font-family: Inter, sans-serif; font-size: 13px; display: flex; gap: 6px; align-items: center; margin: 2px 0 8px; }
+.pasos-shop { display: flex; gap: 6px; flex-wrap: wrap; list-style: none; padding: 0; margin: 8px 0; font-size: 12px; }
+.pasos-shop li { padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,.06); color: var(--suave); }
+.pasos-shop li.hecha { background: rgba(34,197,94,.18); color: #86efac; }
+.pasos-shop li.trabajando { background: rgba(255,210,63,.18); color: var(--acento); }
+.pasos-shop li.fallo { background: rgba(239,68,68,.2); color: #fca5a5; }
+.guion-shop h3 { font-family: var(--pixel); font-size: 13px; margin: 18px 0 6px; }
+.guion-shop .id { font-family: ui-monospace, monospace; font-size: 12px; color: var(--suave); }
+.ganchos { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.gancho { background: rgba(255,255,255,.04); border: 2px solid var(--borde); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.gancho b { font-family: var(--pixel); }
+.gancho .id { display: block; font-size: 11px; word-break: break-all; }
+.gancho p { margin: 4px 0; }
+.tabla-shop { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabla-shop th, .tabla-shop td { text-align: left; vertical-align: top; padding: 6px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.tabla-shop th { color: var(--suave); font-weight: 600; }
+.texto-pantalla { font-weight: 700; letter-spacing: .02em; }
+.copiable { background: rgba(255,255,255,.05); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; font-size: 13px; }
+.tomas-lista { list-style: none; padding: 0; margin: 0; }
+.tomas-lista li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.06); font-size: 13px; }
+.tomas-lista small { color: var(--suave); }
+.tomas-lista input:checked + div { opacity: .5; text-decoration: line-through; }
+.fuentes { font-size: 12.5px; padding-left: 18px; }
+.fuentes a { color: var(--acento); }
+#shop-gasto { margin: 8px 0; }
+.marca-aviso { background: rgba(249,115,22,.12); border-left: 3px solid #f97316; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
 .obra { display: grid; grid-template-columns: 108px 1fr; gap: 14px; align-items: center; }
 .obra .aviso { background: rgba(249,115,22,.12); border-left: 3px solid #f97316; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
 .ayuda { font-size: 12px; color: var(--suave); margin-top: 6px; }
@@ -100,7 +130,8 @@ button, input, textarea { font: inherit; color: inherit; }
 
 /* panel lateral */
 .panel { background: var(--panel); border-left: 3px solid var(--borde); display: flex; flex-direction: column; min-height: 0; }
-.pestanas { display: flex; background: var(--fondo2); border-bottom: 3px solid var(--borde); }
+.pestanas { display: flex; background: var(--fondo2); border-bottom: 3px solid var(--borde); overflow-x: auto; scrollbar-width: none; }
+.pestanas::-webkit-scrollbar { display: none; }
 .pestana {
   flex: 1; padding: 11px 4px; border: 0; background: transparent; color: var(--suave); cursor: pointer;
   font-family: var(--pixel); font-size: 12.5px; white-space: nowrap; border-bottom: 3px solid transparent; margin-bottom: -3px;

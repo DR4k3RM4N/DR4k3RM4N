@@ -125,9 +125,11 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   despacho del jefe y la sala de juntas, ala derecha TikTok Shop, patio de descanso compartido abajo. Por dentro
   siguen siendo dos oficinas separadas (cada una con su gasto, tope y `.env`); cola común para editar video (RAM).
 - **Equipo TikTok** (ids `tt_…`): Toño (cazador de productos), Sofi (guionista de Shop), Diego (director de
-  grabación), **Chris (editor vertical, con lentes y copete — Miguel lo pidió así)**, Vale (portadas), Ana (analista).
+  grabación), **Cris (editor vertical, con lentes y copete — Miguel lo pidió así; si cambia de idea: "Cris2k")**, Vale (portadas), Ana (analista).
 - Orden de trabajo: 1) edificio en demo ✅ (`oficina/oficina.js`: rejilla 31×15, mamparas de vidrio con puertas,
-  botones 🏢 Todo / ▶ YouTube / 🛒 TikTok Shop; el equipo TikTok está "en obra": pasea y al picarlo muestra su
-  ficha) · 2) ala TikTok con servidor propio (botón "📦 Me llegó un producto", guion con 3 ganchos, lista de tomas)
+  botones 🏢 Todo / ▶ YouTube / 🛒 TikTok Shop; si la oficina TikTok está apagada su equipo sale "en obra")
+  · 2) ala TikTok con servidor propio ✅ (`tiktokshop/tienda.py` + `shop.py`; pestaña Shop con "📦 Me llegó un producto";
+  Toño ficha con fuentes → Sofi guion 3 ganchos → Diego lista de tomas; `oficina.py` hace de puerta en `/tiktok/api/…`
+  hacia `TIENDA_URL` y en `--demo` prende la tienda sola; el edificio consulta su estado cada 2 s)
   · 3) editor vertical 1080×1920 con sus clips · 4) registrar resultados y aprender · 5) servidor (puerto 8766,
   Caddy con ruta `/tiktok/` en el mismo sitio; **ojo: `despliegue/caddy.sh` hoy reescribe todo el Caddyfile**).

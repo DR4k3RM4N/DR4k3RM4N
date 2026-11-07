@@ -429,7 +429,7 @@
   }
 
   function verAgente(id) {
-    const fichaTT = !estado?.agentes.some((a) => a.id === id) && window.Oficina.ficha(id);
+    const fichaTT = !estado?.agentes.some((a) => a.id === id) && (estadoTT?.agentes.find((a) => a.id === id) || window.Oficina.ficha(id));
     if (fichaTT) return verAgenteEnObra(fichaTT);
     agenteVisto = id;
     window.Oficina.seleccionar(id);
@@ -447,12 +447,22 @@
           <h2 id="modal-titulo">${esc(a.nombre)}</h2>
           <p class="rol">${esc(a.rol)} · Ala TikTok Shop</p>
           <p class="desc">${esc(a.desc)}</p>
-          <p class="aviso">🚧 Esta ala todavía está en obra. ${esc(a.nombre)} empieza a trabajar cuando conectemos la oficina de TikTok Shop.</p>
+          ${a.enObra ? `<p class="aviso">🚧 La oficina de TikTok Shop está apagada. ${esc(a.nombre)} trabaja cuando esté prendida.</p>`
+            : tareaTT(a.id)}
         </div>
       </div>`;
     window.Oficina.retrato(a.id, $("#modal-cuerpo canvas"));
     $("#modal").hidden = false;
     $("#modal-cerrar").focus();
+  }
+
+  function tareaTT(id) {
+    const ts = (estadoTT?.tareas || []).filter((t) => t.agente === id);
+    const ahora = ts.find((t) => t.estado === "trabajando");
+    const ultimas = ts.filter((t) => t.estado !== "trabajando").slice(-3).reverse();
+    return `<p><b>${ahora ? `Ahora: ${esc(ahora.accion)} · ${esc(ahora.titulo)}` : "Libre"}</b></p>
+      ${ultimas.length ? `<ul class="frases">${ultimas.map((t) => `<li>${t.estado === "hecha" ? "✔" : "✖"} ${esc(t.accion)} · ${esc(t.titulo)}
+        ${t.costo ? `<small>💰 ${dinero(t.costo)}</small>` : ""}${t.error ? `<br><small>${esc(t.error)}</small>` : ""}</li>`).join("")}</ul>` : ""}`;
   }
 
   $("#equipo").addEventListener("click", (e) => {
@@ -607,6 +617,136 @@
     }
   });
 
+  // ---------- TikTok Shop (ala derecha): su oficina corre aparte y se consulta cada 2 s ----------
+  let estadoTT = null, versionTT = -1;
+  const ETAPAS_TT = [["ficha", "Toño investiga"], ["guion", "Sofi escribe"], ["tomas", "Diego arma tomas"]];
+  const ESTADO_TT = { trabajando: "En proceso", listo: "Listo para grabar", error: "Con problema" };
+  const FORMATO_TT = { problema_solucion: "Problema → solución", antes_despues: "Antes y después", resena: "Reseña",
+                       unboxing: "Unboxing", tutorial: "Tutorial", objecion: "Objeción / FAQ", asmr: "ASMR" };
+  const BLOQUE_TT = { puente: "Puente", problema: "Problema", solucion: "Solución / demo", beneficios: "Beneficios", cta: "Carrito naranja" };
+  const leerVistos = () => { try { return JSON.parse(localStorage.getItem("shop_vistos") || "[]"); } catch { return []; } };
+
+  async function apiTT(ruta, datos) {
+    const r = await fetch(`/tiktok${ruta}`, { method: datos ? "POST" : "GET", headers: { "Content-Type": "application/json" },
+                                              body: datos ? JSON.stringify(datos) : undefined });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "Algo salió mal");
+    return j;
+  }
+  async function consultarTT() {
+    try {
+      const n = await apiTT("/api/estado");
+      if (n.version !== versionTT || !estadoTT) { versionTT = n.version; estadoTT = n; window.Oficina.actualizarTT(n); pintarShop(); }
+    } catch {
+      if (estadoTT !== null || versionTT === -1) { estadoTT = null; versionTT = -2; window.Oficina.actualizarTT(null); pintarShop(); }
+    }
+  }
+
+  function pintarShop() {
+    $("#shop-apagada").hidden = !!estadoTT;
+    $("#form-producto").hidden = !estadoTT;
+    if (!estadoTT) { $("#shop-lista").innerHTML = ""; $("#shop-gasto").textContent = ""; $("#cuenta-shop").hidden = true; return; }
+    const g = estadoTT.gasto;
+    $("#shop-gasto").innerHTML = `💰 Oficina TikTok hoy <b>${dinero(g.hoy)}</b>${g.tope ? ` / tope ${dinero(g.tope)}` : ""} · mes ${dinero(g.mes)}`
+      + (estadoTT.demo ? ` · <span class="chip chip-demo">DEMO</span>` : "");
+    const vistos = new Set(leerVistos());
+    const nuevos = estadoTT.productos.filter((p) => p.estado === "listo" && !vistos.has(p.id)).length;
+    $("#cuenta-shop").hidden = !nuevos;
+    $("#cuenta-shop").textContent = nuevos;
+    if (!estadoTT.productos.length) { $("#shop-lista").innerHTML = `<p class="vacio">Todavía no hay productos. Cuando te llegue uno, ponlo arriba.</p>`; return; }
+    $("#shop-lista").innerHTML = estadoTT.productos.map((p) => `<article class="tarjeta ${p.estado === "error" ? "tarjeta-error" : ""}">
+        <div class="cabeza"><h4>${esc(p.nombre)}</h4><span class="chip ${p.estado === "listo" ? "chip-estado-publicado" : p.estado === "error" ? "chip-estado-error" : ""}">${esc(ESTADO_TT[p.estado] || p.estado)}</span></div>
+        <ol class="pasos-shop">${ETAPAS_TT.map(([e, txt]) => `<li class="${esc(p.etapas?.[e] || "")}">${esc(txt)}</li>`).join("")}</ol>
+        ${p.guion_id ? `<p class="pista">${esc(FORMATO_TT[p.formato] || p.formato || "")} · <code>${esc(p.guion_id)}</code></p>` : ""}
+        ${p.error ? `<p class="error">${esc(p.error)}</p>` : ""}
+        ${p.costo ? `<div class="costo">💰 ${dinero(p.costo)}</div>` : ""}
+        <div class="fila">
+          ${p.etapas?.guion === "hecha" ? `<button class="btn btn-primario" data-ver-tt="${esc(p.id)}">Ver guion y tomas</button>` : ""}
+          ${p.estado !== "trabajando" ? `<button class="btn btn-mini" data-rehacer-tt="${esc(p.id)}">${p.estado === "error" ? "Reintentar" : "Otro guion"}</button>
+            <button class="btn btn-mini" data-borrar-tt="${esc(p.id)}">Borrar</button>` : ""}
+        </div>
+      </article>`).join("");
+  }
+
+  $("#form-producto").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const boton = e.target.querySelector("button[type=submit]");
+    boton.disabled = true;
+    try {
+      await apiTT("/api/producto", { nombre: $("#p-nombre").value, enlace: $("#p-enlace").value, precio: $("#p-precio").value,
+                                     comision: $("#p-comision").value, notas: $("#p-notas").value,
+                                     de_marca: $("#p-marca").checked, duracion: $("#p-duracion").value });
+      ["#p-nombre", "#p-enlace", "#p-precio", "#p-comision", "#p-notas"].forEach((s) => ($(s).value = ""));
+      window.Oficina.verAla("tiktok");
+      consultarTT();
+    } catch (err) { alert(err.message); }
+    boton.disabled = false;
+  });
+
+  $("#shop-lista").addEventListener("click", async (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    try {
+      if (b.dataset.verTt) return abrirGuionTT(b.dataset.verTt);
+      if (b.dataset.rehacerTt) { b.disabled = true; await apiTT(`/api/producto/${encodeURIComponent(b.dataset.rehacerTt)}`, { accion: "rehacer" }); }
+      if (b.dataset.borrarTt && confirm("¿Borrar este producto y su guion?")) await apiTT(`/api/producto/${encodeURIComponent(b.dataset.borrarTt)}`, { accion: "borrar" });
+      consultarTT();
+    } catch (err) { alert(err.message); b.disabled = false; }
+  });
+
+  async function abrirGuionTT(id) {
+    const p = await apiTT(`/api/producto/${encodeURIComponent(id)}`);
+    const g = p.guion, f = p.ficha || {}, t = p.tomas;
+    try { const v = new Set(leerVistos()); v.add(id); localStorage.setItem("shop_vistos", JSON.stringify([...v].slice(-200))); } catch { /* sin almacenamiento */ }
+    const caption = `${g.caption}\n\n${(g.hashtags || []).join(" ")}`;
+    $("#modal-cuerpo").innerHTML = `<div class="guion-shop">
+      <h2 id="modal-titulo">${esc(p.nombre)}</h2>
+      <p class="id">ID: ${esc(g.id)} · ${esc(FORMATO_TT[g.formato] || g.formato)} · ${g.duracion === "corta" ? "15–25 s" : "35–50 s"}</p>
+      <p><b>Ángulo:</b> ${esc(g.angulo)}</p>
+      ${g.supuestos ? `<p class="pista">Supuse: ${esc(g.supuestos)}</p>` : ""}
+      ${p.de_marca ? `<p class="marca-aviso">🏷️ Al subirlo, actívale <b>"Contenido de marca"</b> en TikTok (te lo mandó una marca).</p>` : ""}
+      <h3>3 ganchos (mismo cuerpo)</h3>
+      <div class="ganchos">${g.ganchos.map((x) => `<div class="gancho"><b>${esc(x.letra)}</b> · ${esc(x.tipo)} <small class="id">${esc(g.id)}-${esc(x.letra)}</small>
+        <p>🎥 ${esc(x.toma)}</p><p class="texto-pantalla">🅣 ${esc(x.texto_pantalla)}</p><p>🗣️ ${esc(x.voz || "(sin voz)")}</p></div>`).join("")}</div>
+      <h3>Cuerpo</h3>
+      <table class="tabla-shop"><thead><tr><th>Tiempo</th><th>Toma</th><th>Texto en pantalla</th><th>Voz</th></tr></thead>
+        <tbody>${g.cuerpo.map((c) => `<tr><td>${esc(c.tiempo)}<br><small>${esc(BLOQUE_TT[c.bloque] || c.bloque)}</small></td><td>${esc(c.toma)}</td>
+          <td class="texto-pantalla">${esc(c.texto_pantalla)}</td><td>${esc(c.voz)}</td></tr>`).join("")}</tbody></table>
+      <h3>Caption <button class="btn btn-mini" data-copiar="caption">Copiar</button></h3>
+      <div class="copiable" id="copiar-caption">${esc(caption.replace("\\n", "\n"))}</div>
+      <h3>Comentario fijado <button class="btn btn-mini" data-copiar="comentario">Copiar</button></h3>
+      <div class="copiable" id="copiar-comentario">${esc(g.comentario_fijado)}</div>
+      ${t ? `<h3>🎥 Lista de tomas de Diego (en orden de grabación)</h3>
+        ${t.material?.length ? `<p><b>Ten a la mano:</b> ${t.material.map(esc).join(", ")}</p>` : ""}
+        <ul class="tomas-lista">${t.tomas.map((x) => `<li><input type="checkbox" aria-label="Toma ${x.n} grabada"><div>
+          <b>${x.n}. ${esc(x.que_grabar)}</b> <small>· ${esc(x.lugar)} · ${esc(x.encuadre)} · ${esc(x.segundos)} s · para ${esc(x.para)}</small>
+          ${x.tip ? `<br><small>💡 ${esc(x.tip)}</small>` : ""}</div></li>`).join("")}</ul>
+        ${t.consejos?.length ? `<ul class="fuentes">${t.consejos.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}` : ""}
+      <h3>🔎 Ficha de Toño</h3>
+      <p>${esc(f.resumen || "")}</p>
+      <p><b>Problema:</b> ${esc(f.problema || "—")} · <b>Público:</b> ${esc(f.publico || "—")} · <b>Duda principal:</b> ${esc(f.objecion || "—")}${f.precio ? ` · <b>Precio:</b> ${esc(f.precio)}` : ""}</p>
+      ${f.cuidado ? `<p class="marca-aviso">⚠️ No prometer: ${esc(f.cuidado)}</p>` : ""}
+      ${(f.datos || []).length || (f.opiniones || []).length ? `<ul class="fuentes">
+        ${(f.datos || []).map((d) => `<li>${esc(d.dato)} — <a href="${esc(d.url)}" target="_blank" rel="noopener">fuente</a></li>`).join("")}
+        ${(f.opiniones || []).map((o) => `<li>“${esc(o.texto)}” — <a href="${esc(o.url)}" target="_blank" rel="noopener">fuente</a></li>`).join("")}</ul>`
+        : `<p class="pista">Sin datos de internet${f.fuentes === 0 ? " (no hubo búsqueda)" : ""}: el guion solo usa lo que tú le dijiste.</p>`}
+      ${g.mejoraria ? `<p class="pista">📌 Para la siguiente versión ayudaría saber: ${esc(g.mejoraria)}</p>` : ""}
+      ${p.costo ? `<p class="pista">💰 Este guion costó ${dinero(p.costo)}</p>` : ""}
+    </div>`;
+    $("#modal").hidden = false;
+    $("#modal-cerrar").focus();
+    pintarShop();
+  }
+  $("#modal-cuerpo").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-copiar]");
+    if (!b) return;
+    const texto = $(`#copiar-${b.dataset.copiar}`).textContent;
+    navigator.clipboard?.writeText(texto).then(() => { b.textContent = "¡Copiado!"; setTimeout(() => (b.textContent = "Copiar"), 1500); })
+      .catch(() => alert("No se pudo copiar; selecciónalo y cópialo a mano."));
+  });
+
   api("/api/estado").then(pintar).catch(() => {});
   conectar();
+  consultarTT();
+  setInterval(consultarTT, 2000);
 })();

@@ -21,7 +21,7 @@
     ["tt_cazador", "Toño", "Cazador de productos", "#0ea5e9", "corto", "Busca productos que se están vendiendo en México: precio, comisión y reseñas reales."],
     ["tt_guionista", "Sofi", "Guionista de Shop", "#f43f5e", "largo", "Escribe guiones que venden: 3 ganchos, cuerpo, caption, hashtags y comentario fijado."],
     ["tt_director", "Diego", "Director de grabación", "#a3e635", "rizos", "Te arma la lista de tomas para grabar el producto con tu celular."],
-    ["tt_editor", "Chris", "Editor vertical", "#f97316", "copete", "Edita tus clips en vertical: cortes rápidos, subtítulos karaoke y efectos."],
+    ["tt_editor", "Cris", "Editor vertical", "#f97316", "copete", "Edita tus clips en vertical: cortes rápidos, subtítulos karaoke y efectos."],
     ["tt_disenadora", "Vale", "Diseñadora de portadas", "#d946ef", "bob", "Hace la portada del video para que se vea chida en tu perfil."],
     ["tt_analista", "Ana", "Analista de ventas", "#22c55e", "chongo", "Lee lo que vendió cada video y le dice al equipo qué repetir."],
   ];
@@ -789,20 +789,28 @@
   const enObraTT = EQUIPO_TT.map(([id, nombre, rol, color, pelo, desc]) => ({
     id, nombre, rol, color, pelo, desc, lentes: id === "tt_editor", estado: "libre", ubicacion: "casa", dice: "", dice_t: 0, enObra: true,
   }));
-  let equipoTT = enObraTT;
+  let equipoTT = enObraTT, tareasTT = [], ultimoYT = null;
+
+  // Estado de la oficina de TikTok Shop (null = apagada: su equipo vuelve a estar "en obra")
+  function actualizarTT(tt) {
+    equipoTT = tt?.agentes?.length ? tt.agentes : enObraTT;
+    tareasTT = tt?.tareas || [];
+    if (ultimoYT) actualizar(ultimoYT);
+  }
 
   function actualizar(nuevo) {
+    ultimoYT = nuevo;
     const lista = [...nuevo.agentes, ...equipoTT];
     const agentes = {};
     lista.forEach((a) => (agentes[a.id] = a));
-    estado = { ...nuevo, agentes };
+    estado = { ...nuevo, agentes, tareas: [...(nuevo.tareas || []), ...tareasTT] };
     for (const a of lista) {
       let v = vivos[a.id];
       if (!v) {
         const c = CASA[a.id];
         v = vivos[a.id] = { pos: [c[0] + 0.5, c[1] + 0.5], camino: [], meta: c, frente: a.id === "jefe", dice_t: a.dice_t,
                             globo: null, pasearEn: performance.now() + 8000 + Math.random() * 20000, dom: crearDom(a) };
-        if (a.enObra && SALUDOS_TT[a.id]) setTimeout(() => { if (vivos[a.id]) vivos[a.id].pendiente = SALUDOS_TT[a.id]; }, 2500 + Math.random() * 9000);
+        if (a.enObra && SALUDOS_TT[a.id]) setTimeout(() => { if (vivos[a.id] && equipoTT === enObraTT) vivos[a.id].pendiente = SALUDOS_TT[a.id]; }, 2500 + Math.random() * 9000);
       }
       const meta = destinoDe(a), clave = meta.join(",");
       if (v.claveServidor === undefined) v.claveServidor = clave;
@@ -831,7 +839,7 @@
   const ICONO_TRABAJO = { productora: "📋", investigador: "🔎", guionista: "✍️", locutor: "🎙️", disenadora: "🎨",
                           editor: "🎬", redactora: "📝", community: "📤", jefe: "👔",
                           tt_cazador: "🔎", tt_guionista: "✍️", tt_director: "🎥", tt_editor: "🎬", tt_disenadora: "🎨", tt_analista: "📊" };
-  const DURACION = { ideas: 30, investigar: 90, guion: 60, voz: 45, miniatura: 8, video: 150, blog: 60, publicar: 60 };
+  const DURACION = { ficha: 25, tomas: 25, ideas: 30, investigar: 90, guion: 60, voz: 45, miniatura: 8, video: 150, blog: 60, publicar: 60 };
 
   function tareasDe(id) { return (estado.tareas || []).filter((t) => t.agente === id); }
 
@@ -1125,6 +1133,7 @@
 
   window.Oficina = {
     actualizar: (n) => { n._recibido = Date.now(); actualizar(n); },
+    actualizarTT,
     agenteEn, retrato,
     escala: () => escala,
     posicion: (id) => vivos[id]?.pantalla,
