@@ -644,7 +644,7 @@
     $("#shop-lista").innerHTML = estadoTT.productos.map((p) => `<article class="tarjeta ${p.estado === "error" ? "tarjeta-error" : ""}">
         <div class="cabeza"><h4>${esc(p.nombre)}</h4><span class="chip ${p.estado === "listo" ? "chip-estado-publicado" : p.estado === "error" ? "chip-estado-error" : ""}">${esc(ESTADO_TT[p.estado] || p.estado)}</span></div>
         <ol class="pasos-shop">${ETAPAS_TT.map(([e, txt]) => `<li class="${esc(p.etapas?.[e] || "")}">${esc(txt)}</li>`).join("")}</ol>
-        ${p.guion_id ? `<p class="pista">${esc(FORMATO_TT[p.formato] || p.formato || "")} · <code>${esc(p.guion_id)}</code></p>` : ""}
+        ${p.guion_id ? `<p class="pista">${esc(FORMATO_TT[p.formato] || p.formato || "")} · 🪝 ${p.gancho && p.gancho !== "todos" ? `Gancho ${esc(p.gancho)}` : "Los 3 ganchos"} · <code>${esc(p.guion_id)}</code></p>` : ""}
         ${p.error ? `<p class="error">${esc(p.error)}</p>` : ""}
         ${p.costo ? `<div class="costo">💰 ${dinero(p.costo)}</div>` : ""}
         <div class="fila">
@@ -681,32 +681,56 @@
     } catch (err) { alert(err.message); b.disabled = false; }
   });
 
+  // Guion de un producto. Se elige con cuál gancho grabar (o los 3) y la lista de tomas de Diego se ajusta.
+  let guionAbierto = null;
+  const letraDeToma = (x) => (/gancho\s*([abc])\b/i.exec(x.para || "")?.[1] || "").toUpperCase();
+
   async function abrirGuionTT(id) {
-    const p = await apiTT(`/api/producto/${encodeURIComponent(id)}`);
-    const g = p.guion, f = p.ficha || {}, t = p.tomas;
+    guionAbierto = await apiTT(`/api/producto/${encodeURIComponent(id)}`);
     try { const v = new Set(leerVistos()); v.add(id); localStorage.setItem("shop_vistos", JSON.stringify([...v].slice(-200))); } catch { /* sin almacenamiento */ }
+    pintarGuionTT();
+    $("#modal").hidden = false;
+    $("#modal-cerrar").focus();
+    pintarShop();
+  }
+
+  function pintarGuionTT() {
+    const p = guionAbierto, g = p.guion, f = p.ficha || {}, t = p.tomas;
+    const elegido = p.gancho || "todos";
+    const letras = elegido === "todos" ? ["A", "B", "C"] : [elegido];
+    const gancho = g.ganchos.find((x) => x.letra === elegido);
     const caption = `${g.caption}\n\n${(g.hashtags || []).join(" ")}`;
+    const tomas = (t?.tomas || []).filter((x) => !letraDeToma(x) || letras.includes(letraDeToma(x)));
+    const segundos = Math.round(tomas.reduce((s, x) => s + (Number(x.segundos) || 0), 0));
+    const fila = (c, etiqueta) => `<tr><td>${esc(c.tiempo)}<br><small>${esc(etiqueta)}</small></td><td>${esc(c.toma)}</td>
+      <td class="texto-pantalla">${esc(c.texto_pantalla)}</td><td>${esc(c.voz || "(sin voz)")}</td></tr>`;
+    const caja = $(".modal-caja"), scroll = caja.scrollTop;
     $("#modal-cuerpo").innerHTML = `<div class="guion-shop">
       <h2 id="modal-titulo">${esc(p.nombre)}</h2>
-      <p class="id">ID: ${esc(g.id)} · ${esc(FORMATO_TT[g.formato] || g.formato)} · ${g.duracion === "corta" ? "15–25 s" : "35–50 s"}</p>
+      <p class="id">ID: ${esc(g.id)}${gancho ? `-${esc(gancho.letra)}` : ""} · ${esc(FORMATO_TT[g.formato] || g.formato)} · ${g.duracion === "corta" ? "15–25 s" : "35–50 s"}</p>
       <p><b>Ángulo:</b> ${esc(g.angulo)}</p>
       ${g.supuestos ? `<p class="pista">Supuse: ${esc(g.supuestos)}</p>` : ""}
       ${p.de_marca ? `<p class="marca-aviso">🏷️ Al subirlo, actívale <b>"Contenido de marca"</b> en TikTok (te lo mandó una marca).</p>` : ""}
-      <h3>3 ganchos (mismo cuerpo)</h3>
-      <div class="ganchos">${g.ganchos.map((x) => `<div class="gancho"><b>${esc(x.letra)}</b> · ${esc(x.tipo)} <small class="id">${esc(g.id)}-${esc(x.letra)}</small>
-        <p>🎥 ${esc(x.toma)}</p><p class="texto-pantalla">🅣 ${esc(x.texto_pantalla)}</p><p>🗣️ ${esc(x.voz || "(sin voz)")}</p></div>`).join("")}</div>
-      <h3>Cuerpo</h3>
+      <h3>🪝 Elige tu gancho</h3>
+      <p class="pista">Pícale a uno para ver el guion completo con ese gancho y solo sus tomas, o graba los 3 para probar cuál vende más.</p>
+      <div class="ganchos">${g.ganchos.map((x) => `<button type="button" class="gancho ${letras.includes(x.letra) ? "elegido" : ""}" data-gancho="${esc(x.letra)}" aria-pressed="${elegido === x.letra}">
+        <b>${esc(x.letra)}</b> · ${esc(x.tipo)} ${elegido === x.letra ? `<span class="chip chip-estado-revision">Elegido</span>` : ""}
+        <span class="id">${esc(g.id)}-${esc(x.letra)}</span>
+        <p>🎥 ${esc(x.toma)}</p><p class="texto-pantalla">🅣 ${esc(x.texto_pantalla)}</p><p>🗣️ ${esc(x.voz || "(sin voz)")}</p></button>`).join("")}</div>
+      <button type="button" class="btn btn-mini tres ${elegido === "todos" ? "btn-primario" : ""}" data-gancho="todos">🅰 🅱 🅲 Grabar los 3 (prueba cuál vende más)</button>
+      <h3>${gancho ? `📜 Guion completo con el gancho ${esc(gancho.letra)}` : "📜 Cuerpo (el mismo para los 3 ganchos)"}</h3>
       <table class="tabla-shop"><thead><tr><th>Tiempo</th><th>Toma</th><th>Texto en pantalla</th><th>Voz</th></tr></thead>
-        <tbody>${g.cuerpo.map((c) => `<tr><td>${esc(c.tiempo)}<br><small>${esc(BLOQUE_TT[c.bloque] || c.bloque)}</small></td><td>${esc(c.toma)}</td>
-          <td class="texto-pantalla">${esc(c.texto_pantalla)}</td><td>${esc(c.voz)}</td></tr>`).join("")}</tbody></table>
+        <tbody>${gancho ? fila({ tiempo: "0–3 s", ...gancho }, `Gancho ${gancho.letra}`) : ""}
+        ${g.cuerpo.map((c) => fila(c, BLOQUE_TT[c.bloque] || c.bloque)).join("")}</tbody></table>
       <h3>Caption <button class="btn btn-mini" data-copiar="caption">Copiar</button></h3>
-      <div class="copiable" id="copiar-caption">${esc(caption.replace("\\n", "\n"))}</div>
+      <div class="copiable" id="copiar-caption">${esc(caption)}</div>
       <h3>Comentario fijado <button class="btn btn-mini" data-copiar="comentario">Copiar</button></h3>
       <div class="copiable" id="copiar-comentario">${esc(g.comentario_fijado)}</div>
-      ${t ? `<h3>🎥 Lista de tomas de Diego (en orden de grabación)</h3>
+      ${t ? `<h3>🎥 Tomas de Diego ${gancho ? `para el gancho ${esc(gancho.letra)}` : "para los 3 ganchos"}</h3>
+        <p class="pista">${tomas.length} tomas · unos ${segundos} s de grabación · en orden de grabación (por lugar)</p>
         ${t.material?.length ? `<p><b>Ten a la mano:</b> ${t.material.map(esc).join(", ")}</p>` : ""}
-        <ul class="tomas-lista">${t.tomas.map((x) => `<li><input type="checkbox" aria-label="Toma ${x.n} grabada"><div>
-          <b>${x.n}. ${esc(x.que_grabar)}</b> <small>· ${esc(x.lugar)} · ${esc(x.encuadre)} · ${esc(x.segundos)} s · para ${esc(x.para)}</small>
+        <ul class="tomas-lista">${tomas.map((x, k) => `<li><input type="checkbox" aria-label="Toma ${k + 1} grabada"><div>
+          <b>${k + 1}. ${esc(x.que_grabar)}</b> <small>· ${esc(x.lugar)} · ${esc(x.encuadre)} · ${esc(x.segundos)} s · para ${esc(x.para)}</small>
           ${x.tip ? `<br><small>💡 ${esc(x.tip)}</small>` : ""}</div></li>`).join("")}</ul>
         ${t.consejos?.length ? `<ul class="fuentes">${t.consejos.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}` : ""}
       <h3>🔎 Ficha de Toño</h3>
@@ -720,11 +744,17 @@
       ${g.mejoraria ? `<p class="pista">📌 Para la siguiente versión ayudaría saber: ${esc(g.mejoraria)}</p>` : ""}
       ${p.costo ? `<p class="pista">💰 Este guion costó ${dinero(p.costo)}</p>` : ""}
     </div>`;
-    $("#modal").hidden = false;
-    $("#modal-cerrar").focus();
-    pintarShop();
+    caja.scrollTop = scroll;
   }
   $("#modal-cuerpo").addEventListener("click", (e) => {
+    const gb = e.target.closest("[data-gancho]");
+    if (gb && guionAbierto) {
+      guionAbierto.gancho = gb.dataset.gancho;
+      pintarGuionTT();
+      apiTT(`/api/producto/${encodeURIComponent(guionAbierto.id)}`, { accion: "gancho", desde: gb.dataset.gancho })
+        .then(consultarTT).catch((err) => alert(err.message));
+      return;
+    }
     const b = e.target.closest("[data-copiar]");
     if (!b) return;
     const texto = $(`#copiar-${b.dataset.copiar}`).textContent;

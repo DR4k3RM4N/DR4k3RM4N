@@ -103,7 +103,7 @@ class Tienda:
             productos = []
             for p in sorted(self.productos.values(), key=lambda x: -x["creado"]):
                 productos.append({k: p.get(k) for k in ("id", "nombre", "estado", "etapas", "error", "costo", "creado",
-                                                         "de_marca", "duracion", "enlace", "precio")}
+                                                         "de_marca", "duracion", "enlace", "precio", "gancho")}
                                  | {"formato": (p.get("guion") or {}).get("formato"),
                                     "guion_id": (p.get("guion") or {}).get("id")})
             return {"version": self.version, "demo": self.demo, "ahora": time.time(),
@@ -168,6 +168,13 @@ class Tienda:
         p = self.productos.get(pid)
         if not p:
             return {"error": "No encontré ese producto."}
+        if accion == "gancho":  # con cuál gancho vas a grabar (o los 3 para probar cuál jala)
+            if desde not in ("A", "B", "C", "todos"):
+                return {"error": "Gancho inválido."}
+            with self.lock:
+                p["gancho"] = desde
+                self._tocar()
+            return {"ok": True}
         if accion == "borrar":
             if p["estado"] == "trabajando":
                 return {"error": "Espera a que terminen de trabajar en él."}

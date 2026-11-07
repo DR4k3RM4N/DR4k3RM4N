@@ -200,7 +200,7 @@ TOMAS = {
                            "que_grabar": {"type": "string"},
                            "encuadre": {"type": "string", "description": "close-up de manos, plano medio, desde arriba…"},
                            "segundos": {"type": "number", "description": "cuánto grabar (deja 1–2 s de colchón)"},
-                           "para": {"type": "string", "description": "a qué parte del guion va (Gancho A, Problema…)"},
+                           "para": {"type": "string", "description": "a qué parte va: exactamente 'Gancho A', 'Gancho B' o 'Gancho C' si es de un gancho; si no, Puente, Problema, Solución, Beneficios o Carrito naranja"},
                            "tip": {"type": "string"}}}},
         "consejos": {"type": "array", "items": {"type": "string"}},
     },
@@ -212,7 +212,7 @@ def tomas(p: dict, g: dict) -> dict:
         {"ganchos": g["ganchos"], "cuerpo": g["cuerpo"]}, ensure_ascii=False)
         + "\n\nArma la lista de tomas para que Miguel grabe TODO en una sola sesión con su celular en vertical. "
           "Ordénalas por lugar para no mover las cosas dos veces (no en el orden del video). Incluye las tomas de "
-          "los 3 ganchos. Cada toma de 2 a 6 s, con 1–2 s de colchón. Consejos cortos de luz, sonido y zona segura.")
+          "los 3 ganchos (cada toma de gancho es solo de uno: escribe 'Gancho A', 'Gancho B' o 'Gancho C'). Cada toma de 2 a 6 s, con 1–2 s de colchón. Consejos cortos de luz, sonido y zona segura.")
     r = ia.json_estructurado("Eres Diego, director de grabación. Práctico: tomas que se hacen en casa con el producto "
                              "real y un celular.", pedido, TOMAS, tarea="tomas_shop", que="lista de tomas")
     for i, t in enumerate(r["tomas"], 1):

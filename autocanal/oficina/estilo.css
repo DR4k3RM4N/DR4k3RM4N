@@ -75,6 +75,11 @@ button, input, textarea { font: inherit; color: inherit; }
 .gancho { background: rgba(255,255,255,.04); border: 2px solid var(--borde); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
 .gancho b { font-family: var(--pixel); }
 .gancho .id { display: block; font-size: 11px; word-break: break-all; }
+button.gancho { text-align: left; color: inherit; font: inherit; cursor: pointer; transition: border-color .15s ease-out, background-color .15s ease-out, transform .12s ease-out; }
+button.gancho:hover { border-color: rgba(255,210,63,.5); }
+button.gancho:active { transform: scale(.98); }
+button.gancho.elegido { border-color: var(--acento); background: rgba(255,210,63,.08); }
+.guion-shop .tres { margin-top: 8px; }
 .gancho p { margin: 4px 0; }
 .tabla-shop { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tabla-shop th, .tabla-shop td { text-align: left; vertical-align: top; padding: 6px; border-bottom: 1px solid rgba(255,255,255,.08); }
