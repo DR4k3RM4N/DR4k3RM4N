@@ -33,12 +33,38 @@ def limpio(nombre: str) -> str:
     return re.sub(r'[<>:"/\\|?*\[\]]+', " ", nombre or "").strip(" .")[:60] or "Proyecto"
 
 
+MANUAL = """CÓMO EDITA UN BUEN EDITOR (síguelo siempre):
+1. Antes de cortar, entiende el material: mira los cuadros de cada clip, lee lo que se dice y decide QUÉ HISTORIA cuenta
+   el video. Arma una estructura: GANCHO (0-3 s: lo más llamativo, una frase fuerte o el resultado; nunca "hola" ni
+   arranques lentos) → DESARROLLO (en orden lógico: qué es / qué pasó / cómo) → CIERRE (remate, resultado o llamado a
+   la acción). El orden del video NO tiene que ser el orden de grabación.
+2. Escoge lo mejor: de cada idea, solo la mejor toma (la última que salió bien, la más clara y estable). Recorta con
+   desde/hasta usando los tiempos de lo que dice: entra justo antes de la primera palabra útil y sal justo después de
+   la última; quita titubeos, "eh", errores, "¿ya está grabando?" y repeticiones.
+3. Ritmo: en vertical (TikTok/Reels/Shorts) cambia de imagen cada 1.5-3 s y deja el video corto (15-45 s salvo que
+   pida otra cosa); en horizontal (YouTube) el ritmo puede ser más calmado. Sin tiempos muertos.
+4. Cuando alguien habla mucho rato, tapa los cortes con TOMAS DE APOYO: usa 'encima' para que se vea otro clip
+   (el lugar, el producto, la acción) mientras se sigue oyendo la voz. Así el video se ve profesional y no brinca.
+5. Textos: cortos (2-5 palabras), en el pedazo donde aplican (campo 'texto' del pedazo), para reforzar la idea clave
+   o el gancho; no repitas lo que dicen los subtítulos. Subtítulos karaoke casi siempre en vertical.
+6. Audio: la voz manda. Con música, bajita y que baje cuando hablan; quita ruido de fondo. Si un clip no tiene voz,
+   úsalo como apoyo o con música.
+7. Transiciones: corte seco casi siempre; 'fundido' solo para cambios de lugar o de tiempo. Acercamientos
+   (cortes_dinamicos) en tomas largas de alguien hablando a cámara.
+8. Evita lo movido, borroso u oscuro; si no hay de otra, estabiliza o úsalo muy corto.
+9. Correcciones: cambia SOLO lo que pidió, deja lo demás igual que la versión anterior, y di exactamente qué cambiaste.
+10. Si algo no se puede con tus herramientas, dilo y propone lo más cercano. No inventes clips ni archivos."""
+
+
 def respuesta_schema(con_plan: bool) -> dict:
     from editor_libre import PLAN_SCHEMA
     props = {
         "respuesta": {"type": "string", "description": "lo que le contestas a Miguel (corto, español de México)"},
         "accion": {"type": "string", "enum": ["preguntar", "editar", "nada"]},
         "formato": {"type": "string", "enum": ["vertical", "horizontal", ""], "description": "si ya lo sabes"},
+        "estructura": {"type": "array", "items": {"type": "string"},
+                       "description": "si accion=editar, ANTES del plan: la historia del video parte por parte "
+                                      "('Gancho: clip 3 de 4.2 a 6 s, la frase «…» porque…', 'Desarrollo: …', 'Cierre: …')"},
         "cambios": {"type": "array", "items": {"type": "string"},
                     "description": "si accion=editar: lista corta de lo que hiciste/cambiaste en esta versión"},
         "no_puedo": {"type": "string", "description": "lo que pidió y NO se puede hacer (o vacío)"},
@@ -357,8 +383,9 @@ class Proyectos:
             from agentes import claude as ia
             r = ia.json_estructurado(
                 f"Eres {self._nombre_editor(p.get('encargado'))}, editor de video en la sala de edición de Miguel (creador "
-                f"mexicano). Hablas español de México, casual y breve, como compañero de trabajo. {self.AYUDA} Si te piden "
-                "algo que no sabes hacer, dilo y ofrece una alternativa.",
+                f"mexicano). Hablas español de México, casual y breve, como compañero de trabajo. Eres un editor con mucho "
+                f"oficio: piensas como editor de TikTok y YouTube, no como alguien que solo pega clips.\n{MANUAL}\n"
+                f"Herramientas: {self.AYUDA}",
                 [*imagenes, {"type": "text", "text":
                 f"Proyecto: {p['nombre']}\nFormato: {p.get('formato') or 'no lo ha dicho'}\n"
                 "Clips (usa exactamente estos nombres en el plan):\n" + "\n".join(fichas) + "\n"
@@ -368,6 +395,7 @@ class Proyectos:
                    if p.get("musica_opciones") else "") +
                 f"Plan de la última versión: {json.dumps(p.get('plan'), ensure_ascii=False) if p.get('plan') else 'todavía no hay'}\n"
                 f"Conversación:\n" + "\n".join(historial) + f"\n\nNuevo mensaje de Miguel: «{texto}»\n\n"
+                "Primero llena 'estructura' (la historia del video) y luego el plan que la sigue al pie de la letra. "
                 "Reglas: si no sabes si es vertical u horizontal y no se deduce, accion='preguntar' y pregúntalo. Si no hay clips, "
                 "pide que los pase/suba. Si ya puedes hacer el video (o la corrección), accion='editar' y arma el plan completo: "
                 "para correcciones cambia SOLO lo que pidió y deja lo demás como en el plan anterior. Si solo platica, accion='nada'. "
@@ -382,6 +410,8 @@ class Proyectos:
         if r.get("formato") in ("vertical", "horizontal"):
             p["formato"] = r["formato"]
         texto_resp = r.get("respuesta") or "Va."
+        if r.get("accion") == "editar" and r.get("estructura") and not p.get("versiones"):
+            texto_resp += "\n🎬 Cómo lo armé:\n" + "\n".join(f"  {x}" for x in r["estructura"][:7])
         if r.get("accion") == "editar" and r.get("cambios"):
             texto_resp += "\n" + "\n".join(f"• {c}" for c in r["cambios"][:8])
         if r.get("no_puedo"):
@@ -515,7 +545,9 @@ class Proyectos:
     def _cerebro_demo(self, p: dict, texto: str, clips: list) -> dict:
         t = texto.lower()
         formato = "vertical" if "vertical" in t else "horizontal" if "horizontal" in t else p.get("formato") or ""
-        base = {"formato": formato or "vertical", "clips": [{"archivo": x["nombre"], "desde": 0, "hasta": 0, "velocidad": 1} for x in clips],
+        base = {"formato": formato or "vertical", "clips": [{"archivo": x["nombre"], "desde": 0, "hasta": 0, "velocidad": 1,
+                                                              "texto": "", "posicion_texto": "arriba", "encima": {"archivo": "", "desde": 0},
+                                                              "transicion": "corte"} for x in clips],
                 "quitar_silencios": True, "quitar_repetidas": True, "cortes_dinamicos": True, "saltar_malas": True,
                 "estabilizar": "movid" in t, "audio_original": "solo_voz" if "música" in t or "musica" in t else "normal",
                 "reducir_ruido": "ruido" in t or "música" in t or "musica" in t,
@@ -530,14 +562,15 @@ class Proyectos:
                 base["subtitulos"] = {**base["subtitulos"], "tamano": "grande"}
         if not formato:
             return {"respuesta": "¿Lo quieres vertical (TikTok/Reels) u horizontal (YouTube)? (demo)", "accion": "preguntar",
-                    "formato": "", "plan": base, "cambios": [], "no_puedo": "", "buscar_musica": ""}
+                    "formato": "", "plan": base, "cambios": [], "no_puedo": "", "buscar_musica": "", "estructura": []}
         if not clips:
             return {"respuesta": "Pásame los clips a la carpeta y me avisas. (demo)", "accion": "nada", "formato": formato, "plan": base,
-                    "cambios": [], "no_puedo": "", "buscar_musica": ""}
+                    "cambios": [], "no_puedo": "", "buscar_musica": "", "estructura": []}
         pide_musica = "música" in t or "musica" in t
         m = re.search(r"usa la (?:música |musica )?(\d)", t)
         if pide_musica or m:
             base["musica"] = {"archivo": f"opcion:{m.group(1) if m else 1}", "volumen": 0.15}
         return {"respuesta": f"Va, lo armo {formato} con {len(clips)} clips. (demo)", "accion": "editar", "formato": formato, "plan": base,
                 "cambios": ["Quité silencios y partes movidas", "Subtítulos " + base["subtitulos"]["tamano"]], "no_puedo": "",
-                "buscar_musica": "upbeat travel" if pide_musica and not m else ""}
+                "buscar_musica": "upbeat travel" if pide_musica and not m else "",
+                "estructura": [f"Gancho: {clips[0]['nombre']}", "Desarrollo: el resto en orden", "Cierre: el último clip"]}

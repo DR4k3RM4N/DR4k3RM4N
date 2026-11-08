@@ -220,3 +220,9 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
 - Nov 2026 (5): Miguel NO quiere subir carpetas: quitado "Subir una carpeta" (webkitdirectory). En la ventana del proyecto
   "📂 Usar una carpeta de mi compu" (ventana de Windows en la compu → `/api/proyecto/<id>/carpeta` {compu, ruta}); lo subido
   al servidor de ese proyecto se borra. "☁️ Subir clips al servidor" queda solo para cuando la compu está apagada.
+- Nov 2026 (6): a Miguel no le gustaban los videos de la sala ("no entiende de edición"). Cambios: tarea "sala" ahora
+  Sonnet 5.5 medium por defecto (~3-5 ¢/mensaje; MODELO_SALA=claude-haiku-5-5 para ahorrar); `proyectos.MANUAL` con
+  principios de edición (gancho/desarrollo/cierre, mejores tomas, ritmo, tomas de apoyo, textos cortos, audio,
+  transiciones); campo `estructura` antes del plan (se le muestra "Cómo lo armé" en la v1). Plan por pedazo: `texto` +
+  `posicion_texto` (se pinta donde quedó ese pedazo tras quitar silencios), `encima` (b-roll: se ve otro clip y se oye
+  el del pedazo) y `transicion` corte/fundido.

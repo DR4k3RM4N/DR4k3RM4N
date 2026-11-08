@@ -26,11 +26,18 @@ PLAN_SCHEMA = {
         "formato": {"type": "string", "enum": ["vertical", "horizontal"]},
         "clips": {"type": "array", "description": "en el orden del video; solo archivos de la lista",
                   "items": {"type": "object", "additionalProperties": False,
-                            "required": ["archivo", "desde", "hasta", "velocidad"],
-                            "properties": {"archivo": {"type": "string"},
+                            "required": ["archivo", "desde", "hasta", "velocidad", "texto", "posicion_texto", "encima", "transicion"],
+                            "properties": {"archivo": {"type": "string", "description": "el clip de este pedazo (su audio es el que se oye)"},
                                            "desde": {"type": "number", "description": "segundo de inicio (0 = desde el principio)"},
                                            "hasta": {"type": "number", "description": "segundo final (0 = hasta el final)"},
-                                           "velocidad": {"type": "number", "description": "1 normal, 0.5 lento, 2 rápido"}}}},
+                                           "velocidad": {"type": "number", "description": "1 normal, 0.5 lento, 2 rápido"},
+                                           "texto": {"type": "string", "description": "texto corto en pantalla durante este pedazo (o vacío)"},
+                                           "posicion_texto": {"type": "string", "enum": ["arriba", "centro", "abajo"]},
+                                           "encima": {"type": "object", "additionalProperties": False, "required": ["archivo", "desde"],
+                                                      "description": "toma de apoyo (b-roll): se VE este otro clip mientras se OYE el de arriba; vacío = sin",
+                                                      "properties": {"archivo": {"type": "string"}, "desde": {"type": "number"}}},
+                                           "transicion": {"type": "string", "enum": ["corte", "fundido"],
+                                                          "description": "cómo entra este pedazo (corte seco casi siempre; fundido para cambios de lugar/tiempo)"}}}},
         "quitar_silencios": {"type": "boolean"},
         "quitar_repetidas": {"type": "boolean", "description": "si dijo lo mismo dos veces, deja la última"},
         "cortes_dinamicos": {"type": "boolean", "description": "acercamientos cada ~2 s en tomas largas"},
@@ -85,7 +92,7 @@ def _trozos_con_voz(pals: list[dict], ini: float, fin: float, gap: float = 0.6) 
 
 def piezas_del_plan(plan: dict, carpeta: Path, pista: str = "") -> list[dict]:
     piezas = []
-    for c in plan.get("clips") or []:
+    for idx, c in enumerate(plan.get("clips") or []):
         src = carpeta / Path(str(c.get("archivo", ""))).name
         if not src.exists():
             raise cris.ErrorEdicion(f"No encontré el clip «{c.get('archivo')}» en la carpeta del proyecto.")
@@ -117,9 +124,17 @@ def piezas_del_plan(plan: dict, carpeta: Path, pista: str = "") -> list[dict]:
                 buenos += [(c0, c1, texto) for c0, c1 in cortes]
             tramos = buenos or tramos  # si todo el clip está mal, se deja (mejor algo que nada)
         palabras = cris.transcribir(src, pista) if cris.tiene_audio(src) else []
-        for a, b, texto in tramos:
+        encima = c.get("encima") or {}
+        apoyo = carpeta / Path(str(encima.get("archivo") or "")).name if encima.get("archivo") else None
+        apoyo = apoyo if apoyo and apoyo.exists() and apoyo != src else None
+        recorrido = 0.0
+        for k, (a, b, texto) in enumerate(tramos):
             voz = bool(texto) or any(a <= w["t"] < b for w in palabras)
-            piezas.append({"src": src, "ini": a, "dur": b - a, "vel": vel, "texto": texto, "voz": voz, "zoom": 1.0, "bloque": "clip"})
+            piezas.append({"src": src, "ini": a, "dur": b - a, "vel": vel, "texto": texto, "voz": voz, "zoom": 1.0, "bloque": "clip",
+                           "idx": idx, "rotulo": str(c.get("texto") or "").strip(), "pos_rotulo": c.get("posicion_texto") or "arriba",
+                           "apoyo": apoyo, "apoyo_ini": _rango(encima.get("desde"), 0, 3600, 0) + recorrido,
+                           "fundido": k == 0 and c.get("transicion") == "fundido"})
+            recorrido += b - a
     if plan.get("quitar_repetidas"):  # si dijo casi lo mismo dos veces, se queda la última
         quedan = []
         for i, p in enumerate(piezas):
@@ -132,8 +147,9 @@ def piezas_del_plan(plan: dict, carpeta: Path, pista: str = "") -> list[dict]:
     if plan.get("cortes_dinamicos"):
         partidas = []
         for p in piezas:
-            for x in cris._partir(p["src"], p["ini"], p["ini"] + p["dur"], "clip"):
-                partidas.append({**p, "ini": x["ini"], "dur": x["dur"], "zoom": x["zoom"]})
+            for j, x in enumerate(cris._partir(p["src"], p["ini"], p["ini"] + p["dur"], "clip")):
+                partidas.append({**p, "ini": x["ini"], "dur": x["dur"], "zoom": 1.0 if p.get("apoyo") else x["zoom"],
+                                 "apoyo_ini": p.get("apoyo_ini", 0) + (x["ini"] - p["ini"]), "fundido": p.get("fundido") and j == 0})
         piezas = partidas
     return piezas
 
@@ -198,7 +214,7 @@ def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = N
     shutil.rmtree(trabajo, ignore_errors=True)
     trabajo.mkdir(parents=True)
     objetivo = _rango(plan.get("duracion_objetivo"), 0, 3600, 0)
-    partes, palabras, t0 = [], [], 0.0
+    partes, palabras, t0, tramos_txt = [], [], 0.0, []
     for k, p in enumerate(piezas):
         if objetivo and t0 >= objetivo:
             break  # ya se llegó a la duración que pediste
@@ -206,16 +222,24 @@ def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = N
         z, vel = p["zoom"], p["vel"]
         sw, sh = int(w * z) // 2 * 2, int(h * z) // 2 * 2
         estab = "deshake=rx=48:ry=48:edge=mirror," if plan.get("estabilizar") else ""
+        fundido = ",fade=t=in:st=0:d=0.3" if p.get("fundido") else ""
         vf = (f"scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={w}:{h},{estab}setsar=1,{eq},"
-              f"setpts=PTS/{vel:.3f},fps={cris.FPS},format=yuv420p")
+              f"setpts=PTS/{vel:.3f},fps={cris.FPS},format=yuv420p{fundido}")
         salida = trabajo / f"p{k:03d}.mp4"
         dur = p["dur"] if not objetivo else min(p["dur"], (objetivo - t0) * vel)
         modo_audio = plan.get("audio_original") or "normal"
         con_audio = cris.tiene_audio(p["src"]) and modo_audio != "silenciar" and not (modo_audio == "solo_voz" and not p.get("voz"))
         limpieza = "highpass=f=90,lowpass=f=11000,afftdn=nf=-28," if plan.get("reducir_ruido") else ""
-        if con_audio:
+        af = f"{limpieza}atempo={vel:.3f},aformat=sample_rates=44100:channel_layouts=stereo" + (",afade=t=in:d=0.2" if p.get("fundido") else "")
+        if p.get("apoyo"):  # toma de apoyo: se VE el otro clip y se OYE el tuyo
+            entrada_audio = ["-ss", f"{p['ini']:.3f}", "-t", f"{dur:.3f}", "-i", str(p["src"])] if con_audio else \
+                ["-f", "lavfi", "-t", f"{dur:.3f}", "-i", "anullsrc=r=44100:cl=stereo"]
+            cris._ff("-stream_loop", "-1", "-ss", f"{p.get('apoyo_ini', 0):.3f}", "-t", f"{dur:.3f}", "-i", str(p["apoyo"]),
+                     *entrada_audio, "-filter_complex", f"[0:v]{vf}[v];[1:a]{af if con_audio else 'anull'}[a]",
+                     "-map", "[v]", "-map", "[a]", "-t", f"{dur / vel:.3f}", *cris.RAPIDO, *cris.AUDIO, str(salida))
+        elif con_audio:
             cris._ff("-ss", f"{p['ini']:.3f}", "-t", f"{dur:.3f}", "-i", str(p["src"]), "-vf", vf,
-                     "-af", f"{limpieza}atempo={vel:.3f},aformat=sample_rates=44100:channel_layouts=stereo", *cris.RAPIDO, *cris.AUDIO, str(salida))
+                     "-af", af, *cris.RAPIDO, *cris.AUDIO, str(salida))
         else:
             cris._ff("-ss", f"{p['ini']:.3f}", "-t", f"{dur:.3f}", "-i", str(p["src"]), "-f", "lavfi", "-i",
                      "anullsrc=r=44100:cl=stereo", "-vf", vf, "-map", "0:v", "-map", "1:a", "-shortest",
@@ -225,13 +249,22 @@ def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = N
             if p["ini"] <= x["t"] < p["ini"] + dur:
                 palabras.append({**x, "t": t0 + (x["t"] - p["ini"]) / vel, "d": x["d"] / vel})
         partes.append(salida)
+        tramos_txt.append((p.get("idx", -1), t0, t0 + real, p.get("rotulo", ""), p.get("pos_rotulo", "arriba")))
         t0 += real
     (trabajo / "lista.txt").write_text("".join(f"file '{x.name}'\n" for x in partes), encoding="utf-8")
     cris._ff("-f", "concat", "-safe", "0", "-i", str(trabajo / "lista.txt"), "-c", "copy", str(trabajo / "base.mp4"))
     cris._ff("-ss", f"{t0 * 0.45:.2f}", "-i", str(trabajo / "base.mp4"), "-frames:v", "1", "-q:v", "2",
              str(destino.with_name(f"{destino.stem}.cuadro.jpg")))
     avance("Poniendo textos, subtítulos y música", 0.86)
-    _ass(trabajo / "textos.ass", w, h, palabras, plan, t0)
+    rotulos = []  # texto de cada pedazo del plan, del inicio al fin de lo que quedó de él
+    for idx, a, b, texto, pos in tramos_txt:
+        if not texto:
+            continue
+        if rotulos and rotulos[-1]["idx"] == idx:
+            rotulos[-1]["hasta"] = b
+        else:
+            rotulos.append({"idx": idx, "texto": texto, "desde": a, "hasta": b, "posicion": pos})
+    _ass(trabajo / "textos.ass", w, h, palabras, {**plan, "textos": [*(plan.get("textos") or []), *rotulos]}, t0)
     musica = plan.get("musica") or {}
     pista_musica = (musica_dir / Path(str(musica.get("archivo") or "")).name) if musica_dir and musica.get("archivo") else None
     entrada_musica = ["-stream_loop", "-1", "-i", str(pista_musica)] if pista_musica and pista_musica.exists() else []

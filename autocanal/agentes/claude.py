@@ -33,7 +33,8 @@ TAREAS = {
     "guion_shop": ("claude-haiku-5-5", "medium"),   # Sofi: guion que vende con 3 ganchos
     "tomas_shop": ("claude-haiku-5-5", "low"),      # Diego: lista de tomas para grabar con el celular
     # sala de edición
-    "sala": ("claude-haiku-5-5", "medium"),         # editores de la sala: ven tus clips y arman la edición (MODELO_SALA)
+    "sala": ("claude-sonnet-5-5", "medium"),        # editores de la sala: ven tus clips y arman la edición. Sonnet edita
+                                                     # mucho mejor que Haiku (~3-5 ¢ por mensaje); MODELO_SALA=claude-haiku-5-5 para ahorrar
 }
 
 # Precios en USD por millón de tokens: (entrada, salida). Haiku cambia de tarifa arriba de 100K de entrada.
