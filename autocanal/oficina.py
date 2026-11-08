@@ -1155,8 +1155,14 @@ def probar_wordpress() -> None:
     if info is not None:
         print(f"   · usuario listo para WordPress: {'sí' if info.get('usuario_listo') else 'no'}")
         if "reconocido" in info:
-            print(f"   · WordPress te reconoce: {'SÍ' if info.get('reconocido') else 'NO'}"
-                  + (f" (motivo: {info.get('error_contrasena')})" if info.get("error_contrasena") else ""))
+            motivo = info.get("error_contrasena") or (info.get("plugin_entro") if info.get("plugin_entro") not in ("", "entro") else "")
+            print(f"   · WordPress te reconoce: {'SÍ' if info.get('reconocido') else 'NO'}" + (f" (motivo: {motivo})" if motivo else "")
+                  + (" — lo arregló el plugin" if info.get("plugin_entro") == "entro" else ""))
+            if info.get("en_uso") is False:
+                print("✖ WordPress dice que en tu blog no hay contraseñas de aplicación creadas. Crea una en Usuarios →")
+                print("  Perfil → Contraseñas de aplicación y ponla en WP_APP_PASSWORD del .env del servidor.")
+        elif info.get("plugin", "") < "1.3":
+            print("•  Tu plugin es versión vieja: reinstálalo desde Proyectos → 🔌 Plugin para el blog (va en 1.3).")
 
     def detalle(resp) -> str:
         tipo = resp.headers.get("content-type", "")
@@ -1177,6 +1183,10 @@ def probar_wordpress() -> None:
         print("✔ Prueba de publicar (leer tus borradores): FUNCIONA. Tu blog sí acepta a la oficina.")
     else:
         print(f"✖ Prueba de publicar (leer tus borradores): {detalle(borr)}")
+        if "rest_invalid_param" in borr.text:
+            print("  → Eso quiere decir que WordPress te trató como VISITANTE: recibió tus datos pero no los revisó.")
+            print("    Pasa cuando otro plugin pregunta por el usuario antes de tiempo. El plugin 1.3 lo arregla:")
+            print("    reinstálalo desde Proyectos → 🔌 Plugin para el blog.")
         if not borr.headers.get("content-type", "").startswith("application/json"):
             print("  → Eso lo responde el FIREWALL de tu hosting (no WordPress): bloquea a tu servidor. En el panel de")
             print("    tu hosting busca «Firewall», «ModSecurity», «Imunify360» o «Protección contra bots» y agrega a la")
