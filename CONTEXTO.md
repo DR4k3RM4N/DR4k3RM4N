@@ -185,3 +185,16 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   "✂️ Que Cris lo edite ya" (compu si está prendida, si no servidor) y "🖥️ Esperar a mi compu" (`editar_esperar`: fila de
   la sala sin respaldo del servidor, espera hasta 3 días). Los clips subidos se borran solos `CLIPS_DIAS` (3) días después
   de `video_t`, o con "🧹 Borrar mis clips del servidor ya". Shop muestra el espacio libre (aviso si < 3 GB).
+
+### 6.5 Sala de edición con editores propios, proyectos y chat (nov 2026)
+- Un editor por compu (se llama como la compu; si está apagada, descansa en el patio). Edu y Cris siguen en el servidor.
+- Proyectos (`salaedicion/proyectos.py`, mezclado en Sala): carpeta en la compu (Videos\Sala de edicion\<Nombre>) o clips
+  subidos al servidor (`salaedicion/salida/<id>/clips`). Se crean con "➕ Nuevo proyecto", desde el chat general, o
+  haciendo una carpeta nueva en la compu (se vuelve proyecto sola). Musica: carpeta `Musica` de la sala en la compu.
+- Chat general (router con Haiku) → proyecto; chat de cada proyecto con su encargado (Haiku tarea "edicion" → respuesta +
+  plan de edición `editor_libre.PLAN_SCHEMA`). El editor pregunta vertical/horizontal si no se sabe. Correcciones cambian
+  solo lo pedido sobre el plan anterior.
+- Trabajo tipo "libre" → la compu (`compu.hacer_proyecto`) baja a la carpeta lo subido, `editor_libre.render` (cortes,
+  silencios, repetidas, velocidad, acercamientos, color eq, textos, karaoke, música, duración) y sube v{n}.mp4 + cuadro;
+  copia en <carpeta>\Ediciones. La sala avisa en el chat con la versión. Gasto de la sala en su propio contador.
+- Demo sin Claude: `_router_demo` y `_cerebro_demo`.

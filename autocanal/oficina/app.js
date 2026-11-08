@@ -404,12 +404,13 @@
   }
   // Los dos equipos juntos (YouTube + TikTok Shop) y el filtro según el ala que estás viendo
   const esTT = (id) => id.startsWith("tt_");
-  const todasLasTareas = () => [...(estado.tareas || []), ...(estadoTT?.tareas || [])];
+  const todasLasTareas = () => [...(estado.tareas || []), ...(estadoTT?.tareas || []), ...(estadoSala?.tareas || [])];
   const tareasDe = (id) => todasLasTareas().filter((t) => t.agente === id);
-  const equipoCompleto = () => [...estado.agentes, ...(window.Oficina.equipoTT?.() || [])];
+  // (las tareas de los editores de la sala vienen en estadoSala.tareas)
+  const equipoCompleto = () => [...estado.agentes, ...(window.Oficina.equipoTT?.() || []), ...(window.Oficina.equipoSala?.() || [])];
   function equipoVisible() {
     const ala = window.Oficina.ala?.() || "todo";
-    if (ala === "edicion") return equipoCompleto().filter((a) => ["editor", "tt_editor", "jefe"].includes(a.id));
+    if (ala === "edicion") return equipoCompleto().filter((a) => ["editor", "tt_editor", "jefe"].includes(a.id) || a.id.startsWith("sala_"));
     return equipoCompleto().filter((a) => ala === "todo" || a.id === "jefe" || (ala === "tiktok") === esTT(a.id));
   }
   const TITULO_ALA = { todo: "Todo el edificio", youtube: "▶ Equipo YouTube", tiktok: "🛒 Equipo TikTok Shop",
@@ -1038,6 +1039,121 @@
 
   // ---------- Sala de edición (tercera oficina): tus compus editan en lugar del servidor ----------
   let estadoSala = null, versionSala = -1, codigoSala = null;
+  async function salaApi(ruta, datos) {
+    const r = await fetch(`/sala${ruta}`, { method: datos ? "POST" : "GET", headers: { "Content-Type": "application/json" },
+                                            body: datos ? JSON.stringify(datos) : undefined });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "Algo salió mal");
+    return j;
+  }
+
+  // Ventana de un proyecto: chat con su editor, versiones y clips
+  let proyectoSala = null, versionVista = null;
+  const SUGERENCIAS = ["Hazlo vertical con subtítulos", "Horizontal para YouTube", "Que dure 30 segundos", "Subtítulos más grandes",
+                       "Quita los silencios", "Ponle música bajita", "Más rápido al inicio", "Otra vez"];
+  async function abrirProyectoSala(pid) {
+    try { proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(pid)}`); } catch (err) { return alert(err.message); }
+    versionVista = null;
+    $("#modal-cuerpo").innerHTML = `<div class="proyecto-ventana">
+      <div id="pv-cabeza"></div>
+      <div class="pv-cuerpo">
+        <div class="pv-izq"><div id="pv-video"></div><div id="pv-clips"></div></div>
+        <div class="pv-der">
+          <h3>💬 Chat con <span id="pv-editor"></span></h3>
+          <ol id="pv-chat" class="chat-sala"></ol>
+          <div class="sugerencias">${SUGERENCIAS.map((x) => `<button type="button" class="btn btn-mini" data-sugerencia="${esc(x)}">${esc(x)}</button>`).join("")}</div>
+          <form id="pv-form" class="chat-escribir">
+            <textarea id="pv-texto" rows="2" maxlength="1500" placeholder="Pídele el video o una corrección: «quita el clip 3», «subtítulos amarillos», «más corto»…"></textarea>
+            <button class="btn btn-primario" type="submit">Enviar</button>
+          </form>
+        </div>
+      </div></div>`;
+    $("#modal").hidden = false;
+    pintarProyectoSala();
+    $("#pv-texto").focus();
+  }
+  function pintarProyectoSala() {
+    const p = proyectoSala;
+    if (!p || !$("#pv-cabeza")) return;
+    const av = Math.round((p.avance || 0) * 100);
+    $("#pv-cabeza").innerHTML = `<h2 id="modal-titulo">${esc(p.nombre)}</h2>
+      <p class="pista">${p.compu ? `🖥️ Clips en ${esc(nombreEditor("sala_" + p.compu))}` : "☁️ Clips en el servidor"} · encargado: <b>${esc(p.editor)}</b>
+        ${p.formato ? ` · ${p.formato === "vertical" ? "▯ vertical" : "▭ horizontal"}` : ""} · ${esc(ESTADO_PROYECTO[p.estado] || p.estado)}
+        <button type="button" class="btn btn-mini" data-borrar-proyecto>Borrar proyecto</button></p>
+      ${p.estado === "editando" ? `<div class="linea-tiempo grande"><b style="width:${av}%"></b></div><p class="pista">✂️ ${esc(p.paso || "Editando")} · ${av} %</p>` : ""}
+      ${p.error ? `<p class="error">${esc(p.error)}</p>` : ""}`;
+    $("#pv-editor").textContent = p.editor;
+    const vs = p.versiones || [], v = vs.find((x) => x.n === versionVista) || vs[vs.length - 1];
+    const ruta = (f) => `/sala/salida/${encodeURIComponent(p.id)}/${encodeURIComponent(f)}`;
+    const videoActual = $("#pv-video video");
+    if (!v) $("#pv-video").innerHTML = `<div class="pv-sin-video">🎬<br>Aquí aparece cada versión que te mande ${esc(p.editor)}.</div>`;
+    else if (!videoActual || videoActual.dataset.v !== String(v.n)) {
+      $("#pv-video").innerHTML = `<video controls playsinline preload="metadata" data-v="${v.n}" class="${p.formato === "horizontal" ? "horizontal" : ""}"
+          ${v.cuadro ? `poster="${ruta(v.cuadro)}"` : ""} src="${ruta(v.video)}"></video>
+        <div class="fila versiones">${vs.map((x) => `<button type="button" class="btn btn-mini ${x.n === v.n ? "btn-primario" : ""}" data-version="${x.n}">v${x.n}</button>`).join("")}
+          <a class="btn btn-mini" href="${ruta(v.video)}" download="${esc(p.nombre)} v${v.n}.mp4">⬇️ Bajar v${v.n}</a> <small>${esc(v.segundos)} s</small></div>`;
+    }
+    const sep = (estadoSala?.locales?.[p.compu]?.ruta || "").includes("\\") ? "\\" : "/";
+    const rutaCarpeta = p.compu ? `${estadoSala?.locales?.[p.compu]?.ruta || "Videos/Sala de edicion"}${sep}${p.carpeta}` : "";
+    const htmlClips = `<h3>🎞️ Clips (${p.clips.length})</h3>
+      ${p.compu ? `<p class="pista ruta-proy">📁 ${esc(rutaCarpeta)} <button type="button" class="btn btn-mini" data-copiar-ruta-proy="${esc(rutaCarpeta)}">Copiar ruta</button></p>` : ""}
+      <div class="clips-grid">${p.clips.map((x, k) => `<figure class="clip-local">
+          ${x.donde === "compu" ? `<img loading="lazy" alt="" src="/sala/api/miniatura/${encodeURIComponent(p.compu)}/${encodeURIComponent("carpeta:" + p.carpeta)}/${encodeURIComponent(x.nombre)}">` : `<div class="sin-mini">☁️</div>`}
+          <figcaption><span class="nombre-clip" title="${esc(x.nombre)}">${k + 1}. ${esc(x.nombre)}</span><small>${x.segundos ? `${esc(x.segundos)} s · ` : ""}${esc(x.mb)} MB</small></figcaption>
+        </figure>`).join("")}</div>
+      <label class="btn btn-mini subir">📤 Subir clips<input type="file" accept="video/*" multiple hidden data-subir-sala></label>
+      <span id="pv-subiendo" class="pista"></span>
+      ${(p.musica || []).length ? `<p class="pista">🎵 Música disponible: ${p.musica.map(esc).join(", ")}</p>` : `<p class="pista">🎵 Para música, pon tus canciones en la carpeta <b>Musica</b> de la sala en tu compu.</p>`}`;
+    if ($("#pv-clips").dataset.html !== htmlClips) { $("#pv-clips").innerHTML = htmlClips; $("#pv-clips").dataset.html = htmlClips; }
+    const log = $("#pv-chat"), abajo = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.innerHTML = (p.mensajes || []).map(lineaChat).join("");
+    if (abajo) log.scrollTop = log.scrollHeight;
+  }
+  setInterval(async () => {
+    if (!proyectoSala || $("#modal").hidden || !$("#pv-cabeza")) return;
+    try { proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}`); pintarProyectoSala(); } catch { /* sigue */ }
+  }, 2500);
+  $("#modal-cuerpo").addEventListener("submit", async (e) => {
+    if (e.target.id !== "pv-form") return;
+    e.preventDefault();
+    const t = $("#pv-texto"), texto = t.value.trim();
+    if (!texto || !proyectoSala) return;
+    t.value = "";
+    try { await salaApi("/api/chat", { proyecto: proyectoSala.id, texto }); proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}`); pintarProyectoSala(); }
+    catch (err) { alert(err.message); t.value = texto; }
+  });
+  $("#modal-cuerpo").addEventListener("keydown", (e) => {
+    if (e.target.id === "pv-texto" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#pv-form").requestSubmit(); }
+  });
+  $("#modal-cuerpo").addEventListener("click", async (e) => {
+    const b = e.target.closest("button");
+    if (!b || !proyectoSala || !$("#pv-cabeza")) return;
+    if (b.dataset.sugerencia) { $("#pv-texto").value = b.dataset.sugerencia; $("#pv-texto").focus(); }
+    if (b.dataset.version) { versionVista = Number(b.dataset.version); $("#pv-video").innerHTML = ""; pintarProyectoSala(); }
+    if (b.dataset.copiarRutaProy) navigator.clipboard?.writeText(b.dataset.copiarRutaProy).then(() => { b.textContent = "¡Copiada!"; });
+    if (b.dataset.borrarProyecto !== undefined && confirm(`¿Borrar el proyecto «${proyectoSala.nombre}»? (Los clips de tu compu no se tocan)`)) {
+      await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}/borrar`, {}).catch((err) => alert(err.message));
+      proyectoSala = null; cerrarModal(); consultarSala();
+    }
+  });
+  $("#modal-cuerpo").addEventListener("change", async (e) => {
+    const input = e.target.closest("[data-subir-sala]");
+    if (!input || !proyectoSala) return;
+    const archivos = [...input.files];
+    for (const [k, f] of archivos.entries()) {
+      await new Promise((listo) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/sala/api/subir?proyecto=${encodeURIComponent(proyectoSala.id)}&nombre=${encodeURIComponent(f.name)}`);
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+        xhr.upload.onprogress = (ev) => { if (ev.lengthComputable && $("#pv-subiendo")) $("#pv-subiendo").textContent = `Subiendo ${k + 1} de ${archivos.length}: ${Math.round(ev.loaded / ev.total * 100)} %`; };
+        xhr.onloadend = () => { if (xhr.status !== 200) alert(`No se pudo subir ${f.name}`); listo(); };
+        xhr.send(f);
+      });
+    }
+    proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}`);
+    pintarProyectoSala();
+  });
+
   async function consultarSala() {
     try {
       const r = await fetch("/sala/api/estado");
@@ -1055,10 +1171,61 @@
   const ESTADO_TRABAJO = { en_cola: "⏳ Esperando compu", asignado: "📥 Bajando clips", trabajando: "⚙️ Editando", listo: "✔ Listo",
                            error: "✖ Falló (lo hizo el servidor)", cancelado: "↩ Lo hizo el servidor" };
 
+  // Esqueleto fijo: el cuadro donde escribes no se borra cuando se actualiza lo demás
+  function esqueletoSala() {
+    const cont = $("#sala-panel");
+    if (cont.querySelector("#sala-chat-form")) return;
+    cont.innerHTML = `
+      <section class="sala-chat">
+        <h4 class="seccion-mini">💬 Chat de la sala</h4>
+        <ol id="sala-chat-log" class="chat-sala"></ol>
+        <form id="sala-chat-form" class="fila chat-escribir">
+          <input id="sala-chat-texto" maxlength="1500" autocomplete="off" placeholder="Ej. hazme un video vertical con los clips de Viaje Monterrey, 40 s con subtítulos">
+          <button class="btn btn-primario" type="submit">Enviar</button>
+        </form>
+      </section>
+      <section>
+        <div class="seccion-cabeza"><h4 class="seccion-mini">📂 Proyectos</h4>
+          <button type="button" class="btn btn-mini" data-nuevo-proyecto>➕ Nuevo proyecto</button></div>
+        <form id="nuevo-proyecto" class="tarjeta nuevo-proyecto" hidden>
+          <input id="np-nombre" maxlength="60" placeholder="Nombre (ej. Viaje Monterrey)" required>
+          <select id="np-donde" aria-label="Dónde van los clips"></select>
+          <button class="btn btn-primario" type="submit">Crear</button>
+        </form>
+        <div id="sala-proyectos"></div>
+      </section>
+      <section><h4 class="seccion-mini">🖥️ Tus compus</h4><div id="sala-compus"></div></section>`;
+  }
+
+  const nombreEditor = (q) => q === "jefe" ? "Tú" : q === "sala" ? "Sala" : (estadoSala?.editores || []).find((e) => e.id === q)?.nombre || "Editor";
+  const colorEditor = (q) => q === "jefe" ? "#cbd5e1" : (estadoSala?.editores || []).find((e) => e.id === q)?.color || "#a78bfa";
+  const lineaChat = (m) => `<li class="${m.quien === "jefe" ? "mio" : ""}"><b style="color:${colorEditor(m.quien)}">${esc(nombreEditor(m.quien))}</b>
+    <span>${esc(m.texto)}</span>${m.proyecto ? ` <button type="button" class="btn btn-mini" data-abrir-sala="${esc(m.proyecto)}">Abrir →</button>` : ""}
+    <small>${hora(m.t)}</small></li>`;
+  const ESTADO_PROYECTO = { esperando: "Esperando tus clips/instrucciones", editando: "✂️ Editando", listo: "✔ Versión lista", error: "Con problema" };
+
   function pintarSala() {
     const cont = $("#sala-panel");
     if (!cont) return;
     if (!estadoSala) { cont.innerHTML = `<p class="vacio">La sala de edición está apagada en el servidor. Mientras, Cris edita en el servidor como siempre.</p>`; return; }
+    esqueletoSala();
+    // chat general
+    const log = $("#sala-chat-log"), abajo = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.innerHTML = (estadoSala.chat || []).map(lineaChat).join("") || `<li class="vacio">Escríbele a la sala qué video quieres: el editor libre lo toma.</li>`;
+    if (abajo) log.scrollTop = log.scrollHeight;
+    // dónde crear un proyecto
+    const donde = $("#np-donde"), elegido = donde.value;
+    donde.innerHTML = estadoSala.compus.map((c) => `<option value="${esc(c.id)}">🖥️ En ${esc(c.nombre)} (carpeta en tu compu)</option>`).join("")
+      + `<option value="">☁️ Subirlos al servidor</option>`;
+    if (elegido !== "" && [...donde.options].some((o) => o.value === elegido)) donde.value = elegido;
+    // proyectos
+    $("#sala-proyectos").innerHTML = (estadoSala.proyectos || []).map((p) => `<button type="button" class="proyecto-sala ${esc(p.estado)}" data-abrir-sala="${esc(p.id)}">
+        <span class="miniatura-proy">${p.ultima?.cuadro ? `<img alt="" loading="lazy" src="/sala/salida/${encodeURIComponent(p.id)}/${encodeURIComponent(p.ultima.cuadro)}">` : "🎞️"}</span>
+        <span class="proy-txt"><b>${esc(p.nombre)}</b>
+          <small>${p.compu ? `🖥️ ${esc(nombreEditor("sala_" + p.compu))}` : "☁️ servidor"} · ${p.clips} clip${p.clips === 1 ? "" : "s"}${p.formato ? ` · ${p.formato === "vertical" ? "▯ vertical" : "▭ horizontal"}` : ""}${p.versiones ? ` · v${p.versiones}` : ""}</small>
+          <small class="estado-proy">${p.estado === "editando" ? `✂️ ${esc(p.paso || "Editando")} · ${Math.round((p.avance || 0) * 100)} %` : esc(ESTADO_PROYECTO[p.estado] || p.estado)}</small>
+        </span></button>`).join("") || `<p class="pista">Aún no hay proyectos. Crea uno, haz una carpeta nueva en <b>Videos → Sala de edicion</b> de tu compu, o pídeselo al chat.</p>`;
+    const cont2 = $("#sala-compus");
     const compus = estadoSala.compus;
     const productos = Object.fromEntries((estadoTT?.productos || []).map((p) => [p.id, p]));
     const monitor = (c) => {
@@ -1098,8 +1265,8 @@
               <br><small>Dirección: <b>${esc(location.origin)}</b></small>` : `<button class="btn btn-mini" data-codigo-sala>🔑 Generar código</button>`}</li>
           <li>Listo: aparece aquí y en la sala del edificio, y arranca sola al prender la compu. Tus clips van en <b>Videos → Sala de edicion</b>.</li>
         </ol>`;
-    cont.innerHTML = `
-      <p class="pista">🎬 Tus compus editan con su tarjeta de video. Pasa tus clips a su carpeta <b>Videos → Sala de edicion</b> (una por producto): no se suben al servidor.</p>
+    cont2.innerHTML = `
+      <p class="pista">🎬 Cada compu tiene su editor. Tus clips van en <b>Videos → Sala de edicion</b> (una carpeta por proyecto o producto): no se suben al servidor.</p>
       <div class="pc-lista">${compus.map(monitor).join("") || `<p class="vacio">Todavía no hay compus en la sala.</p>`}</div>
       ${compus.length ? `<details class="tarjeta"><summary>➕ Agregar otra compu (Windows)</summary>${agregar}</details>`
         : `<article class="tarjeta"><h4>➕ Agregar una compu (Windows)</h4>${agregar}</article>`}
@@ -1108,9 +1275,29 @@
           ${t.error ? `<br><small>${esc(t.error)}</small>` : ""}</li>`).join("")}</ul>` : ""}`;
   }
 
+  $("#sala-panel").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (e.target.id === "sala-chat-form") {
+      const t = $("#sala-chat-texto"), texto = t.value.trim();
+      if (!texto) return;
+      t.value = "";
+      try { await salaApi("/api/chat", { texto }); } catch (err) { alert(err.message); t.value = texto; }
+      consultarSala();
+    }
+    if (e.target.id === "nuevo-proyecto") {
+      try {
+        const r = await salaApi("/api/proyecto", { nombre: $("#np-nombre").value, donde: $("#np-donde").value });
+        $("#np-nombre").value = ""; $("#nuevo-proyecto").hidden = true;
+        await consultarSala();
+        abrirProyectoSala(r.id);
+      } catch (err) { alert(err.message); }
+    }
+  });
   $("#sala-panel").addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b) return;
+    if (b.dataset.abrirSala) return abrirProyectoSala(b.dataset.abrirSala);
+    if (b.dataset.nuevoProyecto !== undefined) { $("#nuevo-proyecto").hidden = !$("#nuevo-proyecto").hidden; return $("#np-nombre").focus(); }
     if (b.dataset.abrirProducto) return abrirGuionTT(b.dataset.abrirProducto);
     try {
       if (b.dataset.codigoSala !== undefined) {

@@ -27,15 +27,17 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 AQUI = Path(__file__).resolve().parent
 REPO = AQUI.parent
-sys.path.insert(0, str(REPO / "autocanal"))
+sys.path[:0] = [str(REPO / "autocanal"), str(REPO / "tiktokshop"), str(AQUI)]
 
 import requests  # noqa: E402
+
+from proyectos import Proyectos  # noqa: E402
 
 ESTADO = AQUI / "sala_estado.json"
 DESCARGAS = AQUI / "windows"
 VIVA = 30  # segundos sin noticias para dar una compu por apagada
 CODIGO_DURA = 15 * 60
-RAICES = [REPO / "tiktokshop" / "salida", REPO / "autocanal" / "salida"]  # de dónde se pueden mandar clips
+RAICES = [REPO / "tiktokshop" / "salida", REPO / "autocanal" / "salida", AQUI / "salida"]  # de dónde se pueden mandar clips
 EXT_RESULTADO = {".mp4", ".jpg", ".json"}
 TIENDA_URL = "http://127.0.0.1:8766"  # oficina de TikTok (para saber a qué productos hacerles carpeta en tus compus)
 MAX_RESULTADO = 2 * 1024 ** 3
@@ -45,7 +47,7 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-class Sala:
+class Sala(Proyectos):
     def __init__(self, demo: bool):
         self.demo = demo
         self.lock = threading.RLock()
@@ -53,6 +55,12 @@ class Sala:
         datos = json.loads(ESTADO.read_text(encoding="utf-8")) if ESTADO.exists() else {}
         self.compus: dict = datos.get("compus", {})
         self.trabajos: dict = datos.get("trabajos", {})
+        self.proyectos: dict = datos.get("proyectos", {})
+        self.chat: list = datos.get("chat", [])
+        self.gasto: dict = datos.get("gasto", {})
+        for pr in self.proyectos.values():
+            if pr.get("estado") == "editando":
+                pr.update(estado="error", trabajo=None, error="La sala se reinició a medio trabajo. Escribe «otra vez».")
         self.codigos: dict = {}  # código → vence
         self.locales: dict = {}  # compu → {producto: [clips en su carpeta]}  (solo nombres y miniaturas, nunca videos)
         self.miniaturas: dict = {}  # (compu, producto, archivo) → jpg chiquito
@@ -68,8 +76,9 @@ class Sala:
         viejos = sorted(self.trabajos.values(), key=lambda t: t["creado"])[:-80]
         for t in viejos:
             self.trabajos.pop(t["id"], None)
-        ESTADO.write_text(json.dumps({"compus": self.compus, "trabajos": self.trabajos}, ensure_ascii=False, indent=1),
-                          encoding="utf-8")
+        ESTADO.write_text(json.dumps({"compus": self.compus, "trabajos": self.trabajos, "proyectos": self.proyectos,
+                                      "chat": self.chat[-200:], "gasto": dict(sorted(self.gasto.items())[-90:])},
+                                     ensure_ascii=False, indent=1), encoding="utf-8")
 
     # ---------- lo que se ve en el edificio ----------
     def viva(self, c: dict) -> bool:
@@ -87,8 +96,32 @@ class Sala:
             trabajos = [{k: t.get(k) for k in ("id", "tipo", "origen", "etiqueta", "estado", "compu", "creado", "inicio",
                                                 "fin", "error", "paso", "avance")}
                         for t in sorted(self.trabajos.values(), key=lambda t: -t["creado"])[:15]]
+            tareas = [{"id": t["id"], "agente": self.editor_id(t["compu"]), "etapa": "edicion", "accion": "Editar",
+                       "titulo": t["etiqueta"], "estado": {"listo": "hecha", "error": "fallo", "cancelado": "cancelada"}.get(t["estado"], "trabajando"),
+                       "inicio": t.get("inicio"), "fin": t.get("fin"), "error": t.get("error"), "paso": t.get("paso"),
+                       "avance": t.get("avance")} for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])[-40:] if t.get("compu")]
+            hoy = time.strftime("%Y-%m-%d")
             return {"version": self.version, "demo": self.demo, "ahora": time.time(), "compus": compus, "trabajos": trabajos,
-                    "locales": self.resumen_locales()}
+                    "locales": self.resumen_locales(), "editores": self.editores(), "proyectos": self.resumen_proyectos(),
+                    "chat": self.chat[-60:], "tareas": tareas,
+                    "gasto": {"hoy": round(self.gasto.get(hoy, 0), 4),
+                              "mes": round(sum(v for k, v in self.gasto.items() if k.startswith(hoy[:7])), 4)}}
+
+    def _gastar(self, proyecto, etapa, modelo, usd, entrada, salida, que: str = "") -> None:
+        with self.lock:
+            hoy = time.strftime("%Y-%m-%d")
+            self.gasto[hoy] = self.gasto.get(hoy, 0) + usd
+            self._tocar()
+
+    def vigilar(self) -> None:
+        """Si la compu de un trabajo de la sala se apaga a medio camino, se avisa en el chat del proyecto."""
+        while True:
+            time.sleep(10)
+            for t in list(self.trabajos.values()):
+                if t.get("proyecto") and t["estado"] in ("asignado", "trabajando"):
+                    self.ver(t["id"])
+                    if t["estado"] == "error":
+                        self.termino_trabajo(t)
 
     # ---------- dar de alta una compu ----------
     def nuevo_codigo(self) -> dict:
@@ -247,7 +280,9 @@ class Sala:
                         pass
             carpetas[str(pid)[:80]] = lista
         with self.lock:
-            self.locales[c["id"]] = {"carpetas": carpetas, "ruta": str(d.get("ruta") or "")[:200], "t": time.time()}
+            self.locales[c["id"]] = {"carpetas": carpetas, "ruta": str(d.get("ruta") or "")[:200], "t": time.time(),
+                                     "musica": [Path(str(m)).name[:100] for m in (d.get("musica") or [])][:60]}
+        self.proyectos_de_carpetas(c["id"], list(carpetas))
         # firmas que la sala ya tiene con miniatura: la compu no las vuelve a mandar
         return {"ok": True, "con_miniatura": [f"{pid}/{x['nombre']}/{x['firma']}" for pid, xs in carpetas.items()
                                               for x in xs if (c["id"], pid, x["nombre"]) in self.miniaturas]}
@@ -319,6 +354,8 @@ class Sala:
                 t.update(estado="error", error=str(d.get("error") or "Falló en la compu.")[:300], fin=time.time())
             c["trabajo"] = None
             self._tocar()
+        if t.get("proyecto"):
+            self.termino_trabajo(t)
         return {"ok": True}
 
     def clasificar(self, c: dict, tid: str, d: dict) -> dict:
@@ -383,6 +420,11 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                 if archivo.is_relative_to(DESCARGAS.resolve()) and archivo.is_file():
                     return self._mandar(archivo)
                 return self._json({"error": "no encontrado"}, 404)
+            if ruta.startswith("/api/proyecto/"):
+                r = sala.detalle_proyecto(ruta.rsplit("/", 1)[-1])
+                return self._json(r, 200 if r.get("id") else 404)
+            if ruta.startswith("/salida/"):
+                return self._archivo(ruta[len("/salida/"):])
             if ruta.startswith("/api/locales/"):
                 return self._json(sala.locales_de(ruta.rsplit("/", 1)[-1]))
             if ruta.startswith("/api/miniatura/"):
@@ -411,9 +453,50 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                 return self._mandar(Path(t["entradas"][int(n)]))
             self._json({"error": "no encontrado"}, 404)
 
+        def _archivo(self, relativa: str):
+            """Versiones terminadas de tus proyectos (con rangos, para adelantar el video)."""
+            base = (AQUI / "salida").resolve()
+            ruta = (base / relativa).resolve()
+            if not ruta.is_relative_to(base) or not ruta.is_file() or "clips" in ruta.parts:
+                return self._json({"error": "no encontrado"}, 404)
+            tam = ruta.stat().st_size
+            ini, fin = 0, tam - 1
+            rango = self.headers.get("Range", "")
+            if rango.startswith("bytes="):
+                a, _, b = rango[6:].partition("-")
+                ini = int(a) if a else max(0, tam - int(b or 0))
+                fin = min(tam - 1, int(b)) if a and b else tam - 1
+                self.send_response(206)
+                self.send_header("Content-Range", f"bytes {ini}-{fin}/{tam}")
+            else:
+                self.send_response(200)
+            self.send_header("Content-Type", "video/mp4" if ruta.suffix == ".mp4" else "image/jpeg")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(fin - ini + 1))
+            self.end_headers()
+            with open(ruta, "rb") as f:
+                f.seek(ini)
+                restante = fin - ini + 1
+                try:
+                    while restante > 0:
+                        trozo = f.read(min(65536, restante))
+                        if not trozo:
+                            break
+                        self.wfile.write(trozo)
+                        restante -= len(trozo)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
         def do_POST(self):
             url = urlparse(self.path)
             ruta = unquote(url.path)
+            if ruta == "/api/subir":  # tus clips para un proyecto (desde la oficina, con tu contraseña)
+                if "application/octet-stream" not in self.headers.get("Content-Type", ""):
+                    return self._json({"error": "tipo no permitido"}, 403)
+                q = parse_qs(url.query)
+                r = sala.subir_clip(q.get("proyecto", [""])[0], q.get("nombre", ["clip.mp4"])[0], self.rfile,
+                                    int(self.headers.get("Content-Length") or 0))
+                return self._json(r, 400 if "error" in r else 200)
             if ruta.startswith("/api/maquina/subir/"):
                 c = self._compu()
                 if not c:
@@ -429,6 +512,15 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
             # el edificio (con tu contraseña)
             if ruta == "/api/codigo":
                 return self._json(sala.nuevo_codigo())
+            if ruta == "/api/proyecto":
+                r = sala.crear_proyecto(str(d.get("nombre", "")), str(d.get("donde", "")))
+                return self._json(r, 400 if "error" in r else 200)
+            if ruta.startswith("/api/proyecto/") and ruta.endswith("/borrar"):
+                r = sala.borrar_proyecto(ruta.split("/")[3])
+                return self._json(r, 400 if "error" in r else 200)
+            if ruta == "/api/chat":
+                r = sala.mensaje(str(d.get("proyecto") or "") or None, str(d.get("texto", "")))
+                return self._json(r, 400 if "error" in r else 200)
             if ruta.startswith("/api/quitar/"):
                 r = sala.quitar(ruta.rsplit("/", 1)[-1])
                 return self._json(r, 400 if "error" in r else 200)
@@ -454,6 +546,7 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                     r = sala.latido(c, d)
                     if d.get("con_carpetas"):  # versión que maneja carpetas: le decimos a qué productos hacerles una
                         r["carpetas"] = sala.carpetas_pedidas()
+                        r["proyectos"] = sala.carpetas_de_proyectos(c["id"])
                     return self._json(r)
                 if accion == "carpetas":
                     return self._json(sala.reportar_carpetas(c, d))
@@ -478,7 +571,19 @@ def main() -> None:
     TIENDA_URL = args.tienda.rstrip("/")
     if args.demo:
         ESTADO = AQUI / "sala_estado_demo.json"
-    servidor = crear_servidor(Sala(args.demo), args.puerto)
+    sala = Sala(args.demo)
+    threading.Thread(target=sala.vigilar, daemon=True).start()
+    if not args.demo:  # Claude: el gasto de la sala va en su propio contador, con el mismo tope diario
+        from agentes import claude as ia
+        from agentes import config
+        tope = float(config.env("LIMITE_DIARIO", "1") or 0)
+        ia.al_gastar = sala._gastar
+
+        def revisar_tope():
+            if tope and sala.gasto.get(time.strftime("%Y-%m-%d"), 0) >= tope:
+                raise ia.ErrorIA(f"Se llegó al tope de gasto de hoy de la sala (${tope:.2f}).")
+        ia.antes_de_llamar = revisar_tope
+    servidor = crear_servidor(sala, args.puerto)
     print(f"🎬 Sala de edición en http://127.0.0.1:{args.puerto}" + ("  (modo demo)" if args.demo else ""), flush=True)
     try:
         servidor.serve_forever()

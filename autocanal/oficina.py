@@ -1350,7 +1350,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             """Pasa la petición a la oficina de TikTok Shop (misma contraseña que esta). Los videos y los clips
             pasan en trozos, sin cargarlos completos en memoria."""
             ruta = urlparse(self.path)
-            if ruta.path.startswith(("/sala/api/", "/sala/descargar/")):
+            if ruta.path.startswith(("/sala/api/", "/sala/descargar/", "/sala/salida/")):
                 destino = SALA_URL + self.path[len("/sala"):]
             elif ruta.path.startswith(("/tiktok/api/", "/tiktok/salida/")):
                 destino = TIENDA_URL + self.path[len("/tiktok"):]
@@ -1509,7 +1509,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return
             if urlparse(self.path).path == "/api/estilo/subir":
                 return self._subir()
-            if urlparse(self.path).path == "/tiktok/api/subir":
+            if urlparse(self.path).path in ("/tiktok/api/subir", "/sala/api/subir"):
                 return self._tienda_subir()
             if not self._mismo_origen():
                 return self._json({"error": "origen no permitido"}, 403)

@@ -16,6 +16,8 @@
 
   const iso = (x, y, z = 0) => [OX + (x - y) * TW / 2, OY + (x + y) * TH / 2 - z * K];
   const esTT = (id) => id.startsWith("tt_");
+  const esSala = (id) => id.startsWith("sala_");
+  const alaDe = (id) => (esTT(id) ? "tiktok" : esSala(id) ? "edicion" : "youtube");
 
   // ---------- el equipo de TikTok Shop (su oficina se conecta en el siguiente paso) ----------
   const EQUIPO_TT = [
@@ -48,6 +50,7 @@
   const esCafe = (p) => igual(p, CAFE) || igual(p, CAFE_TT);
   const PASEOS = [CAFE, [11, 7], [10, 4], [6, 3], [9, 8], [12, 7]];
   const PASEOS_TT = [CAFE_TT, [28, 7], [25, 6], [24, 3], [26, 8], [29, 7]];
+  const PASEOS_SALA = [[33, 3], [36, 3], [34, 8], [36, 7], [32, 8], [35, 4]];
   // patio de descanso (filas 10 a 14), compartido: cada lugar con su actividad
   const ACTIVIDADES = [
     { id: "ping_a", pos: [1, 12], icono: "🏓", frente: true, mano: true },
@@ -476,6 +479,7 @@
 
   // ---------- sala de edición: tus compus ----------
   let salaEd = null; // estado que manda la sala (compus prendidas, qué editan)
+  const COLORES_SALA = ["#a78bfa", "#22d3ee", "#f472b6", "#facc15"];
   function compuEn(slot) { return (salaEd?.compus || []).find((c) => c.slot === Number(slot)); }
 
   function pcGamer(slot, t) {
@@ -883,7 +887,7 @@
   const enObraTT = EQUIPO_TT.map(([id, nombre, rol, color, pelo, desc]) => ({
     id, nombre, rol, color, pelo, desc, lentes: id === "tt_editor", estado: "libre", ubicacion: "casa", dice: "", dice_t: 0, enObra: true,
   }));
-  let equipoTT = enObraTT, tareasTT = [], ultimoYT = null;
+  let equipoTT = enObraTT, tareasTT = [], ultimoYT = null, equipoSala = [], tareasSala = [];
 
   // Estado de la oficina de TikTok Shop (null = apagada: su equipo vuelve a estar "en obra")
   function actualizarTT(tt) {
@@ -894,10 +898,10 @@
 
   function actualizar(nuevo) {
     ultimoYT = nuevo;
-    const lista = [...nuevo.agentes, ...equipoTT];
+    const lista = [...nuevo.agentes, ...equipoTT, ...equipoSala];
     const agentes = {};
     lista.forEach((a) => (agentes[a.id] = a));
-    estado = { ...nuevo, agentes, tareas: [...(nuevo.tareas || []), ...tareasTT] };
+    estado = { ...nuevo, agentes, tareas: [...(nuevo.tareas || []), ...tareasTT, ...tareasSala] };
     for (const a of lista) {
       let v = vivos[a.id];
       if (!v) {
@@ -981,7 +985,11 @@
     agrega(20 + ALA_TT, () => lampara(t, ALA_TT));
     agrega(21.5 + ALA_TT, () => sillon(ALA_TT, ["#0f766e", "#115e59", "#134e4a", "#14b8a6", "#0d9488"]));
     // sala de edición
-    for (const slot of Object.keys(PCS)) { const [x, y] = PCS[slot]; agrega(x + 1 + y + 0.5, () => pcGamer(slot, t)); }
+    for (const slot of Object.keys(PCS)) {
+      const [x, y] = PCS[slot];
+      agrega(x + 1 + y + 0.5, () => pcGamer(slot, t));
+      if (compuEn(slot)) { agrega(x + y + 1 + 0.9, () => silla(x, y + 1)); agrega(x + y + 1 + 1.3, () => respaldo(x, y + 1, COLORES_SALA[(slot - 1) % 4])); }
+    }
     agrega(37.5 + 0.5, () => rack(t)); agrega(37 + 9 + 0.5, () => planta(37, 9, true)); agrega(31 + 9 + 0.5, () => planta(31, 9));
     // mamparas de vidrio entre zonas, con marcos en las puertas
     for (const lx of MAMPARAS) {
@@ -1032,7 +1040,7 @@
           const conPareja = libres.filter((x) => x.id.startsWith("ping") && ocupadas.has(x.id === "ping_a" ? "ping_b" : "ping_a"));
           let elegido = conPareja[0] || (Math.random() < 0.75 && libres.length ? libres[Math.floor(Math.random() * libres.length)] : null);
           v.actividad = elegido ? elegido.id : null;
-          const paseos = esTT(id) ? PASEOS_TT : PASEOS;
+          const paseos = esTT(id) ? PASEOS_TT : esSala(id) ? PASEOS_SALA : PASEOS;
           irA(v, elegido ? elegido.pos : paseos[Math.floor(Math.random() * paseos.length)]);
           v.pasearEn = ahora + 18000 + Math.random() * 25000;
         } else {
@@ -1192,7 +1200,7 @@
       let ico = "";
       const enCola = tareasDe(id).filter((tk) => tk.estado === "en_cola").length;
       if (id === "productora" && pendientes > 0) ico = "❗";
-      else if (actual) ico = ICONO_TRABAJO[id];
+      else if (actual) ico = ICONO_TRABAJO[id] || "🎬";
       else if (enCola) ico = `⏳${enCola > 1 ? enCola : ""}`;
       else if (v.actividad && !v.camino.length) ico = ACTIVIDADES.find((x) => x.id === v.actividad)?.icono || "";
       else if (esCafe(v.meta) && !v.camino.length) ico = "☕";
@@ -1312,10 +1320,22 @@
       // si el agente está en la otra ala, la cámara se va para allá
       const enSala = estado.agentes[id]?.ubicacion?.startsWith("visita:sala_");
       if (id && ala !== "todo" && id !== "jefe" && !(ala === "edicion" && enSala)
-          && (esTT(id) ? "tiktok" : "youtube") !== ala) verAla(enSala ? "edicion" : esTT(id) ? "tiktok" : "youtube");
+          && alaDe(id) !== ala) verAla(enSala ? "edicion" : alaDe(id));
     },
     ala: () => ala,
-    actualizarSala: (s) => { salaEd = s; },
+    // la sala de edición: sus compus y sus editores (uno por compu, sentado frente a ella)
+    actualizarSala: (s) => {
+      salaEd = s;
+      equipoSala = (s?.editores || []).filter((e) => PCS[e.slot]).map((e) => {
+        const [x, y] = PCS[e.slot];
+        CASA[e.id] = [x, y + 1];
+        VISITA[e.id] = [x + 1, y + 2];
+        return { ...e, estado: e.viva ? e.estado : "libre" }; // compu apagada: su editor descansa
+      });
+      tareasSala = s?.tareas || [];
+      if (ultimoYT) actualizar(ultimoYT);
+    },
+    equipoSala: () => equipoSala,
     equipoTT: () => equipoTT,
     encima: (id) => { encima = id; },
     verAla,

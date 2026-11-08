@@ -446,3 +446,44 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .botones-editar { gap: 8px; flex-wrap: wrap; }
 .poco-disco { color: #fca5a5; }
 .clips-servidor .btn-mini { margin-left: 6px; }
+
+/* sala: chat y proyectos */
+.sala-chat { margin-bottom: 14px; }
+.chat-sala { list-style: none; padding: 8px; margin: 0 0 6px; max-height: 260px; overflow-y: auto; background: rgba(0,0,0,.18);
+  border: 2px solid var(--borde); border-radius: 10px; display: grid; gap: 6px; font-size: 13.5px; }
+.chat-sala li { background: rgba(255,255,255,.04); border-radius: 8px; padding: 6px 8px; max-width: 92%; }
+.chat-sala li.mio { justify-self: end; background: rgba(255,210,63,.10); }
+.chat-sala li span { display: block; white-space: pre-wrap; }
+.chat-sala li small { color: var(--suave); font-size: 11px; }
+.chat-sala li.vacio { background: none; color: var(--suave); }
+.chat-escribir { gap: 6px; }
+.chat-escribir input, .chat-escribir textarea { flex: 1; min-width: 0; }
+.seccion-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.nuevo-proyecto { display: grid; gap: 6px; }
+#sala-proyectos { display: grid; gap: 8px; margin: 8px 0 14px; }
+.proyecto-sala { display: flex; gap: 10px; align-items: center; text-align: left; padding: 8px; border-radius: 10px; cursor: pointer;
+  color: inherit; font: inherit; background: var(--panel); border: 2px solid var(--borde); box-shadow: 0 2px 0 var(--borde);
+  transition: border-color .15s ease-out, transform .12s ease-out; }
+.proyecto-sala:hover { border-color: rgba(167,139,250,.7); }
+.proyecto-sala:active { transform: scale(.98); }
+.proyecto-sala.editando { border-color: #8b5cf6; }
+.miniatura-proy { width: 44px; height: 60px; flex: none; display: grid; place-items: center; border-radius: 6px; background: #0b0d16; overflow: hidden; font-size: 22px; }
+.miniatura-proy img { width: 100%; height: 100%; object-fit: cover; }
+.proy-txt { display: grid; gap: 2px; font-size: 13.5px; }
+.proy-txt small { color: var(--suave); }
+.estado-proy { color: var(--acento) !important; }
+/* ventana del proyecto */
+.proyecto-ventana .pv-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.pv-izq video { width: 100%; max-height: 52vh; background: #000; border-radius: 10px; display: block; }
+.pv-izq video:not(.horizontal) { aspect-ratio: 9 / 16; width: auto; max-width: 100%; margin: 0 auto; }
+.pv-sin-video { display: grid; place-items: center; text-align: center; min-height: 220px; border-radius: 10px; color: var(--suave);
+  background: radial-gradient(circle at 30% 20%, #241a4d, #0b0d16 70%); font-size: 14px; }
+.versiones { gap: 6px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+.pv-der .chat-sala { max-height: 46vh; min-height: 200px; }
+.sugerencias { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+#pv-form { display: grid; gap: 6px; }
+.sin-mini { aspect-ratio: 9 / 16; max-height: 170px; display: grid; place-items: center; font-size: 26px; background: #151926; }
+.ruta-proy { font-family: ui-monospace, monospace; font-size: 11.5px; word-break: break-all; }
+.linea-tiempo.grande { height: 10px; margin: 6px 0 2px; }
+@media (max-width: 900px) { .proyecto-ventana .pv-cuerpo { grid-template-columns: 1fr; } }
+.nuevo-proyecto[hidden] { display: none; }

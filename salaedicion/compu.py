@@ -36,6 +36,8 @@ LOG = CARPETA / "compu.log"
 # Tu carpeta de clips: aquí pasas lo que grabaste. Los clips NO se suben al servidor; solo el video terminado.
 CLIPS = Path(os.environ.get("SALA_CLIPS") or (Path(os.environ.get("USERPROFILE", Path.home())) / "Videos" / "Sala de edicion"))
 EXT_VIDEO = {".mp4", ".mov", ".m4v", ".webm", ".3gp", ".mkv"}
+EXT_AUDIO = {".mp3", ".m4a", ".wav", ".aac", ".ogg"}
+MUSICA = CLIPS / "Musica"  # tu música para los videos (el editor la elige de aquí)
 
 
 def log(texto: str) -> None:
@@ -175,8 +177,13 @@ def carpeta_de(pid: str) -> Path | None:
     return None
 
 
-def preparar_carpetas(pedidas: list[dict]) -> None:
+def preparar_carpetas(pedidas: list[dict], proyectos: list[str] | None = None) -> None:
     CLIPS.mkdir(parents=True, exist_ok=True)
+    MUSICA.mkdir(exist_ok=True)
+    for nombre in proyectos or []:  # proyectos que creaste desde la oficina
+        nombre = _limpio(nombre)
+        if nombre and not (CLIPS / nombre).exists():
+            (CLIPS / nombre).mkdir()
     leeme = CLIPS / "LEEME.txt"
     if not leeme.exists():
         leeme.write_text("Sala de edición\r\n\r\nPasa aquí los clips que grabaste, en la carpeta del producto.\r\n"
@@ -212,21 +219,28 @@ def _miniatura(clip: Path) -> tuple[str, float, bool]:
 _ultimo_reporte = {"firma": "", "t": 0.0, "con_miniatura": set()}
 
 
-def reportar_carpetas(of: "Oficina", pedidas: list[dict]) -> None:
-    """Le dice a la oficina qué clips hay en cada carpeta (nombre, duración y miniatura chiquita, nunca el video)."""
-    preparar_carpetas(pedidas)
-    carpetas, firmas = {}, []
+def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list[str] | None = None) -> None:
+    """Le dice a la oficina qué clips hay en cada carpeta (nombre, duración y miniatura chiquita, nunca el video):
+    las de productos de TikTok y cualquier otra carpeta (cada una es un proyecto de la sala)."""
+    preparar_carpetas(pedidas, proyectos)
+    de_productos = {}
     for p in pedidas:
         d = carpeta_de(p["id"])
-        if not d:
-            continue
+        if d:
+            de_productos[d.name] = p["id"]
+    lugares = [(de_productos.get(d.name) or f"carpeta:{d.name}", d) for d in sorted(CLIPS.iterdir())
+               if d.is_dir() and not d.name.startswith(".") and d != MUSICA]
+    carpetas, firmas = {}, []
+    for clave, d in lugares:
         clips = []
         for f in sorted(d.iterdir()):
             if f.is_file() and f.suffix.lower() in EXT_VIDEO and not f.name.startswith("."):
                 firma = f"{f.stat().st_size}-{int(f.stat().st_mtime)}"
-                firmas.append(f"{p['id']}/{f.name}/{firma}")
+                firmas.append(f"{clave}/{f.name}/{firma}")
                 clips.append((f, firma))
-        carpetas[p["id"]] = clips
+        carpetas[clave] = clips
+    musica = sorted(f.name for f in MUSICA.iterdir() if f.is_file() and f.suffix.lower() in EXT_AUDIO) if MUSICA.exists() else []
+    firmas += [f"musica/{m}" for m in musica]
     resumen = "|".join(firmas)
     if resumen == _ultimo_reporte["firma"] and time.time() - _ultimo_reporte["t"] < 120:
         return  # nada cambió (y se repite cada 2 min por si la sala se reinició)
@@ -238,8 +252,37 @@ def reportar_carpetas(of: "Oficina", pedidas: list[dict]) -> None:
             ya = f"{pid}/{f.name}/{firma}" in _ultimo_reporte["con_miniatura"]
             envio[pid].append({"nombre": f.name, "mb": round(f.stat().st_size / 1024 / 1024, 1), "segundos": segundos,
                                "tiene_audio": audio, "firma": firma, "miniatura": "" if ya else jpg})
-    r = of.post("carpetas", {"carpetas": envio, "ruta": str(CLIPS)}, timeout=60)
+    r = of.post("carpetas", {"carpetas": envio, "ruta": str(CLIPS), "musica": musica}, timeout=60)
     _ultimo_reporte.update(firma=resumen, t=time.time(), con_miniatura=set(r.get("con_miniatura") or []))
+
+
+def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
+    """Un proyecto de la sala: los clips están en su carpeta de esta compu (lo que subiste al servidor se baja ahí)."""
+    import editor_libre
+    par, tid = t["parametros"], t["id"]
+    clips = CLIPS / _limpio(par["carpeta"])
+    clips.mkdir(parents=True, exist_ok=True)
+    for e in t["entradas"]:  # clips que subiste desde la oficina: quedan en la carpeta de tu compu
+        destino = clips / e["nombre"]
+        if not destino.exists() or destino.stat().st_size != e.get("bytes"):
+            avance(f"Bajando {e['nombre']}", 0.01)
+            of.bajar(tid, e["n"], destino)
+    n = par["version"]
+    video = temporal / "salida" / f"v{n}.mp4"
+    video.parent.mkdir(parents=True, exist_ok=True)
+    inicio = time.time()
+    segundos = editor_libre.render(par["plan"], clips, video, MUSICA, "", avance)
+    avance("Subiendo tu video", 0.97)
+    of.subir(tid, video)
+    cuadro = video.with_name(f"v{n}.cuadro.jpg")
+    if cuadro.exists():
+        of.subir(tid, cuadro)
+    copia = clips / "Ediciones" / f"{_limpio(par['carpeta'])} v{n}.mp4"  # y una copia en tu compu
+    copia.parent.mkdir(exist_ok=True)
+    shutil.copyfile(video, copia)
+    of.post(f"terminar/{tid}", {"ok": True, "resultado": {"video": video.name, "cuadro": cuadro.name if cuadro.exists() else None,
+                                                         "segundos": segundos}})
+    log(f"Proyecto «{par['carpeta']}» v{n} listo en {round(time.time() - inicio)} s ({segundos} s de video).")
 
 
 def hacer(of: Oficina, t: dict) -> None:
@@ -265,6 +308,8 @@ def hacer(of: Oficina, t: dict) -> None:
         return r["partes"]
 
     try:
+        if t["tipo"] == "libre":
+            return hacer_proyecto(of, t, carpeta, avance)
         if t["tipo"] != "cris":
             raise RuntimeError(f"Esta versión no sabe hacer trabajos de tipo {t['tipo']}.")
         if t.get("local"):  # tus clips ya están en esta compu: no se baja nada
@@ -335,7 +380,7 @@ def trabajar() -> None:
     cris.CACHE = CARPETA / "oido"
     cris.CACHE.mkdir(parents=True, exist_ok=True)
     datos = {"gpu": tarjeta or platform.processor()[:60], "nvenc": con_nvenc, "oido": oido, "version": version(),
-             "tipos": ["cris"], "con_carpetas": True}
+             "tipos": ["cris", "libre"], "con_carpetas": True}
     log(f"Sala de edición: {cfg.get('nombre')} · {datos['gpu'] or 'sin tarjeta NVIDIA'} · NVENC {'sí' if con_nvenc else 'no'}"
         f" · oído {oido} · tus clips en {CLIPS}")
     espera, revisado = 5, time.time()
@@ -348,7 +393,7 @@ def trabajar() -> None:
             espera = 5
             if "carpetas" in r:
                 try:
-                    reportar_carpetas(of, r["carpetas"])
+                    reportar_carpetas(of, r["carpetas"], r.get("proyectos"))
                 except Exception as exc:  # noqa: BLE001 — las carpetas nunca deben frenar la edición
                     log(f"No pude revisar las carpetas de clips: {exc}")
             if r.get("trabajo"):

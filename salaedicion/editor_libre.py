@@ -1,0 +1,220 @@
+"""El editor de cada compu de la sala de edición: hace un video a partir de un "plan de edición".
+
+El plan lo escribe el editor (Claude Haiku) según lo que le pides en el chat del proyecto; aquí solo se ejecuta,
+con ffmpeg y la tarjeta de video de tu compu. Lo que sabe hacer:
+cortar y ordenar clips, quitar silencios y tomas repetidas, velocidad, acercamientos cada ~2 s, brillo/contraste/
+saturación, textos en pantalla, subtítulos karaoke con tu voz, música de tu carpeta Musica, vertical u horizontal y
+duración objetivo.
+"""
+from __future__ import annotations
+
+import difflib
+import shutil
+import subprocess
+from pathlib import Path
+
+import cris  # reusa: escuchar (Whisper), duración, audio, ffmpeg y el formato de subtítulos
+
+RESOLUCION = {"vertical": (1080, 1920), "horizontal": (1920, 1080)}
+
+PLAN_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["formato", "clips", "quitar_silencios", "quitar_repetidas", "cortes_dinamicos", "subtitulos", "textos",
+                 "color", "musica", "duracion_objetivo"],
+    "properties": {
+        "formato": {"type": "string", "enum": ["vertical", "horizontal"]},
+        "clips": {"type": "array", "description": "en el orden del video; solo archivos de la lista",
+                  "items": {"type": "object", "additionalProperties": False,
+                            "required": ["archivo", "desde", "hasta", "velocidad"],
+                            "properties": {"archivo": {"type": "string"},
+                                           "desde": {"type": "number", "description": "segundo de inicio (0 = desde el principio)"},
+                                           "hasta": {"type": "number", "description": "segundo final (0 = hasta el final)"},
+                                           "velocidad": {"type": "number", "description": "1 normal, 0.5 lento, 2 rápido"}}}},
+        "quitar_silencios": {"type": "boolean"},
+        "quitar_repetidas": {"type": "boolean", "description": "si dijo lo mismo dos veces, deja la última"},
+        "cortes_dinamicos": {"type": "boolean", "description": "acercamientos cada ~2 s en tomas largas"},
+        "subtitulos": {"type": "object", "additionalProperties": False,
+                       "required": ["activar", "tamano", "posicion", "mayusculas", "color_resaltado"],
+                       "properties": {"activar": {"type": "boolean"}, "tamano": {"type": "string", "enum": ["normal", "grande"]},
+                                      "posicion": {"type": "string", "enum": ["abajo", "centro"]}, "mayusculas": {"type": "boolean"},
+                                      "color_resaltado": {"type": "string", "description": "#RRGGBB de la palabra que se dice"}}},
+        "textos": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                              "required": ["texto", "desde", "hasta", "posicion"],
+                                              "properties": {"texto": {"type": "string"}, "desde": {"type": "number"},
+                                                             "hasta": {"type": "number", "description": "0 = hasta el final"},
+                                                             "posicion": {"type": "string", "enum": ["arriba", "centro", "abajo"]}}}},
+        "color": {"type": "object", "additionalProperties": False, "required": ["brillo", "contraste", "saturacion"],
+                  "properties": {"brillo": {"type": "number", "description": "-0.2 a 0.2 (0 = igual)"},
+                                 "contraste": {"type": "number", "description": "0.8 a 1.3 (1 = igual)"},
+                                 "saturacion": {"type": "number", "description": "0 a 2 (1 = igual, 0 = blanco y negro)"}}},
+        "musica": {"type": "object", "additionalProperties": False, "required": ["archivo", "volumen"],
+                   "properties": {"archivo": {"type": "string", "description": "de la carpeta Musica, o vacío para sin música"},
+                                  "volumen": {"type": "number", "description": "0.05 a 0.4 (bajito debajo de la voz)"}}},
+        "duracion_objetivo": {"type": "number", "description": "segundos máximos (0 = sin límite)"},
+    },
+}
+
+
+def _rango(v: float, a: float, b: float, defecto: float) -> float:
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return defecto
+    return max(a, min(b, v))
+
+
+def _trozos_con_voz(pals: list[dict], ini: float, fin: float, gap: float = 0.6) -> list[tuple[float, float, str]]:
+    dentro = [p for p in pals if ini <= p["t"] < fin]
+    if not dentro:
+        return []
+    grupos, actual = [], [dentro[0]]
+    for p in dentro[1:]:
+        if p["t"] - (actual[-1]["t"] + actual[-1]["d"]) > gap:
+            grupos.append(actual)
+            actual = []
+        actual.append(p)
+    grupos.append(actual)
+    return [(max(ini, g[0]["t"] - 0.12), min(fin, g[-1]["t"] + g[-1]["d"] + 0.25), " ".join(x["w"] for x in g)) for g in grupos]
+
+
+def piezas_del_plan(plan: dict, carpeta: Path, pista: str = "") -> list[dict]:
+    piezas = []
+    for c in plan.get("clips") or []:
+        src = carpeta / Path(str(c.get("archivo", ""))).name
+        if not src.exists():
+            raise cris.ErrorEdicion(f"No encontré el clip «{c.get('archivo')}» en la carpeta del proyecto.")
+        dur = cris.duracion(src)
+        ini = _rango(c.get("desde"), 0, dur, 0)
+        fin = _rango(c.get("hasta"), 0, dur, 0) or dur
+        if fin - ini < 0.3:
+            ini, fin = 0, dur
+        vel = _rango(c.get("velocidad"), 0.5, 2.0, 1.0)
+        tramos = [(ini, fin, "")]
+        if plan.get("quitar_silencios") and cris.tiene_audio(src):
+            tramos = _trozos_con_voz(cris.transcribir(src, pista), ini, fin) or tramos
+        for a, b, texto in tramos:
+            piezas.append({"src": src, "ini": a, "dur": b - a, "vel": vel, "texto": texto, "zoom": 1.0, "bloque": "clip"})
+    if plan.get("quitar_repetidas"):  # si dijo casi lo mismo dos veces, se queda la última
+        quedan = []
+        for i, p in enumerate(piezas):
+            repetida = p["texto"] and any(
+                q["texto"] and difflib.SequenceMatcher(None, cris._norm(p["texto"]), cris._norm(q["texto"])).ratio() > 0.62
+                for q in piezas[i + 1:])
+            if not repetida:
+                quedan.append(p)
+        piezas = quedan
+    if plan.get("cortes_dinamicos"):
+        partidas = []
+        for p in piezas:
+            for x in cris._partir(p["src"], p["ini"], p["ini"] + p["dur"], "clip"):
+                partidas.append({**p, "ini": x["ini"], "dur": x["dur"], "zoom": x["zoom"]})
+        piezas = partidas
+    return piezas
+
+
+def _ass(destino: Path, w: int, h: int, palabras: list[dict], plan: dict, total: float) -> None:
+    sub = plan.get("subtitulos") or {}
+    vertical = h > w
+    grande = sub.get("tamano") == "grande"
+    tam = (86 if grande else 66) if vertical else (72 if grande else 54)
+    margen_der = int(w * 0.15) + 24 if vertical else 80
+    margen_v = int(h * (0.42 if sub.get("posicion") == "centro" else 0.24 if vertical else 0.08))
+    color = (sub.get("color_resaltado") or "#FFD23F").lstrip("#")
+    resaltado = f"&H00{color[4:6]}{color[2:4]}{color[0:2]}&".upper() if len(color) == 6 else "&H003FD2FF&"
+    eventos = []
+    if sub.get("activar"):
+        mayus = bool(sub.get("mayusculas"))
+        n = 3 if vertical else 6
+        for k in range(0, len(palabras), n):
+            grupo = palabras[k:k + n]
+            fin_grupo = min(palabras[k + n]["t"] if k + n < len(palabras) else grupo[-1]["t"] + grupo[-1]["d"] + 0.5,
+                            grupo[-1]["t"] + grupo[-1]["d"] + 0.5)
+            ws = [cris._ass_texto(p["w"].upper() if mayus else p["w"]) for p in grupo]
+            for j, p in enumerate(grupo):
+                a = grupo[0]["t"] if j == 0 else p["t"]
+                b = grupo[j + 1]["t"] if j + 1 < len(grupo) else fin_grupo
+                linea = " ".join((f"{{\\c{resaltado}\\fscx115\\fscy115\\t(0,90,\\fscx106\\fscy106)}}{x}{{\\r}}" if q == j else x)
+                                 for q, x in enumerate(ws))
+                if b > a:
+                    eventos.append(f"Dialogue: 0,{cris._ass_tiempo(a)},{cris._ass_tiempo(b)},Karaoke,,0,0,0,,{linea}")
+    alinear = {"arriba": 8, "centro": 5, "abajo": 2}
+    for t in plan.get("textos") or []:
+        a = _rango(t.get("desde"), 0, total, 0)
+        b = _rango(t.get("hasta"), 0, total, 0) or total
+        if b > a and str(t.get("texto", "")).strip():
+            eventos.append(f"Dialogue: 1,{cris._ass_tiempo(a)},{cris._ass_tiempo(b)},Texto,,0,0,0,,"
+                           f"{{\\an{alinear.get(t.get('posicion'), 8)}\\fscx70\\fscy70\\t(0,140,\\fscx100\\fscy100)}}"
+                           f"{cris._ass_texto(str(t['texto']).upper())}")
+    cabeza = (f"[Script Info]\nScriptType: v4.00+\nPlayResX: {w}\nPlayResY: {h}\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n"
+              "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, "
+              "Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
+              "MarginR, MarginV, Encoding\n"
+              f"Style: Texto,{cris.FUENTE},{int(tam * 0.95)},&H00FFFFFF,&H00FFFFFF,&H30000000,&H00000000,-1,0,0,0,100,100,0,0,3,16,0,8,"
+              f"60,{margen_der},{int(h * 0.17) if vertical else 60},1\n"
+              f"Style: Karaoke,{cris.FUENTE},{tam},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,"
+              f"60,{margen_der},{margen_v},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+    destino.write_text(cabeza + "\n".join(eventos) + "\n", encoding="utf-8")
+
+
+def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = None, pista: str = "",
+           al_avanzar=None) -> float:
+    """Hace el video del plan. Deja `destino` y un cuadro limpio (destino.cuadro.jpg). Regresa los segundos."""
+    avance = al_avanzar or (lambda paso, f: None)
+    w, h = RESOLUCION.get(plan.get("formato"), RESOLUCION["vertical"])
+    avance("Escuchando tus clips", 0.03)
+    piezas = piezas_del_plan(plan, carpeta, pista)
+    if not piezas:
+        raise cris.ErrorEdicion("El plan no tiene clips que usar.")
+    color = plan.get("color") or {}
+    eq = (f"eq=brightness={_rango(color.get('brillo'), -0.2, 0.2, 0):.3f}:contrast={_rango(color.get('contraste'), 0.8, 1.3, 1):.3f}"
+          f":saturation={_rango(color.get('saturacion'), 0, 2, 1):.3f}")
+    trabajo = destino.parent / f".edicion_{destino.stem}"
+    shutil.rmtree(trabajo, ignore_errors=True)
+    trabajo.mkdir(parents=True)
+    objetivo = _rango(plan.get("duracion_objetivo"), 0, 3600, 0)
+    partes, palabras, t0 = [], [], 0.0
+    for k, p in enumerate(piezas):
+        if objetivo and t0 >= objetivo:
+            break  # ya se llegó a la duración que pediste
+        avance(f"Cortando parte {k + 1} de {len(piezas)}", 0.08 + 0.72 * k / len(piezas))
+        z, vel = p["zoom"], p["vel"]
+        sw, sh = int(w * z) // 2 * 2, int(h * z) // 2 * 2
+        vf = (f"scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,{eq},"
+              f"setpts=PTS/{vel:.3f},fps={cris.FPS},format=yuv420p")
+        salida = trabajo / f"p{k:03d}.mp4"
+        dur = p["dur"] if not objetivo else min(p["dur"], (objetivo - t0) * vel)
+        if cris.tiene_audio(p["src"]):
+            cris._ff("-ss", f"{p['ini']:.3f}", "-t", f"{dur:.3f}", "-i", str(p["src"]), "-vf", vf,
+                     "-af", f"atempo={vel:.3f},aformat=sample_rates=44100:channel_layouts=stereo", *cris.RAPIDO, *cris.AUDIO, str(salida))
+        else:
+            cris._ff("-ss", f"{p['ini']:.3f}", "-t", f"{dur:.3f}", "-i", str(p["src"]), "-f", "lavfi", "-i",
+                     "anullsrc=r=44100:cl=stereo", "-vf", vf, "-map", "0:v", "-map", "1:a", "-shortest",
+                     *cris.RAPIDO, *cris.AUDIO, str(salida))
+        real = cris.duracion(salida)
+        for x in cris.transcribir(p["src"], pista) if (plan.get("subtitulos") or {}).get("activar") else []:
+            if p["ini"] <= x["t"] < p["ini"] + dur:
+                palabras.append({**x, "t": t0 + (x["t"] - p["ini"]) / vel, "d": x["d"] / vel})
+        partes.append(salida)
+        t0 += real
+    (trabajo / "lista.txt").write_text("".join(f"file '{x.name}'\n" for x in partes), encoding="utf-8")
+    cris._ff("-f", "concat", "-safe", "0", "-i", str(trabajo / "lista.txt"), "-c", "copy", str(trabajo / "base.mp4"))
+    cris._ff("-ss", f"{t0 * 0.45:.2f}", "-i", str(trabajo / "base.mp4"), "-frames:v", "1", "-q:v", "2",
+             str(destino.with_name(f"{destino.stem}.cuadro.jpg")))
+    avance("Poniendo textos, subtítulos y música", 0.86)
+    _ass(trabajo / "textos.ass", w, h, palabras, plan, t0)
+    musica = plan.get("musica") or {}
+    pista_musica = (musica_dir / Path(str(musica.get("archivo") or "")).name) if musica_dir and musica.get("archivo") else None
+    entrada_musica = ["-stream_loop", "-1", "-i", str(pista_musica)] if pista_musica and pista_musica.exists() else []
+    if entrada_musica:
+        vol = _rango(musica.get("volumen"), 0.02, 0.6, 0.15)
+        filtro = (f"[0:v]ass=textos.ass[v];[1:a]volume={vol:.3f},afade=t=out:st={max(0, t0 - 1.5):.2f}:d=1.5[m];"
+                  f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
+        args = ["-i", "base.mp4", *entrada_musica, "-filter_complex", filtro, "-map", "[v]", "-map", "[a]"]
+    else:
+        args = ["-i", "base.mp4", "-vf", "ass=textos.ass", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
+    r = subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *args, *cris.FINAL, *cris.AUDIO,
+                        "-t", f"{t0:.3f}", str(destino.resolve())], cwd=trabajo, capture_output=True, text=True)
+    if r.returncode:
+        raise cris.ErrorEdicion("ffmpeg falló al terminar el video: " + (r.stderr.strip().splitlines() or [""])[-1][:200])
+    shutil.rmtree(trabajo, ignore_errors=True)
+    return round(t0, 1)
