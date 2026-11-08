@@ -1133,8 +1133,27 @@ def probar_wordpress() -> None:
     if "application-passwords" not in api.text and "authentication" not in api.text:
         print("⚠️  Tu WordPress no anuncia contraseñas de aplicación: puede que un plugin de seguridad las haya desactivado.")
     from agentes import blog
+    cabeceras = blog.cabecera_respaldo(usuario, clave)
+    # ¿Está el plugin «AutoCanal – Conexión»? Su prueba dice qué le llega (solo sí/no)
+    try:
+        ping = requests.get(f"{url}/wp-json/autocanal/v1/ping", auth=(usuario, clave), headers=cabeceras, timeout=30)
+        info = ping.json() if ping.status_code == 200 else None
+    except (requests.RequestException, ValueError):
+        info = None
+    if info is None:
+        print("•  Plugin «AutoCanal – Conexión»: NO está activo (o no se instaló).")
+    else:
+        print(f"✔ Plugin «AutoCanal – Conexión» activo (v{info.get('plugin')}).")
+        print(f"   · cabecera normal de acceso: {'llega' if info.get('llega_authorization') else 'tu hosting la BORRA'}")
+        print(f"   · cabecera de respaldo:      {'llega' if info.get('llega_autocanal') else 'tu hosting también la BORRA'}")
+        if not info.get("contrasenas_aplicacion"):
+            print("✖ WordPress tiene APAGADAS las contraseñas de aplicación. Las apaga algún plugin de seguridad")
+            print("  (Wordfence, iThemes/Solid Security, All In One WP Security…) o falta HTTPS. Búscalo en sus ajustes:")
+            print("  «Application Passwords» / «Contraseñas de aplicación» → permitir.")
+        elif not info.get("llega_autocanal") and not info.get("llega_authorization"):
+            print("✖ Tu hosting borra las dos cabeceras. Avísame y lo resolvemos de otra forma.")
     r = requests.get(f"{url}/wp-json/wp/v2/users/me", params={"context": "edit"}, auth=(usuario, clave), timeout=30,
-                     headers=blog.cabecera_respaldo(usuario, clave))
+                     headers=cabeceras)
     datos = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     if r.status_code == 200:
         roles = datos.get("roles", [])
@@ -1150,6 +1169,9 @@ def probar_wordpress() -> None:
         print("✖ La contraseña de aplicación no es correcta. Crea una nueva en Usuarios → Perfil → Contraseñas de aplicación.")
     elif codigo == "invalid_username":
         print("✖ Ese usuario no existe. Usa tu nombre de usuario de WordPress (el de entrar a wp-admin) o tu correo.")
+    elif codigo in ("rest_not_logged_in", "rest_cannot_create", "") and info is not None:
+        print("✖ Con el plugin activo WordPress sigue sin reconocerte. Revisa lo marcado arriba con ✖ y mándame")
+        print("  todo este mensaje.")
     elif codigo in ("rest_not_logged_in", "rest_cannot_create", ""):
         print("✖ WordPress no está recibiendo tu usuario y contraseña: tu hosting borra la cabecera de acceso.")
         print("  Arreglo SIN tocar .htaccess: en tu oficina, pestaña Proyectos → «Plugin para el blog», baja")
