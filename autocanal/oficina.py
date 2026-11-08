@@ -1152,8 +1152,48 @@ def probar_wordpress() -> None:
             print("  «Application Passwords» / «Contraseñas de aplicación» → permitir.")
         elif not info.get("llega_autocanal") and not info.get("llega_authorization"):
             print("✖ Tu hosting borra las dos cabeceras. Avísame y lo resolvemos de otra forma.")
+    if info is not None:
+        print(f"   · usuario listo para WordPress: {'sí' if info.get('usuario_listo') else 'no'}")
+        if "reconocido" in info:
+            print(f"   · WordPress te reconoce: {'SÍ' if info.get('reconocido') else 'NO'}"
+                  + (f" (motivo: {info.get('error_contrasena')})" if info.get("error_contrasena") else ""))
+
+    def detalle(resp) -> str:
+        tipo = resp.headers.get("content-type", "")
+        if tipo.startswith("application/json"):
+            try:
+                d = resp.json()
+                return f"{resp.status_code} · {d.get('code', '')} · {str(d.get('message', ''))[:160]}"
+            except ValueError:
+                pass
+        texto = " ".join(resp.text.split())[:160]
+        servidor = resp.headers.get("server", "?")
+        return f"{resp.status_code} · respuesta que NO es de WordPress ({tipo or 'sin tipo'}, servidor {servidor}): {texto}"
+
+    # Lo que de verdad se necesita para publicar: leer borradores (no crea ni cambia nada)
+    borr = requests.get(f"{url}/wp-json/wp/v2/posts", params={"status": "draft", "per_page": 1, "context": "edit"},
+                        auth=(usuario, clave), timeout=30, headers=cabeceras)
+    if borr.status_code == 200:
+        print("✔ Prueba de publicar (leer tus borradores): FUNCIONA. Tu blog sí acepta a la oficina.")
+    else:
+        print(f"✖ Prueba de publicar (leer tus borradores): {detalle(borr)}")
+        if not borr.headers.get("content-type", "").startswith("application/json"):
+            print("  → Eso lo responde el FIREWALL de tu hosting (no WordPress): bloquea a tu servidor. En el panel de")
+            print("    tu hosting busca «Firewall», «ModSecurity», «Imunify360» o «Protección contra bots» y agrega a la")
+            print("    lista blanca la IP de tu servidor: 51.195.201.84. Si no lo encuentras, pídeselo a su soporte.")
+        elif (info or {}).get("error_contrasena") in ("incorrect_password", "invalid_username", "invalid_email") \
+                or "incorrect_password" in borr.text:
+            print("  → La contraseña de aplicación ya no sirve. En WordPress: Usuarios → Perfil → Contraseñas de")
+            print("    aplicación → crea una nueva («Oficina»), y ponla en el servidor con:")
+            print("      sudo nano /opt/canal/autocanal/.env      (línea WP_APP_PASSWORD=)")
+            print("    luego: sudo systemctl restart oficina")
     r = requests.get(f"{url}/wp-json/wp/v2/users/me", params={"context": "edit"}, auth=(usuario, clave), timeout=30,
                      headers=cabeceras)
+    if r.status_code != 200:
+        print(f"   · ¿quién soy? (users/me): {detalle(r)}")
+        if borr.status_code == 200:
+            print("  Tu plugin de seguridad bloquea solo la consulta de usuarios; publicar sí funciona. Dale «Subir blog».")
+            return
     datos = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     if r.status_code == 200:
         roles = datos.get("roles", [])

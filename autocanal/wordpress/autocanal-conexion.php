@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AutoCanal – Conexión
  * Description: Deja que tu oficina AutoCanal publique en tu blog aunque tu hosting borre la cabecera de acceso (Authorization). No hay que tocar .htaccess. WordPress sigue revisando tu contraseña de aplicación igual que siempre.
- * Version: 1.1
+ * Version: 1.2
  * Requires at least: 5.6
  */
 
@@ -30,12 +30,17 @@ add_action( 'rest_api_init', function () {
 		'permission_callback' => '__return_true',
 		'callback'            => function () {
 			return array(
-				'plugin'                 => '1.1',
+				'plugin'                 => '1.2',
 				'llega_authorization'    => ! empty( $_SERVER['HTTP_AUTHORIZATION'] ) || ! empty( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ),
 				'llega_autocanal'        => ! empty( $_SERVER['HTTP_X_AUTOCANAL_AUTH'] ),
 				'usuario_listo'          => ! empty( $_SERVER['PHP_AUTH_USER'] ),
 				'contrasenas_aplicacion' => function_exists( 'wp_is_application_passwords_available' ) && wp_is_application_passwords_available(),
 				'https'                  => is_ssl(),
+				// ¿WordPress aceptó tu contraseña de aplicación en esta misma consulta? (solo el código del motivo)
+				'reconocido'             => get_current_user_id() > 0,
+				'error_contrasena'       => ( isset( $GLOBALS['wp_rest_application_password_status'] )
+					&& is_wp_error( $GLOBALS['wp_rest_application_password_status'] ) )
+					? $GLOBALS['wp_rest_application_password_status']->get_error_code() : '',
 			);
 		},
 	) );
