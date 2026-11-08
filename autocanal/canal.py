@@ -250,7 +250,7 @@ def _reporte(carpeta, ficha, exp, guion, entrada, video, mini) -> None:
     (carpeta / "REVISAR.md").write_text("\n".join(l), encoding="utf-8")
 
 
-def publicar(app_id: str, titulo_n: int = 1) -> dict:
+def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> dict:
     from agentes import blog, buscador, youtube
 
     carpeta = config.SALIDA / app_id
@@ -288,13 +288,21 @@ def publicar(app_id: str, titulo_n: int = 1) -> dict:
             desc = "\n".join(l for l in guion["descripcion"].splitlines() if "{{BLOG_URL}}" not in l)
         sintetico = config.env("VOZ_MOTOR", "edge") != "propia"
         pub["youtube"] = youtube.subir(carpeta / "video.mp4", carpeta / "miniatura.jpg",
-                                       guion["titulos"][titulo_n - 1], desc, guion["etiquetas"], sintetico)
+                                       guion["titulos"][titulo_n - 1], desc, guion["etiquetas"], sintetico, privacidad)
+        pub["privacidad_pedida"] = privacidad or config.env("YT_PRIVACIDAD", "private")
+        try:
+            pub["privacidad"] = youtube.privacidad_real(pub["youtube"])
+        except Exception as exc:  # noqa: BLE001 — saberlo es un extra
+            print(f"  · no pude revisar cómo quedó el video: {exc}")
         _guardar(carpeta / "publicado.json", pub)
-        print(f"  · {pub['youtube']}")
+        print(f"  · {pub['youtube']} ({pub.get('privacidad') or '?'})")
 
     if pub.get("blog") and not pub.get("video_en_blog"):
-        blog.WordPress().insertar_video(pub["blog"]["id"], pub["youtube"])
-        pub["video_en_blog"] = True
+        try:
+            blog.WordPress().insertar_video(pub["blog"]["id"], pub["youtube"])
+            pub["video_en_blog"] = True
+        except Exception as exc:  # noqa: BLE001 — el video ya está en YouTube; esto queda pendiente
+            pub["blog_error"] = f"No pude poner el video en el blog: {exc}"[:300]
         _guardar(carpeta / "publicado.json", pub)
     buscador.marcar_hecha(app_id.split("~")[0])
     print("✔ Publicado.")

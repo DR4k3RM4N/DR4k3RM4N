@@ -140,6 +140,14 @@ def escribir(ficha: dict, expediente: dict, n_capturas: int) -> dict:
                                     que="escribir post")
 
 
+def cabecera_respaldo(usuario: str, clave: str) -> dict:
+    """Muchos hostings borran la cabecera Authorization. Mandamos los mismos datos también en una cabecera propia
+    que lee el plugin «AutoCanal – Conexión» (se instala desde wp-admin, sin tocar .htaccess). WordPress revisa
+    la contraseña de aplicación igual que siempre."""
+    import base64
+    return {"X-AutoCanal-Auth": base64.b64encode(f"{usuario}:{clave}".encode()).decode()}
+
+
 class WordPress:
     def __init__(self):
         self.url = config.env("WP_URL").rstrip("/")
@@ -148,8 +156,13 @@ class WordPress:
             raise RuntimeError("Faltan WP_URL, WP_USUARIO o WP_APP_PASSWORD en .env")
 
     def _api(self, metodo: str, ruta: str, **kw) -> dict:
+        kw["headers"] = {**cabecera_respaldo(*self.auth), **(kw.get("headers") or {})}
         r = requests.request(metodo, f"{self.url}/wp-json/wp/v2/{ruta}", auth=self.auth, timeout=120, **kw)
         if r.status_code >= 400:
+            if r.status_code in (401, 403) and any(c in r.text for c in ("rest_cannot_create", "rest_not_logged_in",
+                                                                         "rest_cannot_upload", "rest_forbidden")):
+                raise RuntimeError("Tu blog no recibió el usuario y la contraseña (tu hosting borra la cabecera de acceso). "
+                                   "Instala el plugin «AutoCanal – Conexión» (Proyectos → Plugin para el blog) y dale «Subir blog».")
             raise RuntimeError(f"WordPress {r.status_code}: {r.text[:300]}")
         return r.json()
 

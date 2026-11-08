@@ -67,6 +67,9 @@ tienen trabajo, y **Paola (productora) le propone ideas al jefe y le pide su opi
   ya está publicada). WhatsApp Cloud API está programado (opcional).
 
 ## 4. Pendientes y problemas conocidos
+- **(Arreglo listo, nov 2026, sin tocar .htaccess)**: plugin `autocanal/wordpress/autocanal-conexion.php`; se baja en la
+  oficina (Proyectos → «Plugin para el blog») y se sube en wp-admin → Plugins → Añadir nuevo → Subir plugin. `blog.py`
+  manda también la cabecera `X-AutoCanal-Auth`, que el plugin pasa a PHP_AUTH_USER/PW. Falta que Miguel lo instale.
 - **WordPress da 401 `rest_cannot_create`**: el hosting le quita el encabezado `Authorization` a las peticiones.
   Arreglo: agregar al `.htaccess` del blog
   `SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1`
@@ -151,3 +154,10 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   servidor. Con video completo, la compu pide a Claude por la sala → tienda (`/interno/clasificar`), el gasto queda allá.
 - Pendiente: Edu (YouTube) en las compus; pizarrón de muestras de TikTok Shop con días restantes (fecha límite copiada
   del panel de TikTok) + aviso por Telegram cada mañana. No probado en Windows real (aquí no hay Windows).
+
+### 6.3 Publicar en YouTube (nov 2026)
+- Bug arreglado: el formulario de TikTok tenía un `<label class="check">` y la revisión de YouTube contaba `.check` →
+  el botón Publicar nunca se habilitaba marcando a mano. Ahora se busca `#modal-cuerpo input.check`.
+- Casilla "✅ Ya revisé todo" y selector Público / Sin listar / Privado (se recuerda en el navegador; por defecto
+  YT_PRIVACIDAD). Tras subir se lee la privacidad real: YouTube deja en privado lo que sube una app de Google sin
+  auditar aunque se pida público → se avisa. "Reintentar" tras fallar al publicar vuelve a publicar directo.

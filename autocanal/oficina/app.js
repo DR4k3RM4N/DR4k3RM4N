@@ -176,7 +176,12 @@
   // ---------- proyectos ----------
   function pintarProyectos() {
     const lista = estado.proyectos.filter((p) => p.estado !== "descartado");
-    if (!lista.length) { $("#proyectos").innerHTML = `<p class="vacio">Aún no hay proyectos. Aprueba una idea para arrancar.</p>`; return; }
+    const ayudaBlog = `<details class="tarjeta ayuda-blog"><summary>🔌 Plugin para el blog (si WordPress no deja publicar)</summary>
+      <p>Tu hosting borra la "llave" con la que la oficina entra a tu blog. Este plugin la deja pasar, sin tocar <code>.htaccess</code>:</p>
+      <ol><li><a class="btn btn-mini btn-primario" href="/descargar/autocanal-conexion.zip" download>⬇️ Bajar autocanal-conexion.zip</a></li>
+      <li>En tu WordPress: <b>Plugins → Añadir nuevo → Subir plugin</b> → elige el .zip → <b>Instalar ahora</b> → <b>Activar</b>.</li>
+      <li>Aquí, en el video con blog pendiente, dale <b>Subir blog</b>.</li></ol></details>`;
+    if (!lista.length) { $("#proyectos").innerHTML = `<p class="vacio">Aún no hay proyectos. Aprueba una idea para arrancar.</p>${ayudaBlog}`; return; }
     const agentes = {};
     estado.agentes.forEach((a) => (agentes[a.id] = a));
     $("#proyectos").innerHTML = lista.map((p) => {
@@ -196,12 +201,15 @@
       return `<article class="tarjeta">
         <div class="cabeza"><h4>${esc(p.titulo)}</h4><span class="chip chip-estado-${esc(p.estado)}">${esc(ESTADO_PROY[p.estado] || p.estado)}</span></div>
         <ol class="pasos">${pasos}</ol>${pub}
-        ${p.blog_pendiente ? `<div class="pendiente-blog">📝 El blog quedó pendiente${p.publicado?.blog_error ? `: ${esc(p.publicado.blog_error.slice(0, 120))}` : ""}
-          <button class="btn btn-mini btn-primario" data-subir-blog="${esc(p.id)}">Subir blog</button></div>` : ""}
+        ${p.publicado?.privacidad === "private" ? `<div class="pendiente-blog"><span>🔒 En YouTube quedó en <b>privado</b>${p.publicado.privacidad_pedida !== "private"
+            ? " aunque pediste público (YouTube lo hace con las apps de Google que no han pasado su auditoría)" : ""}. Ábrelo en YouTube Studio → Visibilidad → Público.</span></div>` : ""}
+        ${p.blog_pendiente ? `<div class="pendiente-blog">📝 El blog quedó pendiente${p.publicado?.blog_error ? `: ${esc(p.publicado.blog_error.slice(0, 160))}` : ""}
+          <span class="fila"><button class="btn btn-mini btn-primario" data-subir-blog="${esc(p.id)}">Subir blog</button>
+          <a class="btn btn-mini" href="/descargar/autocanal-conexion.zip" download>🔌 Plugin para el blog</a></span></div>` : ""}
         ${p.costo ? `<div class="costo">💰 ${dinero(p.costo)} <span>${Object.entries(p.costos || {}).map(([e, v]) => `${esc(ETIQUETA_ETAPA[e] || e)} ${dinero(v)}`).join(" · ")}</span></div>` : ""}
         ${["revision", "publicado"].includes(p.estado) ? `<button class="btn ancho" data-revisar="${esc(p.id)}">Ver video</button>` : ""}
       </article>`;
-    }).join("");
+    }).join("") + ayudaBlog;
   }
   $("#proyectos").addEventListener("click", async (e) => {
     const sb = e.target.closest("[data-subir-blog]");
@@ -259,6 +267,7 @@
           <p><span class="sello sello-${color}">${palabra}</span></p>
           <p>${esc(d.resumen)}</p>
           ${d.pendiente.length ? `<h3>Antes de publicar, compruébalo tú</h3>
+            ${editable ? `<label class="todo-check"><input type="checkbox" id="check-todo"> ✅ <b>Ya revisé todo</b> (marca todas)</label>` : ""}
             <ul class="checklist">${d.pendiente.map((x, k) => `<li><label><input type="checkbox" class="check" ${editable ? "" : "checked disabled"}> ${esc(x)}</label></li>`).join("")}
             <li><label><input type="checkbox" class="check" ${editable ? "" : "checked disabled"}> Cada afirmación del guion tiene respaldo</label></li></ul>` : ""}
           <h3>Evidencia</h3>
@@ -274,6 +283,11 @@
       ${editable ? `
       <div class="pie">
         <textarea id="cambios" rows="2" placeholder="¿Qué cambiarías? Ej. el gancho más directo, menciona el pago mínimo antes…"></textarea>
+        <div class="privacidad">
+          <span>En YouTube:</span>
+          ${[["public", "🌎 Público"], ["unlisted", "🔗 Sin listar"], ["private", "🔒 Privado"]].map(([v, t]) =>
+            `<label><input type="radio" name="privacidad" value="${v}" ${v === privacidadInicial(d) ? "checked" : ""}> ${t}</label>`).join("")}
+        </div>
         <div class="acciones">
           <button class="btn" id="b-cambios">✏️ Pedir cambios</button>
           <button class="btn btn-no" id="b-descartar">Descartar</button>
@@ -288,17 +302,22 @@
       catch (err) { alert(err.message); }
     }));
     if (!editable) return;
-    const checks = [...document.querySelectorAll(".check")];
+    const checks = [...document.querySelectorAll("#modal-cuerpo input.check")];
+    const todo = $("#check-todo");
     const revisarChecks = () => {
       const listo = checks.every((c) => c.checked);
       $("#b-publicar").disabled = !listo;
       $("#nota-publicar").hidden = listo;
+      if (todo) todo.checked = listo;
     };
     checks.forEach((c) => c.addEventListener("change", revisarChecks));
+    todo?.addEventListener("change", () => { checks.forEach((c) => (c.checked = todo.checked)); revisarChecks(); });
     revisarChecks();
     const enviar = async (accion, texto = "") => {
       const titulo = Number(document.querySelector("input[name=titulo]:checked")?.value || 1);
-      try { await api(`/api/proyecto/${encodeURIComponent(id)}`, { accion, texto, titulo }); cerrarModal(); }
+      const privacidad = document.querySelector("input[name=privacidad]:checked")?.value || "";
+      try { localStorage.setItem("yt_privacidad", privacidad); } catch { /* sin almacenamiento */ }
+      try { await api(`/api/proyecto/${encodeURIComponent(id)}`, { accion, texto, titulo, privacidad }); cerrarModal(); }
       catch (err) { alert(err.message); }
     };
     $("#b-publicar").onclick = () => enviar("publicar");
@@ -308,6 +327,13 @@
       if (!t) return $("#cambios").focus();
       enviar("cambios", t);
     };
+  }
+
+  // cómo salió la última vez (o lo que diga YT_PRIVACIDAD en el servidor)
+  function privacidadInicial(d) {
+    let v = "";
+    try { v = localStorage.getItem("yt_privacidad") || ""; } catch { /* sin almacenamiento */ }
+    return ["public", "unlisted", "private"].includes(v) ? v : (d.yt_privacidad || "private");
   }
 
   function cerrarModal() {

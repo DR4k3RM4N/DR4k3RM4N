@@ -211,16 +211,20 @@ def investigar_web(system, pregunta, tarea="investigar", max_busquedas=5):
     return "Usuarios en foros reportan que no paga.", [{"titulo": "Reddit: ¿alguien cobró?", "url": "https://reddit.com/r/ejemplo"}]
 
 
-def publicar(app_id: str, titulo_n: int = 1) -> dict:
+def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> dict:
     from . import buscador as b
 
     _pausa(4, 6)
+    pedida = privacidad or "private"
+    # DEMO_YT_PRIVADO=1 simula a YouTube dejando el video en privado (app de Google sin auditar)
+    real = "private" if os.environ.get("DEMO_YT_PRIVADO") == "1" else pedida
     if os.environ.get("DEMO_BLOG_FALLA") == "1":
         pub = {"blog": None, "blog_error": "WordPress 401: no tienes permisos (demo)",
                "youtube": f"https://youtu.be/demo-{app_id.split('.')[-1]}", "demo": True}
     else:
         pub = {"blog": {"id": 1, "link": f"https://tublog.com/{app_id.split('.')[-1]}", "estado": "draft"},
                "youtube": f"https://youtu.be/demo-{app_id.split('.')[-1]}", "video_en_blog": True, "demo": True}
+    pub.update(privacidad_pedida=pedida, privacidad=real)
     (config.SALIDA / app_id / "publicado.json").write_text(json.dumps(pub, indent=2), encoding="utf-8")
     b.marcar_hecha(app_id)
     return pub

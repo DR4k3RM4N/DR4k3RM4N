@@ -30,8 +30,11 @@ def _servicio(puerto: int = 0, abrir_navegador: bool = True):
     return build("youtube", "v3", credentials=creds)
 
 
+PRIVACIDADES = ("public", "unlisted", "private")
+
+
 def subir(video: Path, miniatura: Path | None, titulo: str, descripcion: str, etiquetas: list[str],
-          sintetico: bool = True) -> str:
+          sintetico: bool = True, privacidad: str | None = None) -> str:
     from googleapiclient.http import MediaFileUpload
 
     yt = _servicio()
@@ -42,7 +45,7 @@ def subir(video: Path, miniatura: Path | None, titulo: str, descripcion: str, et
             "defaultLanguage": config.CANAL_IDIOMA, "defaultAudioLanguage": config.CANAL_IDIOMA,
         },
         "status": {
-            "privacyStatus": config.env("YT_PRIVACIDAD", "private"),
+            "privacyStatus": privacidad if privacidad in PRIVACIDADES else config.env("YT_PRIVACIDAD", "private"),
             "selfDeclaredMadeForKids": False,
             # Divulgación de contenido alterado o sintético (voz generada por IA) que pide YouTube.
             "containsSyntheticMedia": sintetico,
@@ -59,6 +62,14 @@ def subir(video: Path, miniatura: Path | None, titulo: str, descripcion: str, et
     if miniatura and miniatura.exists():
         yt.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(miniatura))).execute()
     return f"https://youtu.be/{video_id}"
+
+
+def privacidad_real(url_video: str) -> str:
+    """Cómo quedó de verdad el video. YouTube deja en privado lo que sube una app de Google sin auditar,
+    aunque se pida público."""
+    video_id = url_video.rstrip("/").split("/")[-1].split("=")[-1]
+    datos = _servicio().videos().list(part="status", id=video_id).execute().get("items", [])
+    return datos[0]["status"].get("privacyStatus", "") if datos else ""
 
 
 def agregar_a_descripcion(url_video: str, texto: str) -> None:

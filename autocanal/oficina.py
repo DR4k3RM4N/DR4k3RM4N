@@ -762,16 +762,22 @@ class Oficina:
         self.decir(quien, f"¡Ups! Algo falló con {p['titulo']}: {str(exc)[:120]}")
         self.avisar_jefe(f"Jefe, {p['titulo']} tuvo un problema. Está en tu bandeja.")
 
-    def accion_proyecto(self, app_id: str, accion: str, texto: str = "", titulo_n: int = 1) -> dict:
+    def accion_proyecto(self, app_id: str, accion: str, texto: str = "", titulo_n: int = 1, privacidad: str = "") -> dict:
         with self.lock:
             p = self.proyectos.get(app_id)
             if not p:
                 return {"error": "No existe ese proyecto."}
             if accion == "publicar" and p["estado"] == "revision":
-                p["estado"], p["etapa"] = "publicando", "publicar"
+                p["estado"], p["etapa"], p["error"] = "publicando", "publicar", None
+                p["titulo_n"], p["privacidad"] = titulo_n, privacidad if privacidad in ("public", "unlisted", "private") else ""
                 self.log.append({"t": time.time(), "quien": "jefe", "texto": f"✅ Aprobado para publicar: {p['titulo']}"})
                 self._tocar()
                 threading.Thread(target=self._publicar, args=(app_id, titulo_n), daemon=True).start()
+            elif accion == "reintentar" and p["estado"] == "error" and p.get("etapa") == "publicar":
+                # falló al publicar: se vuelve a intentar publicar (sin pasar otra vez por tu revisión)
+                p["estado"], p["error"] = "publicando", None
+                self._tocar()
+                threading.Thread(target=self._publicar, args=(app_id, p.get("titulo_n", 1)), daemon=True).start()
             elif accion == "cambios" and p["estado"] in ("revision", "error"):
                 p["estado"], p["etapa"], p["error"] = "produccion", "guion", None
                 p["notas"] = (p.get("notas", "") + "\n" + texto).strip()
@@ -807,7 +813,7 @@ class Oficina:
             self.poner("community", estado="trabajando", proyecto=app_id)
             self.decir("community", random.choice(FRASES["community"]), al_log=False)
             try:
-                pub = canal.publicar(app_id, titulo_n)
+                pub = canal.publicar(app_id, titulo_n, self.proyectos[app_id].get("privacidad") or None)
             except Exception as exc:  # noqa: BLE001
                 self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
                 self.poner("community", estado="libre", proyecto=None)
@@ -822,9 +828,15 @@ class Oficina:
             p["blog_pendiente"] = bool((pub or {}).get("blog_error"))
             self._tocar()
         donde = "en YouTube y en el blog" if (pub or {}).get("blog") else "en YouTube"
-        privado = config.env("YT_PRIVACIDAD", "private") == "private"
-        self.avisar_jefe(f"¡Publicado! {titulo} ya está {donde} 🎉"
-                         + (" Quedó en privado: ábrelo en YouTube Studio para hacerlo público." if privado else "")
+        pedida, real = (pub or {}).get("privacidad_pedida"), (pub or {}).get("privacidad")
+        if real == "private" and pedida in ("public", "unlisted"):
+            privado = (" ⚠️ YouTube lo dejó en PRIVADO aunque pedí público: pasa con las apps de Google que no han"
+                       " pasado la auditoría de YouTube. Ábrelo en YouTube Studio y cámbialo a público.")
+        elif real == "private" or (not real and pedida == "private"):
+            privado = " Quedó en privado: ábrelo en YouTube Studio para hacerlo público."
+        else:
+            privado = " Quedó sin listar (solo con el enlace)." if real == "unlisted" else ""
+        self.avisar_jefe(f"¡Publicado! {titulo} ya está {donde} 🎉" + privado
                          + (" El blog no se pudo subir; queda pendiente con el botón «Subir blog»." if p["blog_pendiente"] else "")
                          + (f"\n{pub.get('youtube')}" if (pub or {}).get("youtube") else ""))
 
@@ -1061,7 +1073,9 @@ def probar_wordpress() -> None:
         raise SystemExit(f"✖ La API de WordPress no responde ({api.status_code}). Algún plugin la desactivó o la dirección está mal.")
     if "application-passwords" not in api.text and "authentication" not in api.text:
         print("⚠️  Tu WordPress no anuncia contraseñas de aplicación: puede que un plugin de seguridad las haya desactivado.")
-    r = requests.get(f"{url}/wp-json/wp/v2/users/me", params={"context": "edit"}, auth=(usuario, clave), timeout=30)
+    from agentes import blog
+    r = requests.get(f"{url}/wp-json/wp/v2/users/me", params={"context": "edit"}, auth=(usuario, clave), timeout=30,
+                     headers=blog.cabecera_respaldo(usuario, clave))
     datos = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     if r.status_code == 200:
         roles = datos.get("roles", [])
@@ -1078,10 +1092,11 @@ def probar_wordpress() -> None:
     elif codigo == "invalid_username":
         print("✖ Ese usuario no existe. Usa tu nombre de usuario de WordPress (el de entrar a wp-admin) o tu correo.")
     elif codigo in ("rest_not_logged_in", "rest_cannot_create", ""):
-        print("✖ WordPress no está recibiendo tu usuario y contraseña. Casi siempre es tu hosting, que borra la")
-        print("  cabecera de acceso. Arreglo: en el archivo .htaccess de tu blog (Administrador de archivos de tu")
-        print("  hosting, carpeta public_html) agrega esta línea arriba de '# BEGIN WordPress':")
-        print("      SetEnvIf Authorization \"(.*)\" HTTP_AUTHORIZATION=$1")
+        print("✖ WordPress no está recibiendo tu usuario y contraseña: tu hosting borra la cabecera de acceso.")
+        print("  Arreglo SIN tocar .htaccess: en tu oficina, pestaña Proyectos → «Plugin para el blog», baja")
+        print("  autocanal-conexion.zip y en WordPress ve a Plugins → Añadir nuevo → Subir plugin → Activar.")
+        print("  (Si prefieres .htaccess: agrega arriba de '# BEGIN WordPress' la línea")
+        print("      SetEnvIf Authorization \"(.*)\" HTTP_AUTHORIZATION=$1 )")
         print("  Si usas un plugin de seguridad (Wordfence, iThemes, All In One WP Security…), revisa que no")
         print("  bloquee las contraseñas de aplicación ni la API REST.")
     else:
@@ -1262,6 +1277,21 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
 
             return self._tienda("POST", Lector(self.rfile, largo), "application/octet-stream", largo)
 
+        def _plugin_wordpress(self):
+            import io
+            import zipfile
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+                origen = config.BASE / "wordpress" / "autocanal-conexion.php"
+                z.writestr("autocanal-conexion/autocanal-conexion.php", origen.read_text(encoding="utf-8"))
+            cuerpo = buf.getvalue()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", 'attachment; filename="autocanal-conexion.zip"')
+            self.send_header("Content-Length", str(len(cuerpo)))
+            self.end_headers()
+            self.wfile.write(cuerpo)
+
         def _texto(self, texto: str, codigo: int = 200):
             cuerpo = texto.encode()
             self.send_response(codigo)
@@ -1296,7 +1326,10 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             if ruta == "/api/estado":
                 return self._json(oficina.snapshot())
             if ruta.startswith("/api/proyecto/"):
-                return self._json(oficina.detalle(ruta.rsplit("/", 1)[-1]))
+                return self._json({**oficina.detalle(ruta.rsplit("/", 1)[-1]),
+                                   "yt_privacidad": config.env("YT_PRIVACIDAD", "private")})
+            if ruta == "/descargar/autocanal-conexion.zip":  # plugin para que el blog acepte publicar
+                return self._plugin_wordpress()
             if ruta == "/eventos":
                 return self._eventos()
             if ruta.startswith(("/tiktok/", "/sala/")):
@@ -1391,7 +1424,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json(r, 400 if "error" in r else 200)
             if ruta.startswith("/api/proyecto/"):
                 r = oficina.accion_proyecto(ruta.rsplit("/", 1)[-1], str(datos.get("accion")),
-                                            str(datos.get("texto", ""))[:2000], int(datos.get("titulo", 1) or 1))
+                                            str(datos.get("texto", ""))[:2000], int(datos.get("titulo", 1) or 1),
+                                            str(datos.get("privacidad", "")))
                 return self._json(r, 400 if "error" in r else 200)
             self._json({"error": "no encontrado"}, 404)
 
