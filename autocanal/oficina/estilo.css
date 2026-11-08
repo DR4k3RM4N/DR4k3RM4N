@@ -442,3 +442,7 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .pc-carpeta-txt small { color: var(--suave); }
 .pc-acciones { padding: 0 10px 10px; }
 @media (prefers-reduced-motion: reduce) { .linea-tiempo b { transition: none; } }
+
+.botones-editar { gap: 8px; flex-wrap: wrap; }
+.poco-disco { color: #fca5a5; }
+.clips-servidor .btn-mini { margin-left: 6px; }

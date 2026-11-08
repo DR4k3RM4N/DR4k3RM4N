@@ -715,8 +715,11 @@
     $("#form-producto").hidden = !estadoTT;
     if (!estadoTT) { $("#shop-lista").innerHTML = ""; $("#shop-gasto").textContent = ""; $("#cuenta-shop").hidden = true; return; }
     const g = estadoTT.gasto;
+    const disco = estadoTT.disco || {};
     $("#shop-gasto").innerHTML = `💰 Oficina TikTok hoy <b>${dinero(g.hoy)}</b>${g.tope ? ` / tope ${dinero(g.tope)}` : ""} · mes ${dinero(g.mes)}`
-      + (estadoTT.demo ? ` · <span class="chip chip-demo">DEMO</span>` : "");
+      + (disco.libre_gb != null ? ` · <span class="${disco.libre_gb < 3 ? "poco-disco" : ""}" title="Clips subidos: ${disco.clips_gb} GB">💾 ${disco.libre_gb} GB libres</span>` : "")
+      + (estadoTT.demo ? ` · <span class="chip chip-demo">DEMO</span>` : "")
+      + (disco.libre_gb != null && disco.libre_gb < 3 ? `<br><b class="poco-disco">⚠️ Queda poco espacio en el servidor: borra clips de videos terminados o usa la carpeta de tu compu.</b>` : "");
     const vistos = new Set(leerVistos());
     const nuevos = estadoTT.productos.filter((p) => p.estado === "listo" && !vistos.has(p.id)).length;
     $("#cuenta-shop").hidden = !nuevos;
@@ -804,8 +807,17 @@
           <label><input type="radio" name="modo-ed" value="completo" ${modo === "completo" ? "checked" : ""} ${clips.completo ? "" : "disabled"}> Mi video completo</label>
         </div>
         <p class="pista">Va a sacar ${letras.length > 1 ? "un video por cada gancho que hayas grabado (A, B y C)" : `el video con el gancho ${esc(letras[0])}`}: vertical, con tus textos, subtítulos karaoke de tu voz y cortes rápidos. Sin música: ponle un sonido en tendencia desde TikTok.</p>
-        <button type="button" class="btn btn-primario" data-editar ${trabajando || Object.keys(subiendo).length ? "disabled" : ""}>${trabajando ? "Cris está editando…" : videos.length ? "✂️ Volver a editar" : "✂️ Que Cris lo edite"}</button>`
+        <div class="fila botones-editar">
+          <button type="button" class="btn btn-primario" data-editar ${trabajando || Object.keys(subiendo).length ? "disabled" : ""}>${trabajando ? (p.esperar_compu ? "Esperando a tu compu…" : "Cris está editando…") : videos.length ? "✂️ Volver a editar" : "✂️ Que Cris lo edite ya"}</button>
+          ${hayCompus() && !trabajando ? `<button type="button" class="btn" data-editar-esperar title="Tu compu edita más rápido y con mejores subtítulos">🖥️ Esperar a mi compu</button>` : ""}
+        </div>
+        <p class="pista">${modo === "local" ? "Lo edita la compu donde están tus clips."
+          : `«Ya»: lo edita tu compu si está prendida; si no, el servidor. ${hayCompus() ? "«Esperar a mi compu»: queda en fila y se edita cuando la prendas." : ""}`}</p>`
       : `<p class="vacio">Pasa tus clips a la carpeta de tu compu (arriba) o súbelos en la lista de tomas (📤 Subir), y aquí le das a Cris.</p>`}
+      ${nTomas || clips.completo ? `<p class="pista clips-servidor">💾 Tus clips subidos ocupan espacio en el servidor${p.video_t && estadoTT?.disco?.dias
+          ? `: se borran solos el ${new Date((p.video_t + estadoTT.disco.dias * 86400) * 1000).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}` : " hasta unos días después de tener el video"}.
+          ${videos.length && !trabajando ? `<button type="button" class="btn btn-mini" data-borrar-clips>🧹 Borrar mis clips del servidor ya</button>` : ""}</p>`
+        : p.clips_borrados ? `<p class="pista">🧹 Los clips subidos ya se borraron del servidor (el video se queda). Para volver a editar, súbelos otra vez.</p>` : ""}
       ${videos.length ? `<h3>🎬 Tus videos</h3><div class="videos-tt">${videos.map((v) => `<figure class="video-tt">
           <video controls playsinline preload="metadata" poster="${v.portada ? ruta(p.id, v.portada, v.v) : ""}" src="${ruta(p.id, v.video, v.v)}"></video>
           <figcaption><span><b>${v.gancho ? `Gancho ${esc(v.gancho)}` : "Video"}</b> · ${esc(v.segundos)} s</span> <span class="id">${esc(p.guion.id)}${v.gancho ? `-${esc(v.gancho)}` : ""}</span>
@@ -903,6 +915,7 @@
     pintarLocales();
   }
 
+  const hayCompus = () => (estadoSala?.compus || []).length > 0;
   // Clips que están en la carpeta "Sala de edicion" de tus compus (solo se ven sus miniaturas)
   let localesTT = null, localesDe = null;
   const carpetaNombre = (p) => `${p.nombre.replace(/[<>:"/\\|?*]+/g, " ").trim().replace(/[ .]+$/, "").slice(0, 60) || "producto"} [${p.id.slice(-4)}]`;
@@ -992,11 +1005,18 @@
         .then(refrescarGuionTT).catch((err) => alert(err.message));
       return;
     }
-    const editar = e.target.closest("[data-editar]");
+    const borrarClips = e.target.closest("[data-borrar-clips]");
+    if (borrarClips && guionAbierto) {
+      if (!confirm("¿Borrar del servidor los clips que subiste? El video terminado se queda. Para volver a editar habría que subirlos otra vez.")) return;
+      apiTT(`/api/producto/${encodeURIComponent(guionAbierto.id)}`, { accion: "borrar_clips" })
+        .then((r) => { if (r.mb) alert(`Listo: se liberaron ${Math.round(r.mb)} MB.`); return refrescarGuionTT(); }).catch((err) => alert(err.message));
+      return;
+    }
+    const editar = e.target.closest("[data-editar], [data-editar-esperar]");
     if (editar && guionAbierto) {
       editar.disabled = true;
       const modo = $("#modal-cuerpo input[name=modo-ed]:checked")?.value || "tomas";
-      apiTT(`/api/producto/${encodeURIComponent(guionAbierto.id)}`, { accion: "editar", desde: modo })
+      apiTT(`/api/producto/${encodeURIComponent(guionAbierto.id)}`, { accion: editar.dataset.editarEsperar !== undefined ? "editar_esperar" : "editar", desde: modo })
         .then(() => { window.Oficina.verAla("tiktok"); return refrescarGuionTT(); })
         .catch((err) => { alert(err.message); editar.disabled = false; });
       return;

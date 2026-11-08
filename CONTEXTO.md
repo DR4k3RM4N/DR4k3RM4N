@@ -181,3 +181,7 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
 - Pestaña Sala rediseñada como monitores (avance, chips GPU/NVENC/oído, carpetas con miniaturas que abren el producto).
 - A la derecha solo los menús del ala: YouTube (Bandeja, Proyectos, Estilo, Equipo, Chat), TikTok (Shop, Equipo, Chat),
   Edición (Sala, Equipo); Todo = todos.
+- Subir clips con la compu apagada (nov 2026): se sigue pudiendo subir al servidor (📤 Subir / video completo). Botones
+  "✂️ Que Cris lo edite ya" (compu si está prendida, si no servidor) y "🖥️ Esperar a mi compu" (`editar_esperar`: fila de
+  la sala sin respaldo del servidor, espera hasta 3 días). Los clips subidos se borran solos `CLIPS_DIAS` (3) días después
+  de `video_t`, o con "🧹 Borrar mis clips del servidor ya". Shop muestra el espacio libre (aviso si < 3 GB).

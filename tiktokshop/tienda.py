@@ -58,6 +58,7 @@ ETAPAS = [("ficha", "tt_cazador"), ("guion", "tt_guionista"), ("tomas", "tt_dire
 ACCION = {"ficha": "Investigar el producto", "guion": "Escribir el guion con 3 ganchos", "tomas": "Armar la lista de tomas",
           "video": "Editar tu video vertical", "portada": "Hacer la portada"}
 MAX_SUBIDA = 1536 * 1024 * 1024  # 1.5 GB por clip
+CLIPS_DIAS = float(config.env("CLIPS_DIAS", "3") or 3)  # días que se guardan los clips subidos después de tener el video
 FRASES = {
     "tt_cazador": ["Buscando reseñas reales…", "¿Cuánto cuesta en otras tiendas?", "¿Qué duda tiene la gente?"],
     "tt_guionista": ["Probando ganchos…", "¿Problema → solución o antes y después?", "Puliendo el caption…"],
@@ -94,6 +95,7 @@ class Tienda:
                 t["estado"], t["error"] = "cancelada", "Se interrumpió al apagar la oficina."
         ia.al_gastar = self._gastar
         ia.antes_de_llamar = self._revisar_tope
+        threading.Thread(target=self._limpiar_clips, daemon=True).start()
 
     # ---------- estado ----------
     def _tocar(self) -> None:
@@ -126,7 +128,41 @@ class Tienda:
                     "agentes": list(self.agentes.values()), "productos": productos,
                     "tareas": [t for t in self.tareas[-120:] if t["estado"] in ACTIVAS]
                               + [t for t in self.tareas[-120:] if t["estado"] not in ACTIVAS][-40:],
-                    "log": self.log[-30:], "gasto": self.resumen_gasto()}
+                    "log": self.log[-30:], "gasto": self.resumen_gasto(), "disco": self.disco()}
+
+    def disco(self) -> dict:
+        """Espacio libre en el servidor y cuánto ocupan los clips subidos."""
+        libre = shutil.disk_usage(AQUI).free
+        clips = sum(f.stat().st_size for f in cris.SALIDA.glob("*/clips/*") if f.is_file()) if cris.SALIDA.exists() else 0
+        return {"libre_gb": round(libre / 1024 ** 3, 1), "clips_gb": round(clips / 1024 ** 3, 2), "dias": CLIPS_DIAS}
+
+    def _borrar_clips(self, p: dict) -> float:
+        """Borra del servidor los clips subidos de un producto (el video terminado se queda). Regresa los MB liberados."""
+        carpeta = cris.SALIDA / p["id"] / "clips"
+        mb = sum(f.stat().st_size for f in carpeta.glob("*") if f.is_file()) / 1024 ** 2 if carpeta.exists() else 0
+        shutil.rmtree(carpeta, ignore_errors=True)
+        with self.lock:
+            if p.get("clips"):
+                p["clips"] = {"tomas": {}}
+                p["clips_borrados"] = time.time()
+            if p.get("modo_edicion") in ("tomas", "completo"):
+                p["modo_edicion"] = None
+            self._tocar()
+        return round(mb, 1)
+
+    def _limpiar_clips(self) -> None:
+        """Cada hora: los clips subidos de videos ya terminados se borran a los CLIPS_DIAS días (ahorra espacio)."""
+        while True:
+            time.sleep(60 if self.demo else 3600)
+            if not CLIPS_DIAS:
+                continue
+            for p in list(self.productos.values()):
+                hecho, clips = p.get("video_t"), p.get("clips") or {}
+                if (hecho and p.get("estado") == "video_listo" and (clips.get("tomas") or clips.get("completo"))
+                        and time.time() - hecho > CLIPS_DIAS * 86400):
+                    mb = self._borrar_clips(p)
+                    if mb:
+                        self.decir("tt_editor", f"Borré los clips de {p['nombre']} del servidor ({mb:.0f} MB): el video ya está listo.")
 
     def decir(self, agente: str, texto: str) -> None:
         with self.lock:
@@ -199,6 +235,10 @@ class Tienda:
                 self._tocar()
             shutil.rmtree(cris.SALIDA / pid, ignore_errors=True)
             return {"ok": True}
+        if accion == "borrar_clips":
+            if p["estado"] == "trabajando":
+                return {"error": "Espera a que Cris termine."}
+            return {"ok": True, "mb": self._borrar_clips(p)}
         if accion == "quitar_clip":
             clips = p.get("clips") or {}
             archivo = clips.get("completo") if desde == "completo" else clips.get("tomas", {}).get(desde)
@@ -212,10 +252,11 @@ class Tienda:
                     clips["tomas"].pop(desde, None)
                 self._tocar()
             return {"ok": True}
-        if accion == "editar" or (accion == "rehacer" and desde == "video"):
+        # "editar_esperar": que lo edite tu compu cuando la prendas (sin el servidor de respaldo)
+        if accion in ("editar", "editar_esperar") or (accion == "rehacer" and desde == "video"):
             if p["estado"] == "trabajando":
                 return {"error": "Ya están trabajando en él."}
-            modo = desde if desde in ("tomas", "completo", "local") else p.get("modo_edicion", "tomas")
+            modo = desde if desde in ("tomas", "completo", "local") else p.get("modo_edicion") or "tomas"
             clips = p.get("clips") or {}
             if modo == "completo" and not clips.get("completo"):
                 return {"error": "Primero sube tu video completo."}
@@ -226,6 +267,7 @@ class Tienda:
                 return {"error": "Primero dile a qué toma va cada clip de tu compu."}
             with self.lock:
                 p["estado"], p["error"], p["modo_edicion"] = "trabajando", None, modo
+                p["esperar_compu"] = accion == "editar_esperar" or (accion == "rehacer" and bool(p.get("esperar_compu")))
                 p["etapas"].update(video="pendiente", portada="pendiente")
                 self._tocar()
             threading.Thread(target=self._editar, args=(pid,), daemon=True).start()
@@ -234,7 +276,7 @@ class Tienda:
             if p["estado"] == "trabajando":
                 return {"error": "Ya están trabajando en él."}
             if desde not in ("ficha", "guion", "tomas") and p["etapas"].get("video") == "fallo":
-                return self.accion(pid, "editar", p.get("modo_edicion", "tomas"))
+                return self.accion(pid, "editar_esperar" if p.get("esperar_compu") else "editar", p.get("modo_edicion") or "tomas")
             etapas = [e for e, _ in ETAPAS]
             if desde not in etapas:  # desde donde falló, o el guion si todo salió bien
                 desde = next((e for e in etapas if p["etapas"].get(e) != "hecha"), "guion")
@@ -368,7 +410,12 @@ class Tienda:
                 return fallo(t, "video", "tt_editor", RuntimeError(
                     "Tu compu no pudo editarlo (¿está prendida y con la Sala de edición abierta?). Revisa y dale Reintentar."))
         else:
-            videos = self._editar_en_compu(p, t, trabajo, carpeta, avance)  # primero tus compus; si no, el servidor
+            esperar = bool(p.get("esperar_compu"))
+            videos = self._editar_en_compu(p, t, trabajo, carpeta, avance, esperar=esperar)  # primero tus compus
+            if esperar and not videos:
+                ia.contexto.tarea = None
+                return fallo(t, "video", "tt_editor", RuntimeError(
+                    "Esperé a tu compu pero no lo editó. Préndela (o dale «Que Cris lo edite ya») y luego Reintentar."))
         try:
             if not videos:
                 from agentes import cola_video
@@ -408,17 +455,18 @@ class Tienda:
         with self.lock:
             t.update(estado="hecha", fin=time.time(), resultado=f"{len(videos)} portada(s)")
             p["etapas"]["portada"] = "hecha"
-            p["videos"], p["estado"] = videos, "video_listo"
+            p["videos"], p["estado"], p["video_t"] = videos, "video_listo", time.time()
             self._tocar()
         self.poner("tt_disenadora", estado="libre")
         self.decir("tt_disenadora", f"¡Listo, jefe! Tus {len(videos)} videos de {p['nombre']} ya se pueden subir 🎬"
                    if len(videos) > 1 else f"¡Listo, jefe! Tu video de {p['nombre']} ya se puede subir 🎬")
 
-    def _editar_en_compu(self, p: dict, t: dict, trabajo: dict, carpeta: Path, avance, fija: str | None = None) -> list | None:
+    def _editar_en_compu(self, p: dict, t: dict, trabajo: dict, carpeta: Path, avance, fija: str | None = None,
+                         esperar: bool = False) -> list | None:
         """Si una de tus compus de la sala de edición está prendida, edita ahí (más rápido, con tu tarjeta de video).
         Si no hay compu, o falla, regresa None y edita el servidor: nada se detiene.
         Con `fija` (clips que están en tu compu) solo esa compu puede hacerlo: se le espera más y no hay servidor de respaldo."""
-        if not fija:
+        if not fija and not esperar:
             try:
                 if not requests.get(f"{SALA_URL}/interno/disponible", params={"tipo": "cris"}, timeout=3).json().get("compus"):
                     return None
@@ -438,6 +486,7 @@ class Tienda:
         if not tid:
             return None
         self.decir("tt_editor", "Tus clips ya están en tu compu: le digo que edite ahí 🚀" if fija
+                   else "Lo dejo en la fila de la sala: se edita en cuanto prendas tu compu 🖥️" if esperar
                    else "Le paso tus clips a la sala de edición: tu compu lo hace más rápido 🚀")
 
         def cancelar(motivo: str):
@@ -446,7 +495,7 @@ class Tienda:
             except requests.RequestException:
                 pass
             self.poner("tt_editor", ubicacion="casa")
-            self.decir("tt_editor", f"{motivo} Revisa tu compu." if fija else f"{motivo} Lo edito aquí en el servidor.")
+            self.decir("tt_editor", f"{motivo} Revisa tu compu." if fija or esperar else f"{motivo} Lo edito aquí en el servidor.")
 
         en_cola_desde, fallas, sala_vista = time.time(), 0, None
         while True:
@@ -471,9 +520,10 @@ class Tienda:
             if estado in ("error", "cancelado"):
                 return cancelar(f"La compu no pudo ({(e.get('error') or '')[:90]}).")
             if estado == "en_cola":
-                if time.time() - en_cola_desde > (600 if fija else 90):
-                    return cancelar("Tu compu no lo agarró en 10 minutos (¿está prendida?)." if fija else "Ninguna compu lo agarró.")
-                avance("Esperando a que prendas tu compu…" if fija else "Esperando a tu compu…", 0.0)
+                limite = 3 * 86400 if esperar else 600 if fija else 90
+                if time.time() - en_cola_desde > limite:
+                    return cancelar("Tu compu no lo agarró a tiempo." if fija or esperar else "Ninguna compu lo agarró.")
+                avance("Esperando a que prendas tu compu…" if fija or esperar else "Esperando a tu compu…", 0.0)
                 continue
             en_cola_desde = time.time()
             if e.get("slot") and e["slot"] != sala_vista:
