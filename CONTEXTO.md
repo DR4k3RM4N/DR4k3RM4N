@@ -161,3 +161,6 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
 - Casilla "✅ Ya revisé todo" y selector Público / Sin listar / Privado (se recuerda en el navegador; por defecto
   YT_PRIVACIDAD). Tras subir se lee la privacidad real: YouTube deja en privado lo que sube una app de Google sin
   auditar aunque se pida público → se avisa. "Reintentar" tras fallar al publicar vuelve a publicar directo.
+- Título propio (nov 2026): en Revisar video hay 4ª opción "✍️ Mi título" (tal cual o "✨ Mejorar con IA" → 3 versiones
+  de SU idea con Haiku, accion `mejorar_titulo`). Al publicar se agrega a guion.json `titulos` y se guarda en preferencias.
+  "Pedir cambios" rehace guion y video: para el título NO usarlo (a Miguel le molestó que rediseñara todo).

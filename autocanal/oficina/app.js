@@ -276,13 +276,20 @@
           ${d.palabra_clave ? `<h3>SEO del blog</h3><p class="seo"><b>Palabra clave:</b> ${esc(d.palabra_clave)}<br>
             <b>Secundarias:</b> ${esc((d.palabras_secundarias || []).join(", "))}<br><b>Meta descripción:</b> ${esc(d.meta_descripcion || "")}</p>` : ""}
           <h3>Título</h3>
-          <div class="titulos">${d.titulos.map((t, k) => `<label><input type="radio" name="titulo" value="${k + 1}" ${k ? "" : "checked"} ${editable ? "" : "disabled"}> ${esc(t)}</label>`).join("")}</div>
+          <div class="titulos">${d.titulos.map((t, k) => `<label><input type="radio" name="titulo" value="${k + 1}" ${k ? "" : "checked"} ${editable ? "" : "disabled"}> ${esc(t)}</label>`).join("")}
+            ${editable ? `<label class="titulo-libre"><input type="radio" name="titulo" value="libre"> ✍️ <b>Mi título</b></label>
+            <div class="libre-caja">
+              <input id="titulo-libre" maxlength="100" placeholder="Escribe tu título como lo quieras…" autocomplete="off">
+              <button type="button" class="btn btn-mini" id="b-mejorar">✨ Mejorar con IA</button>
+            </div>
+            <div class="libre-info"><small id="largo-titulo">0 / 100</small> <small id="nota-titulo"></small></div>
+            <div id="opciones-ia" class="opciones-ia"></div>` : ""}</div>
           <details><summary>Guion (${d.escenas.length} escenas)</summary><ol class="guion">${d.escenas.map((e) => `<li>${esc(e)}</li>`).join("")}</ol></details>
         </div>
       </div>
       ${editable ? `
       <div class="pie">
-        <textarea id="cambios" rows="2" placeholder="¿Qué cambiarías? Ej. el gancho más directo, menciona el pago mínimo antes…"></textarea>
+        <textarea id="cambios" rows="2" placeholder="¿Qué cambiarías del video? Ej. el gancho más directo… (Esto rehace el guion y el video. Para cambiar solo el título usa «✍️ Mi título» arriba.)"></textarea>
         <div class="privacidad">
           <span>En YouTube:</span>
           ${[["public", "🌎 Público"], ["unlisted", "🔗 Sin listar"], ["private", "🔒 Privado"]].map(([v, t]) =>
@@ -313,11 +320,38 @@
     checks.forEach((c) => c.addEventListener("change", revisarChecks));
     todo?.addEventListener("change", () => { checks.forEach((c) => (c.checked = todo.checked)); revisarChecks(); });
     revisarChecks();
+    // 4ª opción: tu propio título, tal cual o mejorado con IA (sin rehacer nada del video)
+    const libre = $("#titulo-libre"), radioLibre = document.querySelector("input[name=titulo][value=libre]");
+    const contar = () => { $("#largo-titulo").textContent = `${libre.value.length} / 100`; };
+    libre.addEventListener("input", () => { radioLibre.checked = true; contar(); });
+    libre.addEventListener("focus", () => { radioLibre.checked = true; });
+    $("#b-mejorar").onclick = async () => {
+      const idea = libre.value.trim();
+      if (idea.length < 3) { libre.focus(); $("#nota-titulo").textContent = "Escribe primero tu idea."; return; }
+      const b = $("#b-mejorar");
+      b.disabled = true; b.textContent = "✨ Gabi está pensando…";
+      try {
+        const r = await api(`/api/proyecto/${encodeURIComponent(id)}`, { accion: "mejorar_titulo", texto: idea });
+        $("#opciones-ia").innerHTML = `<small>Pícale a una para usarla (puedes editarla después):</small>`
+          + r.opciones.map((o) => `<button type="button" class="opcion-ia" data-titulo="${esc(o)}">${esc(o)} <small>${o.length}</small></button>`).join("");
+        $("#nota-titulo").textContent = r.costo ? `costó ${dinero(r.costo)}` : "";
+      } catch (err) { alert(err.message); }
+      b.disabled = false; b.textContent = "✨ Mejorar con IA";
+    };
+    $("#opciones-ia").addEventListener("click", (e) => {
+      const o = e.target.closest("[data-titulo]");
+      if (!o) return;
+      libre.value = o.dataset.titulo; radioLibre.checked = true; contar();
+      document.querySelectorAll(".opcion-ia").forEach((x) => x.classList.toggle("sel", x === o));
+    });
     const enviar = async (accion, texto = "") => {
-      const titulo = Number(document.querySelector("input[name=titulo]:checked")?.value || 1);
+      const elegido = document.querySelector("input[name=titulo]:checked")?.value || "1";
+      const titulo_libre = elegido === "libre" ? libre.value.trim() : "";
+      if (elegido === "libre" && accion === "publicar" && !titulo_libre) { libre.focus(); return alert("Escribe tu título o elige uno de los de arriba."); }
+      const titulo = elegido === "libre" ? 1 : Number(elegido);
       const privacidad = document.querySelector("input[name=privacidad]:checked")?.value || "";
       try { localStorage.setItem("yt_privacidad", privacidad); } catch { /* sin almacenamiento */ }
-      try { await api(`/api/proyecto/${encodeURIComponent(id)}`, { accion, texto, titulo, privacidad }); cerrarModal(); }
+      try { await api(`/api/proyecto/${encodeURIComponent(id)}`, { accion, texto, titulo, privacidad, titulo_libre }); cerrarModal(); }
       catch (err) { alert(err.message); }
     };
     $("#b-publicar").onclick = () => enviar("publicar");

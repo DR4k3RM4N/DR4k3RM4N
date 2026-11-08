@@ -381,3 +381,16 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .privacidad label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
 .ayuda-blog summary { cursor: pointer; font-weight: 600; }
 .ayuda-blog ol { padding-left: 18px; font-size: 13.5px; }
+
+.titulo-libre { margin-top: 6px; }
+.libre-caja { display: flex; gap: 6px; margin: 4px 0 2px 24px; }
+.libre-caja input { flex: 1; min-width: 0; }
+.libre-info { margin-left: 24px; color: var(--suave); display: flex; gap: 10px; }
+.opciones-ia { display: grid; gap: 6px; margin: 6px 0 0 24px; }
+.opciones-ia > small { color: var(--suave); }
+.opcion-ia { text-align: left; font: inherit; font-size: 13.5px; color: inherit; cursor: pointer; padding: 7px 10px;
+  border-radius: 8px; background: rgba(255,255,255,.04); border: 2px solid var(--borde); transition: border-color .15s ease-out, transform .12s ease-out; }
+.opcion-ia:hover { border-color: rgba(255,210,63,.5); }
+.opcion-ia:active { transform: scale(.98); }
+.opcion-ia.sel { border-color: var(--acento); background: rgba(255,210,63,.08); }
+.opcion-ia small { color: var(--suave); margin-left: 6px; }

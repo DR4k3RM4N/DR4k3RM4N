@@ -762,11 +762,18 @@ class Oficina:
         self.decir(quien, f"¡Ups! Algo falló con {p['titulo']}: {str(exc)[:120]}")
         self.avisar_jefe(f"Jefe, {p['titulo']} tuvo un problema. Está en tu bandeja.")
 
-    def accion_proyecto(self, app_id: str, accion: str, texto: str = "", titulo_n: int = 1, privacidad: str = "") -> dict:
+    def accion_proyecto(self, app_id: str, accion: str, texto: str = "", titulo_n: int = 1, privacidad: str = "",
+                        titulo_libre: str = "") -> dict:
+        if accion == "mejorar_titulo":  # fuera del candado: tarda unos segundos en lo que contesta Claude
+            return self.mejorar_titulo(app_id, texto)
         with self.lock:
             p = self.proyectos.get(app_id)
             if not p:
                 return {"error": "No existe ese proyecto."}
+            if accion == "publicar" and p["estado"] == "revision" and titulo_libre.strip():
+                titulo_n = self._usar_titulo(app_id, titulo_libre)  # tu propio título (4ª opción)
+                if not titulo_n:
+                    return {"error": "No pude guardar tu título. Intenta de nuevo."}
             if accion == "publicar" and p["estado"] == "revision":
                 p["estado"], p["etapa"], p["error"] = "publicando", "publicar", None
                 p["titulo_n"], p["privacidad"] = titulo_n, privacidad if privacidad in ("public", "unlisted", "private") else ""
@@ -801,6 +808,58 @@ class Oficina:
             else:
                 return {"error": "Esa acción no se puede hacer ahora."}
         return {"ok": True}
+
+    def _usar_titulo(self, app_id: str, titulo: str) -> int:
+        """Agrega tu título a las opciones del guion y regresa su número. Gabi aprende cuál preferiste."""
+        f = config.SALIDA / app_id / "guion.json"
+        if not f.exists():
+            return 0
+        guion = json.loads(f.read_text(encoding="utf-8"))
+        titulo = " ".join(titulo.split())[:100]
+        titulos = guion.setdefault("titulos", [])
+        if titulo not in titulos:
+            titulos.append(titulo)
+            f.write_text(json.dumps(guion, ensure_ascii=False, indent=1), encoding="utf-8")
+        self.preferencias.append(f"Para «{self.proyectos[app_id]['titulo']}» no le gustaron los títulos propuestos "
+                                 f"y publicó con este: {titulo}")
+        return titulos.index(titulo) + 1
+
+    def mejorar_titulo(self, app_id: str, texto: str) -> dict:
+        """Tu idea de título → 3 versiones pulidas (Claude Haiku, fracciones de centavo). No cambia nada más del video."""
+        texto = " ".join((texto or "").split())[:150]
+        p = self.proyectos.get(app_id)
+        if not p:
+            return {"error": "No existe ese proyecto."}
+        if len(texto) < 3:
+            return {"error": "Escribe primero tu idea de título."}
+        f = config.SALIDA / app_id / "guion.json"
+        guion = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+        exp_f = config.SALIDA / app_id / "expediente.json"
+        resumen = (json.loads(exp_f.read_text(encoding="utf-8")) if exp_f.exists() else {}).get("resumen", "")
+        if self.demo:
+            time.sleep(1.5)
+            base = texto.rstrip(".!? ")
+            return {"ok": True, "costo": 0, "opciones": [f"{base} (lo probé)", f"¿{base}? Esto pasó", f"{base}: la verdad en 2026"]}
+        antes = p.get("costo", 0)
+        ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = app_id, "titulo", None
+        sistema = (f"Eres Gabi, guionista del canal de YouTube «{config.CANAL_NOMBRE}» (público de México). "
+                   "El jefe escribió su propia idea de título. Pule SU idea, no inventes otra.")
+        pedido = (f"Video: {p['titulo']}\nDe qué trata: {resumen or 'ver títulos anteriores'}\n"
+                  f"Títulos que ya le propusimos y NO le gustaron: {json.dumps(guion.get('titulos', [])[:3], ensure_ascii=False)}\n"
+                  f"Su idea de título: «{texto}»\n\n"
+                  "Dame 3 versiones mejoradas de SU idea: 1) casi igual pero mejor escrita, 2) con más curiosidad, "
+                  "3) más directa para que salga en búsquedas de YouTube/Google. Reglas: respeta sus palabras clave y su "
+                  "intención; español de México natural; máximo 70 caracteres; que den ganas de picarle sin mentir ni "
+                  "prometer algo que el video no muestra; no inventes datos ni cifras; nada de todo en MAYÚSCULAS "
+                  "(máximo una palabra); a lo mucho un emoji y solo si suma.")
+        esquema = {"type": "object", "additionalProperties": False, "required": ["opciones"],
+                   "properties": {"opciones": {"type": "array", "items": {"type": "string"}}}}
+        try:
+            r = ia.json_estructurado(sistema, pedido, esquema, tarea="guion", effort="low", que="mejorar tu título")
+        except ia.ErrorIA as exc:
+            return {"error": str(exc)}
+        opciones = [" ".join(o.split())[:100] for o in r.get("opciones", []) if o.strip()][:3]
+        return {"ok": True, "opciones": opciones, "costo": round(p.get("costo", 0) - antes, 5)}
 
     def _publicar(self, app_id: str, titulo_n: int) -> None:
         import canal
@@ -1425,7 +1484,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             if ruta.startswith("/api/proyecto/"):
                 r = oficina.accion_proyecto(ruta.rsplit("/", 1)[-1], str(datos.get("accion")),
                                             str(datos.get("texto", ""))[:2000], int(datos.get("titulo", 1) or 1),
-                                            str(datos.get("privacidad", "")))
+                                            str(datos.get("privacidad", "")), str(datos.get("titulo_libre", ""))[:150])
                 return self._json(r, 400 if "error" in r else 200)
             self._json({"error": "no encontrado"}, 404)
 
