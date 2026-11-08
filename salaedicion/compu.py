@@ -28,6 +28,16 @@ AQUI = Path(__file__).resolve().parent
 REPO = AQUI.parent
 sys.path[:0] = [str(REPO / "autocanal"), str(REPO / "tiktokshop")]
 WINDOWS = os.name == "nt"
+if WINDOWS:
+    # Sin esto, cada ffmpeg/ffprobe/git abre una ventanita negra de CMD que parpadea (una por clip y por corte).
+    _PopenOriginal = subprocess.Popen
+
+    class _SinVentana(_PopenOriginal):
+        def __init__(self, *args, **kwargs):
+            kwargs["creationflags"] = kwargs.get("creationflags", 0) | 0x08000000  # CREATE_NO_WINDOW
+            super().__init__(*args, **kwargs)
+
+    subprocess.Popen = _SinVentana
 CARPETA = (Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SalaEdicion" if WINDOWS
            else Path.home() / ".salaedicion")
 CONFIG = CARPETA / "config.json"
