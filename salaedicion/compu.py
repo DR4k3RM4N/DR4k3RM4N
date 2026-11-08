@@ -418,42 +418,67 @@ def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list | None
     ESTADO_COMPU["texto"] = "Lista"
 
 
+PS_ELEGIR = r"""
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$f = New-Object System.Windows.Forms.Form
+$f.TopMost = $true; $f.ShowInTaskbar = $true; $f.Text = 'Sala de edicion'
+$f.StartPosition = 'CenterScreen'; $f.Size = New-Object System.Drawing.Size(1,1); $f.Opacity = 0
+$f.Show(); $f.Activate(); $f.BringToFront()
+$d = New-Object System.Windows.Forms.FolderBrowserDialog
+$d.Description = 'Sala de edicion: elige la carpeta con tus clips'
+$d.ShowNewFolderButton = $true
+$d.SelectedPath = [Environment]::GetFolderPath('Desktop')
+if ($d.ShowDialog($f) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }
+$f.Close()
+"""
+
+
 def elegir_carpeta(pedido: str) -> None:
-    """La oficina pidió elegir una carpeta: se abre en esta compu la ventana normal de Windows para escogerla."""
+    """La oficina pidió elegir una carpeta: se abre en esta compu la ventana de Windows (encima de todo) para escogerla."""
     cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+    of = Oficina(cfg["servidor"], cfg["token"])
+    try:  # «ya la abrí»: en la oficina te dice que la busques
+        of.post("carpeta_elegida", {"id": pedido, "estado": "abierta"}, timeout=15)
+    except requests.RequestException:
+        pass
     ruta, error = "", ""
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        raiz = tk.Tk()
-        raiz.withdraw()
-        raiz.attributes("-topmost", True)  # que salga encima de todo
-        raiz.update()
-        inicio = Path(os.environ.get("USERPROFILE") or Path.home()) / "Desktop"
-        ruta = filedialog.askdirectory(parent=raiz, title="Sala de edición: elige la carpeta con tus clips",
-                                       initialdir=str(inicio if inicio.is_dir() else Path.home()), mustexist=True) or ""
-        raiz.destroy()
-    except Exception as exc:  # noqa: BLE001
-        error = f"No pude abrir la ventana para elegir carpeta: {exc}"[:200]
-        if WINDOWS:  # respaldo: la ventana de Windows (sin tkinter), con PowerShell
-            try:
-                script = ("Add-Type -AssemblyName System.Windows.Forms;"
-                          "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
-                          "$d.Description = 'Sala de edicion: elige la carpeta con tus clips';"
-                          "$f = New-Object System.Windows.Forms.Form; $f.TopMost = $true;"
-                          "if ($d.ShowDialog($f) -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }")
-                r = _PopenOriginal(["powershell", "-NoProfile", "-STA", "-Command", script], stdout=subprocess.PIPE,
-                                   creationflags=0x08000000, text=True)  # sin consola, pero la ventana sí se ve
-                ruta = (r.communicate(timeout=600)[0] or "").strip()
-                error = ""
-            except Exception as exc2:  # noqa: BLE001
-                error = f"No pude abrir la ventana para elegir carpeta: {exc2}"[:200]
-        if error:
-            log(error)
+    log("Abriendo la ventana para elegir carpeta…")
+    if WINDOWS:
+        try:
+            r = _PopenOriginal(["powershell", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-Command", PS_ELEGIR],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=0x08000000)  # sin consola
+            salida, err = r.communicate(timeout=900)
+            ruta = salida.decode("utf-8", "replace").strip().lstrip("\ufeff")
+            if r.returncode and not ruta:
+                error = "No pude abrir la ventana de Windows: " + err.decode("utf-8", "replace").strip()[-150:]
+        except Exception as exc:  # noqa: BLE001
+            error = f"No pude abrir la ventana de Windows: {exc}"[:200]
+    if not WINDOWS or (error and not ruta):  # respaldo: tkinter
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            raiz = tk.Tk()
+            raiz.attributes("-topmost", True)
+            raiz.geometry("1x1+200+200")
+            raiz.lift()
+            raiz.focus_force()
+            raiz.update()
+            inicio = Path(os.environ.get("USERPROFILE") or Path.home()) / "Desktop"
+            ruta = filedialog.askdirectory(parent=raiz, title="Sala de edición: elige la carpeta con tus clips",
+                                           initialdir=str(inicio if inicio.is_dir() else Path.home()), mustexist=True) or ""
+            raiz.destroy()
+            error = ""
+        except Exception as exc:  # noqa: BLE001
+            error = error or f"No pude abrir la ventana para elegir carpeta: {exc}"[:200]
+    if error:
+        log(error)
     if ruta and WINDOWS:
         ruta = ruta.replace("/", "\\")
+    log(f"Carpeta elegida: {ruta or '(ninguna)'}")
     try:
-        Oficina(cfg["servidor"], cfg["token"]).post("carpeta_elegida", {"id": pedido, "ruta": ruta, "error": error}, timeout=20)
+        of.post("carpeta_elegida", {"id": pedido, "ruta": ruta, "error": error}, timeout=20)
     except requests.RequestException as exc:
         log(f"No pude avisar qué carpeta elegiste: {exc}")
 

@@ -347,6 +347,9 @@ class Sala(Proyectos):
         x = self.pedidos_carpeta.get(str(d.get("id", "")))
         if not x or x["compu"] != c["id"]:
             return {"error": "Ese pedido ya no existe."}
+        if d.get("estado") == "abierta":  # la compu ya abrió la ventana (todavía no eliges)
+            x["estado"] = "abierta"
+            return {"ok": True}
         x.update(estado="elegida" if d.get("ruta") else "cancelada", ruta=str(d.get("ruta") or "")[:300],
                  error=str(d.get("error") or "")[:200])
         return {"ok": True}
@@ -475,7 +478,11 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                 return self._archivo(ruta[len("/salida/"):])
             if ruta.startswith("/api/elegir_carpeta/"):
                 x = sala.pedidos_carpeta.get(ruta.rsplit("/", 1)[-1])
-                return self._json({k: x[k] for k in ("estado", "ruta", "error")} if x else {"estado": "cancelada", "ruta": "", "error": ""})
+                if not x:
+                    return self._json({"estado": "cancelada", "ruta": "", "error": ""})
+                c = sala.compus.get(x["compu"]) or {}
+                return self._json({**{k: x[k] for k in ("estado", "ruta", "error")}, "segundos": round(time.time() - x["t"]),
+                                   "editando": bool(c.get("trabajo")), "version": c.get("version", "")})
             if ruta.startswith("/api/locales/"):
                 return self._json(sala.locales_de(ruta.rsplit("/", 1)[-1]))
             if ruta.startswith("/api/miniatura/"):

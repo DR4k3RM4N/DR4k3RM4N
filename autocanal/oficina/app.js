@@ -1242,10 +1242,36 @@
       sel.dataset.firma = firma;
     }
     $("#np-ruta").hidden = !donde || sel.value !== "__otra";
+    if (esperandoCarpeta) return; // no borrar el mensaje de «Mira tu compu…»
     $("#np-ayuda").textContent = !donde ? "Tus clips se suben al servidor desde la ventana del proyecto."
       : sel.value === "" ? "Se crea la carpeta en Videos → Sala de edicion de esa compu."
       : "Tus clips se quedan donde están; las versiones caen en su subcarpeta «Ediciones».";
   }
+  // Pide a la compu que abra la ventana de Windows para elegir carpeta y espera la respuesta, diciendo en qué va
+  let esperandoCarpeta = false;
+  async function esperarCarpeta(compu, ayuda) {
+    esperandoCarpeta = true;
+    try { return await esperarCarpeta_(compu, ayuda); } finally { esperandoCarpeta = false; }
+  }
+  async function esperarCarpeta_(compu, ayuda) {
+    const { id } = await salaApi("/api/elegir_carpeta", { compu });
+    ayuda.textContent = "📨 Mandé el pedido a tu compu…";
+    for (let i = 0; i < 400; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const x = await salaApi(`/api/elegir_carpeta/${id}`);
+      if (x.estado === "elegida") return x.ruta;
+      if (x.estado === "cancelada") { ayuda.textContent = x.error || "No elegiste carpeta."; return null; }
+      if (x.estado === "abierta") ayuda.textContent = "🪟 Tu compu ya abrió la ventana «Sala de edicion». Si no la ves, búscala en la barra de tareas (puede estar detrás del navegador).";
+      else if (x.editando) ayuda.textContent = "✂️ Tu compu está editando un video: abre la ventana en cuanto termine…";
+      else if (x.segundos > 20) {
+        ayuda.textContent = "😕 Tu compu no recibió el pedido. Seguro tiene la versión vieja: en esa compu abre INSTALAR_SALA.bat (contesta N) y vuelve a intentar.";
+        return null;
+      }
+    }
+    ayuda.textContent = "Se acabó el tiempo para elegir. Vuelve a intentar.";
+    return null;
+  }
+
   // Ventana del proyecto: «📂 Usar una carpeta de mi compu» (se elige allá, no se sube nada)
   async function usarCarpetaDeCompu(boton) {
     const compus = (estadoSala?.compus || []).filter((c) => c.viva);
@@ -1258,22 +1284,14 @@
       compu = compus[n - 1].id;
     }
     boton.disabled = true;
-    const ayuda = $("#pv-carpeta-ayuda");
     try {
-      const { id } = await salaApi("/api/elegir_carpeta", { compu });
-      ayuda.textContent = "👀 Mira tu compu: se abre una ventana para elegir la carpeta…";
-      for (let i = 0; i < 90; i++) {
-        await new Promise((r) => setTimeout(r, 1500));
-        const x = await salaApi(`/api/elegir_carpeta/${id}`);
-        if (x.estado === "elegida") {
-          await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}/carpeta`, { compu, ruta: x.ruta });
-          proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}`);
-          $("#pv-clips").dataset.html = "";
-          pintarProyectoSala();
-          return;
-        }
-        if (x.estado === "cancelada") { ayuda.textContent = x.error || "No elegiste carpeta."; break; }
-        if (i === 89) ayuda.textContent = "Tu compu no abrió la ventana. ¿Está prendida y con la sala actualizada?";
+      const ruta = await esperarCarpeta(compu, $("#pv-carpeta-ayuda"));
+      if (ruta) {
+        await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}/carpeta`, { compu, ruta });
+        proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}`);
+        $("#pv-clips").dataset.html = "";
+        pintarProyectoSala();
+        return;
       }
     } catch (err) { alert(err.message); }
     boton.disabled = false;
@@ -1286,22 +1304,14 @@
     boton.disabled = true;
     const ayuda = $("#np-ayuda");
     try {
-      const { id } = await salaApi("/api/elegir_carpeta", { compu });
-      ayuda.textContent = "👀 Mira tu compu: se abre una ventana para elegir la carpeta (puede tardar unos segundos)…";
-      for (let i = 0; i < 90; i++) {
-        await new Promise((r) => setTimeout(r, 1500));
-        const x = await salaApi(`/api/elegir_carpeta/${id}`);
-        if (x.estado === "elegida") {
-          const sel = $("#np-carpeta");
-          sel.value = [...sel.options].some((o) => o.value === x.ruta) ? x.ruta : "__otra";
-          $("#np-ruta").value = x.ruta;
-          if (!$("#np-nombre").value) $("#np-nombre").value = x.ruta.replace(/\\/g, "/").split("/").pop();
-          carpetasDeCompu();
-          ayuda.textContent = `✔ Elegiste ${x.ruta}. Dale «Crear».`;
-          break;
-        }
-        if (x.estado === "cancelada") { ayuda.textContent = x.error || "No elegiste carpeta."; break; }
-        if (i === 89) ayuda.textContent = "Tu compu no abrió la ventana. ¿Está prendida y con la sala actualizada?";
+      const ruta = await esperarCarpeta(compu, ayuda);
+      if (ruta) {
+        const sel = $("#np-carpeta");
+        sel.value = [...sel.options].some((o) => o.value === ruta) ? ruta : "__otra";
+        $("#np-ruta").value = ruta;
+        if (!$("#np-nombre").value) $("#np-nombre").value = ruta.replace(/\\/g, "/").split("/").pop();
+        carpetasDeCompu();
+        ayuda.textContent = `✔ Elegiste ${ruta}. Dale «Crear».`;
       }
     } catch (err) { alert(err.message); }
     boton.disabled = false;
