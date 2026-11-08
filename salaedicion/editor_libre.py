@@ -16,11 +16,12 @@ from pathlib import Path
 import cris  # reusa: escuchar (Whisper), duración, audio, ffmpeg y el formato de subtítulos
 
 RESOLUCION = {"vertical": (1080, 1920), "horizontal": (1920, 1080)}
+analizar = None  # lo pone compu.py: analizar(clip) → {"frases", "calidad"} (partes movidas/borrosas/oscuras)
 
 PLAN_SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["formato", "clips", "quitar_silencios", "quitar_repetidas", "cortes_dinamicos", "subtitulos", "textos",
-                 "color", "musica", "duracion_objetivo"],
+    "required": ["formato", "clips", "quitar_silencios", "quitar_repetidas", "cortes_dinamicos", "saltar_malas", "estabilizar",
+                 "audio_original", "reducir_ruido", "subtitulos", "textos", "color", "musica", "duracion_objetivo"],
     "properties": {
         "formato": {"type": "string", "enum": ["vertical", "horizontal"]},
         "clips": {"type": "array", "description": "en el orden del video; solo archivos de la lista",
@@ -33,6 +34,11 @@ PLAN_SCHEMA = {
         "quitar_silencios": {"type": "boolean"},
         "quitar_repetidas": {"type": "boolean", "description": "si dijo lo mismo dos veces, deja la última"},
         "cortes_dinamicos": {"type": "boolean", "description": "acercamientos cada ~2 s en tomas largas"},
+        "saltar_malas": {"type": "boolean", "description": "saltarse solo las partes movidas, borrosas u oscuras"},
+        "estabilizar": {"type": "boolean", "description": "estabilizar tomas con la cámara temblando"},
+        "audio_original": {"type": "string", "enum": ["normal", "solo_voz", "silenciar"],
+                           "description": "normal = todo; solo_voz = solo donde hablas (el resto calla y queda la música); silenciar = sin audio de los clips"},
+        "reducir_ruido": {"type": "boolean", "description": "quitar ruido de fondo (viento, aire, zumbido)"},
         "subtitulos": {"type": "object", "additionalProperties": False,
                        "required": ["activar", "tamano", "posicion", "mayusculas", "color_resaltado"],
                        "properties": {"activar": {"type": "boolean"}, "tamano": {"type": "string", "enum": ["normal", "grande"]},
@@ -92,8 +98,28 @@ def piezas_del_plan(plan: dict, carpeta: Path, pista: str = "") -> list[dict]:
         tramos = [(ini, fin, "")]
         if plan.get("quitar_silencios") and cris.tiene_audio(src):
             tramos = _trozos_con_voz(cris.transcribir(src, pista), ini, fin) or tramos
+        if plan.get("saltar_malas") and analizar:
+            malas = [(x[0], x[1]) for x in (analizar(src).get("calidad") or []) if x[2] != "bien"]
+            buenos = []
+            for a, b, texto in tramos:
+                cortes = [(a, b)]
+                for m0, m1 in malas:
+                    nuevos = []
+                    for c0, c1 in cortes:
+                        if m1 <= c0 or m0 >= c1:
+                            nuevos.append((c0, c1))
+                        else:
+                            if m0 - c0 >= 0.7:
+                                nuevos.append((c0, m0))
+                            if c1 - m1 >= 0.7:
+                                nuevos.append((m1, c1))
+                    cortes = nuevos
+                buenos += [(c0, c1, texto) for c0, c1 in cortes]
+            tramos = buenos or tramos  # si todo el clip está mal, se deja (mejor algo que nada)
+        palabras = cris.transcribir(src, pista) if cris.tiene_audio(src) else []
         for a, b, texto in tramos:
-            piezas.append({"src": src, "ini": a, "dur": b - a, "vel": vel, "texto": texto, "zoom": 1.0, "bloque": "clip"})
+            voz = bool(texto) or any(a <= w["t"] < b for w in palabras)
+            piezas.append({"src": src, "ini": a, "dur": b - a, "vel": vel, "texto": texto, "voz": voz, "zoom": 1.0, "bloque": "clip"})
     if plan.get("quitar_repetidas"):  # si dijo casi lo mismo dos veces, se queda la última
         quedan = []
         for i, p in enumerate(piezas):
@@ -179,13 +205,17 @@ def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = N
         avance(f"Cortando parte {k + 1} de {len(piezas)}", 0.08 + 0.72 * k / len(piezas))
         z, vel = p["zoom"], p["vel"]
         sw, sh = int(w * z) // 2 * 2, int(h * z) // 2 * 2
-        vf = (f"scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,{eq},"
+        estab = "deshake=rx=48:ry=48:edge=mirror," if plan.get("estabilizar") else ""
+        vf = (f"scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={w}:{h},{estab}setsar=1,{eq},"
               f"setpts=PTS/{vel:.3f},fps={cris.FPS},format=yuv420p")
         salida = trabajo / f"p{k:03d}.mp4"
         dur = p["dur"] if not objetivo else min(p["dur"], (objetivo - t0) * vel)
-        if cris.tiene_audio(p["src"]):
+        modo_audio = plan.get("audio_original") or "normal"
+        con_audio = cris.tiene_audio(p["src"]) and modo_audio != "silenciar" and not (modo_audio == "solo_voz" and not p.get("voz"))
+        limpieza = "highpass=f=90,lowpass=f=11000,afftdn=nf=-28," if plan.get("reducir_ruido") else ""
+        if con_audio:
             cris._ff("-ss", f"{p['ini']:.3f}", "-t", f"{dur:.3f}", "-i", str(p["src"]), "-vf", vf,
-                     "-af", f"atempo={vel:.3f},aformat=sample_rates=44100:channel_layouts=stereo", *cris.RAPIDO, *cris.AUDIO, str(salida))
+                     "-af", f"{limpieza}atempo={vel:.3f},aformat=sample_rates=44100:channel_layouts=stereo", *cris.RAPIDO, *cris.AUDIO, str(salida))
         else:
             cris._ff("-ss", f"{p['ini']:.3f}", "-t", f"{dur:.3f}", "-i", str(p["src"]), "-f", "lavfi", "-i",
                      "anullsrc=r=44100:cl=stereo", "-vf", vf, "-map", "0:v", "-map", "1:a", "-shortest",
@@ -207,8 +237,11 @@ def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = N
     entrada_musica = ["-stream_loop", "-1", "-i", str(pista_musica)] if pista_musica and pista_musica.exists() else []
     if entrada_musica:
         vol = _rango(musica.get("volumen"), 0.02, 0.6, 0.15)
-        filtro = (f"[0:v]ass=textos.ass[v];[1:a]volume={vol:.3f},afade=t=out:st={max(0, t0 - 1.5):.2f}:d=1.5[m];"
-                  f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
+        # la música baja sola cuando hablas (sidechain) y sube en las partes sin voz
+        filtro = (f"[0:v]ass=textos.ass[v];[0:a]asplit=2[voz][guia];"
+                  f"[1:a]volume={vol * 2.2:.3f},afade=t=out:st={max(0, t0 - 1.5):.2f}:d=1.5[m];"
+                  f"[m][guia]sidechaincompress=threshold=0.02:ratio=12:attack=15:release=400[mbaja];"
+                  f"[voz][mbaja]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
         args = ["-i", "base.mp4", *entrada_musica, "-filter_complex", filtro, "-map", "[v]", "-map", "[a]"]
     else:
         args = ["-i", "base.mp4", "-vf", "ass=textos.ass", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]

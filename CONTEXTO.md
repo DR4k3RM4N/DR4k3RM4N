@@ -198,3 +198,9 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   silencios, repetidas, velocidad, acercamientos, color eq, textos, karaoke, música, duración) y sube v{n}.mp4 + cuadro;
   copia en <carpeta>\Ediciones. La sala avisa en el chat con la versión. Gasto de la sala en su propio contador.
 - Demo sin Claude: `_router_demo` y `_cerebro_demo`.
+- Nov 2026 (2): ventanas de CMD en Windows: compu.py parchea Popen (CREATE_NO_WINDOW + SW_HIDE) y usa el ffmpeg real
+  del paquete de winget (el de WinGet\Links abría ventana). Editor de la sala "con ojos y oídos": compu.analizar() por clip
+  (frases de Whisper con tiempos, calidad por segundo movido/borroso/oscuro con numpy, tira de 4 cuadros JPG) → la sala la
+  manda a Claude con imágenes (visión). Plan nuevo: saltar_malas, estabilizar (deshake), audio_original
+  (normal/solo_voz/silenciar), reducir_ruido (afftdn); música con sidechain (baja cuando hablas). La respuesta trae
+  "cambios" y "no_puedo"; si la canción no existe, avisa. Modelo propio: tarea "sala" (MODELO_SALA en .env, Haiku medium).

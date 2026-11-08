@@ -35,9 +35,31 @@ if WINDOWS:
     class _SinVentana(_PopenOriginal):
         def __init__(self, *args, **kwargs):
             kwargs["creationflags"] = kwargs.get("creationflags", 0) | 0x08000000  # CREATE_NO_WINDOW
+            info = kwargs.get("startupinfo") or subprocess.STARTUPINFO()
+            info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            info.wShowWindow = 0  # SW_HIDE: por si el programa abre otra ventana por su cuenta
+            kwargs["startupinfo"] = info
             super().__init__(*args, **kwargs)
 
     subprocess.Popen = _SinVentana
+
+    def _ffmpeg_real() -> None:
+        """winget deja ffmpeg como un "acceso directo" en AppData\\Local\\Microsoft\\WinGet\\Links que abre su propia
+        ventana al lanzar el ffmpeg de verdad. Se busca el ffmpeg real y se pone primero en el PATH."""
+        base = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+        candidatos = sorted(base.glob("Gyan.FFmpeg*/**/bin/ffmpeg.exe")) if base.exists() else []
+        enlace = shutil.which("ffmpeg")
+        if enlace:
+            try:
+                candidatos.insert(0, Path(os.path.realpath(enlace)))
+            except OSError:
+                pass
+        for c in candidatos:
+            if c.exists() and "Links" not in c.parts and (c.parent / "ffprobe.exe").exists():
+                os.environ["PATH"] = str(c.parent) + os.pathsep + os.environ.get("PATH", "")
+                return
+
+    _ffmpeg_real()
 CARPETA = (Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SalaEdicion" if WINDOWS
            else Path.home() / ".salaedicion")
 CONFIG = CARPETA / "config.json"
@@ -204,6 +226,72 @@ def preparar_carpetas(pedidas: list[dict], proyectos: list[str] | None = None) -
             (CLIPS / f"{_limpio(p['nombre'])} [{p['id'][-4:]}]").mkdir(exist_ok=True)
 
 
+def analizar(clip: Path) -> dict:
+    """Lo que el editor necesita para elegir bien (se hace una vez por clip y se guarda):
+    - frases: qué dices y cuándo (Whisper), para escoger la mejor toma cuando repites;
+    - calidad segundo a segundo: 'movido', 'borroso', 'oscuro' o 'bien';
+    - hoja: tira de 4 cuadros del clip (JPG) para que el editor VEA qué hay en él."""
+    firma = hashlib.sha1(f"{clip.resolve()}|{clip.stat().st_mtime}|{clip.stat().st_size}".encode()).hexdigest()[:16]
+    guardado = CARPETA / "analisis" / f"{firma}.json"
+    if guardado.exists():
+        return json.loads(guardado.read_text(encoding="utf-8"))
+    guardado.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        dur = cris.duracion(clip)
+    except cris.ErrorEdicion:
+        return {}
+    res = {"segundos": round(dur, 1), "frases": [], "calidad": [], "hoja": ""}
+    # qué dices
+    pals = cris.transcribir(clip) if cris.tiene_audio(clip) else []
+    if pals:
+        grupo = [pals[0]]
+        for p in pals[1:] + [None]:
+            if p is None or p["t"] - (grupo[-1]["t"] + grupo[-1]["d"]) > 0.6:
+                res["frases"].append([round(grupo[0]["t"], 1), round(grupo[-1]["t"] + grupo[-1]["d"], 1),
+                                      " ".join(x["w"] for x in grupo)[:200]])
+                grupo = []
+            if p is not None:
+                grupo.append(p)
+    # calidad: cuadros chiquitos en gris, 2 por segundo
+    try:
+        import numpy as np
+        crudo = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(clip), "-vf",
+                                "fps=2,scale=96:96,format=gray", "-f", "rawvideo", "-"], capture_output=True, timeout=300).stdout
+        cuadros = np.frombuffer(crudo, dtype=np.uint8)[: len(crudo) // 9216 * 9216].reshape(-1, 96, 96).astype(np.float32)
+        if len(cuadros) >= 2:
+            luz = cuadros.mean(axis=(1, 2))
+            lap = np.abs(4 * cuadros[:, 1:-1, 1:-1] - cuadros[:, :-2, 1:-1] - cuadros[:, 2:, 1:-1]
+                         - cuadros[:, 1:-1, :-2] - cuadros[:, 1:-1, 2:]).mean(axis=(1, 2))
+            mov = np.concatenate([[0], np.abs(np.diff(cuadros, axis=0)).mean(axis=(1, 2))])
+            nitidez_tipica = float(np.median(lap)) or 1.0
+            for seg in range(int(np.ceil(len(cuadros) / 2))):
+                sl = slice(seg * 2, seg * 2 + 2)
+                if float(luz[sl].mean()) < 35:
+                    etiqueta = "oscuro"
+                elif float(mov[sl].mean()) > 22:
+                    etiqueta = "movido"
+                elif float(lap[sl].mean()) < nitidez_tipica * 0.55:
+                    etiqueta = "borroso"
+                else:
+                    etiqueta = "bien"
+                if res["calidad"] and res["calidad"][-1][2] == etiqueta:
+                    res["calidad"][-1][1] = min(round(dur, 1), seg + 1)
+                else:
+                    res["calidad"].append([seg, min(round(dur, 1), seg + 1), etiqueta])
+    except Exception as exc:  # noqa: BLE001 — sin numpy o con un clip raro, se sigue sin esto
+        log(f"No pude medir la calidad de {clip.name}: {exc}")
+    # tira de 4 cuadros para que el editor vea el clip
+    hoja = guardado.with_suffix(".jpg")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(clip), "-vf",
+                    f"fps={4 / max(dur, 0.5):.4f},scale=-2:200,tile=4x1", "-frames:v", "1", "-q:v", "6", str(hoja)],
+                   capture_output=True, timeout=120)
+    if hoja.exists():
+        res["hoja"] = base64.b64encode(hoja.read_bytes()).decode()
+        hoja.unlink()
+    guardado.write_text(json.dumps(res), encoding="utf-8")
+    return res
+
+
 def _miniatura(clip: Path) -> tuple[str, float, bool]:
     """(jpg en base64, segundos, tiene audio). Se guarda para no repetirla."""
     firma = hashlib.sha1(f"{clip.resolve()}|{clip.stat().st_mtime}|{clip.stat().st_size}".encode()).hexdigest()[:16]
@@ -260,15 +348,25 @@ def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list[str] |
         for f, firma in clips:
             jpg, segundos, audio = _miniatura(f)
             ya = f"{pid}/{f.name}/{firma}" in _ultimo_reporte["con_miniatura"]
-            envio[pid].append({"nombre": f.name, "mb": round(f.stat().st_size / 1024 / 1024, 1), "segundos": segundos,
-                               "tiene_audio": audio, "firma": firma, "miniatura": "" if ya else jpg})
+            dato = {"nombre": f.name, "mb": round(f.stat().st_size / 1024 / 1024, 1), "segundos": segundos,
+                    "tiene_audio": audio, "firma": firma, "miniatura": "" if ya else jpg}
+            if pid.startswith("carpeta:") and f"{pid}/{f.name}/{firma}" not in _ultimo_reporte.get("con_analisis", set()):
+                try:  # los proyectos de la sala: el editor necesita "ver" y "oír" el clip
+                    a = analizar(f)
+                    dato["analisis"] = {k: a.get(k) for k in ("frases", "calidad")}
+                    dato["hoja"] = a.get("hoja", "")
+                except Exception as exc:  # noqa: BLE001
+                    log(f"No pude analizar {f.name}: {exc}")
+            envio[pid].append(dato)
     r = of.post("carpetas", {"carpetas": envio, "ruta": str(CLIPS), "musica": musica}, timeout=60)
-    _ultimo_reporte.update(firma=resumen, t=time.time(), con_miniatura=set(r.get("con_miniatura") or []))
+    _ultimo_reporte.update(firma=resumen, t=time.time(), con_miniatura=set(r.get("con_miniatura") or []),
+                           con_analisis=set(r.get("con_analisis") or []))
 
 
 def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     """Un proyecto de la sala: los clips están en su carpeta de esta compu (lo que subiste al servidor se baja ahí)."""
     import editor_libre
+    editor_libre.analizar = analizar  # para saltarse partes movidas/borrosas
     par, tid = t["parametros"], t["id"]
     clips = CLIPS / _limpio(par["carpeta"])
     clips.mkdir(parents=True, exist_ok=True)

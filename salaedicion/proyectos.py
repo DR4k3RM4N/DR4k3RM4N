@@ -22,10 +22,11 @@ EXT_VIDEO = {".mp4", ".mov", ".m4v", ".webm", ".3gp", ".mkv"}
 COLORES = ["#a78bfa", "#22d3ee", "#f472b6", "#facc15"]
 PEINADOS = ["gorra", "audifonos", "rizos", "lentes"]
 
-AYUDA = ("Sé cortar y ordenar clips, quitar silencios y tomas repetidas, cambiar velocidad, hacer acercamientos cada "
-         "~2 s, ajustar brillo/contraste/saturación, poner textos en pantalla, subtítulos karaoke con tu voz, música de "
-         "tu carpeta Musica, vertical u horizontal y ajustar la duración. No hago efectos tipo After Effects, recortar "
-         "personas, seguir objetos ni generar imágenes.")
+AYUDA = ("Sé cortar y ordenar clips, quitar silencios y tomas repetidas, saltarme las partes movidas/borrosas/oscuras, "
+         "estabilizar tomas temblorosas, cambiar velocidad, hacer acercamientos cada ~2 s, ajustar brillo/contraste/"
+         "saturación, poner textos en pantalla, subtítulos karaoke con tu voz, quitar ruido de fondo, dejar solo tu voz o "
+         "silenciar el audio de los clips, música de tu carpeta Musica (baja sola cuando hablas), vertical u horizontal y "
+         "ajustar la duración. No hago efectos tipo After Effects, recortar personas, seguir objetos ni generar imágenes.")
 
 
 def limpio(nombre: str) -> str:
@@ -38,6 +39,9 @@ def respuesta_schema(con_plan: bool) -> dict:
         "respuesta": {"type": "string", "description": "lo que le contestas a Miguel (corto, español de México)"},
         "accion": {"type": "string", "enum": ["preguntar", "editar", "nada"]},
         "formato": {"type": "string", "enum": ["vertical", "horizontal", ""], "description": "si ya lo sabes"},
+        "cambios": {"type": "array", "items": {"type": "string"},
+                    "description": "si accion=editar: lista corta de lo que hiciste/cambiaste en esta versión"},
+        "no_puedo": {"type": "string", "description": "lo que pidió y NO se puede hacer (o vacío)"},
     }
     if con_plan:
         props["plan"] = PLAN_SCHEMA
@@ -299,6 +303,20 @@ class Proyectos:
             p.setdefault("pendientes", []).append(texto)
             return self._decir(p, quien, "Estoy terminando la versión anterior; en cuanto acabe aplico esto. 👌")
         historial = [f"{'Miguel' if m['quien'] == 'jefe' else 'Tú'}: {m['texto']}" for m in p["mensajes"][-14:]]
+        fichas, imagenes = [], []
+        clave = f"carpeta:{p['carpeta']}"
+        for i, x in enumerate(clips, 1):
+            a = self.analisis.get((p.get("compu"), clave, x["nombre"])) or {}
+            malas = [f"{c[0]}-{c[1]} s {c[2]}" for c in a.get("calidad", []) if c[2] != "bien"]
+            fichas.append(f"Clip {i}: «{x['nombre']}» · {x.get('segundos', 0)} s · {'con audio' if x.get('tiene_audio', True) else 'sin audio'}"
+                          + (f"\n   Dice: " + " | ".join(f"[{f[0]}-{f[1]} s] {f[2]}" for f in a.get("frases", [])[:25]) if a.get("frases") else "\n   (no habla o no se escuchó)")
+                          + (f"\n   Partes con problema: {', '.join(malas[:12])}" if malas else ("\n   Imagen: bien" if a.get("calidad") else "")))
+            hoja = self.hojas.get((p.get("compu"), clave, x["nombre"]))
+            if hoja and len(imagenes) < 24:
+                import base64
+                imagenes += [{"type": "text", "text": f"Clip {i} («{x['nombre']}»), 4 cuadros de principio a fin:"},
+                             {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                                          "data": base64.b64encode(hoja).decode()}}]
         if self.demo:
             r = self._cerebro_demo(p, texto, clips)
         else:
@@ -307,21 +325,36 @@ class Proyectos:
                 f"Eres {self._nombre_editor(p.get('encargado'))}, editor de video en la sala de edición de Miguel (creador "
                 f"mexicano). Hablas español de México, casual y breve, como compañero de trabajo. {self.AYUDA} Si te piden "
                 "algo que no sabes hacer, dilo y ofrece una alternativa.",
+                [*imagenes, {"type": "text", "text":
                 f"Proyecto: {p['nombre']}\nFormato: {p.get('formato') or 'no lo ha dicho'}\n"
-                f"Clips (usa exactamente estos nombres): {json.dumps([{k: x[k] for k in ('nombre', 'segundos', 'tiene_audio')} for x in clips], ensure_ascii=False)}\n"
+                "Clips (usa exactamente estos nombres en el plan):\n" + "\n".join(fichas) + "\n"
                 f"Música disponible (carpeta Musica): {json.dumps(self.musica(p), ensure_ascii=False)}\n"
                 f"Plan de la última versión: {json.dumps(p.get('plan'), ensure_ascii=False) if p.get('plan') else 'todavía no hay'}\n"
                 f"Conversación:\n" + "\n".join(historial) + f"\n\nNuevo mensaje de Miguel: «{texto}»\n\n"
                 "Reglas: si no sabes si es vertical u horizontal y no se deduce, accion='preguntar' y pregúntalo. Si no hay clips, "
                 "pide que los pase/suba. Si ya puedes hacer el video (o la corrección), accion='editar' y arma el plan completo: "
                 "para correcciones cambia SOLO lo que pidió y deja lo demás como en el plan anterior. Si solo platica, accion='nada'. "
-                "Si accion no es 'editar', manda un plan cualquiera válido (se ignora).",
-                respuesta_schema(True), tarea="edicion", effort="low", que="editor de la sala")
+                "Para elegir lo mejor: mira los cuadros y la calidad; si repitió algo, usa la última toma buena (desde/hasta "
+                "con los tiempos de 'Dice'); evita partes movidas/borrosas (o activa saltar_malas/estabilizar). Si pide "
+                "música: elige una de la lista y pon reducir_ruido=true; si el ruido de fondo molesta, audio_original="
+                "'solo_voz' (o 'silenciar' si no habla). Si no hay música en la lista, dile que ponga MP3 en la carpeta "
+                "Musica. En 'cambios' explica en frases cortas qué hiciste. Si accion no es 'editar', manda un plan "
+                "cualquiera válido (se ignora)."}],
+                respuesta_schema(True), tarea="sala", effort="medium", que="editor de la sala")
         if r.get("formato") in ("vertical", "horizontal"):
             p["formato"] = r["formato"]
-        self._decir(p, quien, r.get("respuesta") or "Va.")
+        texto_resp = r.get("respuesta") or "Va."
+        if r.get("accion") == "editar" and r.get("cambios"):
+            texto_resp += "\n" + "\n".join(f"• {c}" for c in r["cambios"][:8])
+        if r.get("no_puedo"):
+            texto_resp += f"\n⚠️ Eso no lo puedo hacer: {r['no_puedo']}"
+        plan = r.get("plan") or {}
+        musica = (plan.get("musica") or {}).get("archivo")
+        if r.get("accion") == "editar" and musica and musica not in self.musica(p):
+            plan["musica"] = {"archivo": "", "volumen": 0.15}
+            texto_resp += "\n🎵 No encontré esa canción: pon tus MP3 en la carpeta Musica de la sala en tu compu y me dices."
+        self._decir(p, quien, texto_resp)
         if r.get("accion") == "editar":
-            plan = r.get("plan") or {}
             nombres = {x["nombre"] for x in clips}
             plan["clips"] = [c for c in plan.get("clips") or [] if c.get("archivo") in nombres]
             if not plan["clips"]:
@@ -392,7 +425,9 @@ class Proyectos:
         t = texto.lower()
         formato = "vertical" if "vertical" in t else "horizontal" if "horizontal" in t else p.get("formato") or ""
         base = {"formato": formato or "vertical", "clips": [{"archivo": x["nombre"], "desde": 0, "hasta": 0, "velocidad": 1} for x in clips],
-                "quitar_silencios": True, "quitar_repetidas": True, "cortes_dinamicos": True,
+                "quitar_silencios": True, "quitar_repetidas": True, "cortes_dinamicos": True, "saltar_malas": True,
+                "estabilizar": "movid" in t, "audio_original": "solo_voz" if "música" in t or "musica" in t else "normal",
+                "reducir_ruido": "ruido" in t or "música" in t or "musica" in t,
                 "subtitulos": {"activar": "sin subt" not in t, "tamano": "grande" if "grande" in t else "normal", "posicion": "abajo",
                                "mayusculas": True, "color_resaltado": "#FFD23F"},
                 "textos": [{"texto": p["nombre"], "desde": 0, "hasta": 3, "posicion": "arriba"}],
@@ -404,7 +439,9 @@ class Proyectos:
                 base["subtitulos"] = {**base["subtitulos"], "tamano": "grande"}
         if not formato:
             return {"respuesta": "¿Lo quieres vertical (TikTok/Reels) u horizontal (YouTube)? (demo)", "accion": "preguntar",
-                    "formato": "", "plan": base}
+                    "formato": "", "plan": base, "cambios": [], "no_puedo": ""}
         if not clips:
-            return {"respuesta": "Pásame los clips a la carpeta y me avisas. (demo)", "accion": "nada", "formato": formato, "plan": base}
-        return {"respuesta": f"Va, lo armo {formato} con {len(clips)} clips. (demo)", "accion": "editar", "formato": formato, "plan": base}
+            return {"respuesta": "Pásame los clips a la carpeta y me avisas. (demo)", "accion": "nada", "formato": formato, "plan": base,
+                    "cambios": [], "no_puedo": ""}
+        return {"respuesta": f"Va, lo armo {formato} con {len(clips)} clips. (demo)", "accion": "editar", "formato": formato, "plan": base,
+                "cambios": ["Quité silencios y partes movidas", "Subtítulos " + base["subtitulos"]["tamano"]], "no_puedo": ""}

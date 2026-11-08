@@ -64,6 +64,8 @@ class Sala(Proyectos):
         self.codigos: dict = {}  # código → vence
         self.locales: dict = {}  # compu → {producto: [clips en su carpeta]}  (solo nombres y miniaturas, nunca videos)
         self.miniaturas: dict = {}  # (compu, producto, archivo) → jpg chiquito
+        self.analisis: dict = {}  # (compu, carpeta, archivo) → {frases, calidad}  (qué dices y partes movidas)
+        self.hojas: dict = {}  # (compu, carpeta, archivo) → tira de 4 cuadros (para que el editor vea el clip)
         self.intentos: list[float] = []
         for t in self.trabajos.values():  # lo que quedó a medias al apagar: lo vuelve a pedir la oficina
             if t["estado"] in ("en_cola", "asignado", "trabajando"):
@@ -271,6 +273,16 @@ class Sala(Proyectos):
                     continue
                 lista.append({"nombre": nombre, "mb": float(x.get("mb") or 0), "segundos": float(x.get("segundos") or 0),
                               "tiene_audio": bool(x.get("tiene_audio", True)), "firma": str(x.get("firma", ""))[:40]})
+                if isinstance(x.get("analisis"), dict):
+                    self.analisis[(c["id"], pid, nombre)] = {"frases": (x["analisis"].get("frases") or [])[:60],
+                                                             "calidad": (x["analisis"].get("calidad") or [])[:120]}
+                if x.get("hoja"):
+                    try:
+                        hoja = base64.b64decode(x["hoja"])
+                        if len(hoja) < 200_000 and hoja[:2] == b"\xff\xd8":
+                            self.hojas[(c["id"], pid, nombre)] = hoja
+                    except ValueError:
+                        pass
                 if x.get("miniatura"):
                     try:
                         jpg = base64.b64decode(x["miniatura"])
@@ -285,7 +297,9 @@ class Sala(Proyectos):
         self.proyectos_de_carpetas(c["id"], list(carpetas))
         # firmas que la sala ya tiene con miniatura: la compu no las vuelve a mandar
         return {"ok": True, "con_miniatura": [f"{pid}/{x['nombre']}/{x['firma']}" for pid, xs in carpetas.items()
-                                              for x in xs if (c["id"], pid, x["nombre"]) in self.miniaturas]}
+                                              for x in xs if (c["id"], pid, x["nombre"]) in self.miniaturas],
+                "con_analisis": [f"{pid}/{x['nombre']}/{x['firma']}" for pid, xs in carpetas.items()
+                                 for x in xs if (c["id"], pid, x["nombre"]) in self.analisis]}
 
     def locales_de(self, pid: str) -> dict:
         with self.lock:

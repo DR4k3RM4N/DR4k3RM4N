@@ -32,6 +32,8 @@ TAREAS = {
     "ficha_shop": ("claude-haiku-5-5", "low"),      # Toño: ordenar lo que salió en Google del producto
     "guion_shop": ("claude-haiku-5-5", "medium"),   # Sofi: guion que vende con 3 ganchos
     "tomas_shop": ("claude-haiku-5-5", "low"),      # Diego: lista de tomas para grabar con el celular
+    # sala de edición
+    "sala": ("claude-haiku-5-5", "medium"),         # editores de la sala: ven tus clips y arman la edición (MODELO_SALA)
 }
 
 # Precios en USD por millón de tokens: (entrada, salida). Haiku cambia de tarifa arriba de 100K de entrada.
