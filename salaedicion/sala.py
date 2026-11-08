@@ -63,6 +63,7 @@ class Sala(Proyectos):
                 pr.update(estado="error", trabajo=None, error="La sala se reinició a medio trabajo. Escribe «otra vez».")
         self.codigos: dict = {}  # código → vence
         self.locales: dict = {}  # compu → {producto: [clips en su carpeta]}  (solo nombres y miniaturas, nunca videos)
+        self.pedidos_carpeta: dict = {}  # «📂 Elegir carpeta…»: id → {compu, estado, ruta}
         self.miniaturas: dict = {}  # (compu, producto, archivo) → jpg chiquito
         self.analisis: dict = {}  # (compu, carpeta, archivo) → {frases, calidad}  (qué dices y partes movidas)
         self.hojas: dict = {}  # (compu, carpeta, archivo) → tira de 4 cuadros (para que el editor vea el clip)
@@ -235,9 +236,15 @@ class Sala(Proyectos):
             c.update(ultimo=time.time(), gpu=str(d.get("gpu") or c.get("gpu") or "")[:60],
                      version=str(d.get("version") or "")[:12], nvenc=bool(d.get("nvenc")), oido=str(d.get("oido") or "")[:40],
                      tipos=[x for x in (d.get("tipos") or ["cris"]) if isinstance(x, str)][:5])
+            extra = {}
+            if not d.get("pulso"):  # «📂 Elegir carpeta…»: se entrega en el latido normal (no en el pulso)
+                pedir = next((pid for pid, x in self.pedidos_carpeta.items() if x["compu"] == c["id"] and x["estado"] == "nuevo"), None)
+                if pedir:
+                    self.pedidos_carpeta[pedir]["estado"] = "esperando"
+                    extra = {"pedir_carpeta": {"id": pedir}}
             actual = self.trabajos.get(c.get("trabajo") or "")
             if actual and actual["estado"] in ("asignado", "trabajando"):
-                return {"trabajo": self._para_compu(actual)}
+                return {"trabajo": self._para_compu(actual), **extra}
             c["trabajo"] = None
             libre = d.get("libre", True)
             pendiente = next((t for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])
@@ -247,7 +254,7 @@ class Sala(Proyectos):
                 pendiente.update(estado="asignado", compu=c["id"], slot=c["slot"], inicio=time.time(), paso="Bajando tus clips")
                 c["trabajo"] = pendiente["id"]
             self._tocar()
-            return {"trabajo": self._para_compu(pendiente) if pendiente else None}
+            return {"trabajo": self._para_compu(pendiente) if pendiente else None, **extra}
 
     def _para_compu(self, t: dict) -> dict:
         return {"id": t["id"], "tipo": t["tipo"], "etiqueta": t["etiqueta"], "parametros": t["parametros"], "local": t.get("local"),
@@ -296,6 +303,7 @@ class Sala(Proyectos):
         with self.lock:
             self.locales[c["id"]] = {"carpetas": carpetas, "ruta": str(d.get("ruta") or "")[:200], "t": time.time(),
                                      "musica": [Path(str(m)).name[:100] for m in (d.get("musica") or [])][:60],
+                                     "errores": {str(k)[:120]: str(v)[:200] for k, v in (d.get("errores") or {}).items()},
                                      "lugares": [{"ruta": str(x.get("ruta", ""))[:300], "nombre": str(x.get("nombre", ""))[:120],
                                                   "videos": int(x.get("videos") or 0)} for x in (d.get("lugares") or [])[:80]
                                                  if isinstance(x, dict)]}
@@ -322,6 +330,26 @@ class Sala(Proyectos):
                           "carpetas": {pid: len(xs) for pid, xs in loc.get("carpetas", {}).items()},
                           "muestra": {pid: [x["nombre"] for x in xs[:6]] for pid, xs in loc.get("carpetas", {}).items()}}
                     for cid, loc in self.locales.items()}
+
+    def pedir_carpeta(self, cid: str) -> dict:
+        c = self.compus.get(cid)
+        if not c:
+            return {"error": "Esa compu no está en la sala."}
+        if not self.viva(c):
+            return {"error": f"{c['nombre']} está apagada: préndela y vuelve a intentar."}
+        pid = uuid.uuid4().hex[:8]
+        with self.lock:
+            self.pedidos_carpeta = {k: v for k, v in self.pedidos_carpeta.items() if time.time() - v["t"] < 600}
+            self.pedidos_carpeta[pid] = {"compu": cid, "estado": "nuevo", "ruta": "", "error": "", "t": time.time()}
+        return {"ok": True, "id": pid}
+
+    def carpeta_elegida(self, c: dict, d: dict) -> dict:
+        x = self.pedidos_carpeta.get(str(d.get("id", "")))
+        if not x or x["compu"] != c["id"]:
+            return {"error": "Ese pedido ya no existe."}
+        x.update(estado="elegida" if d.get("ruta") else "cancelada", ruta=str(d.get("ruta") or "")[:300],
+                 error=str(d.get("error") or "")[:200])
+        return {"ok": True}
 
     def del_compu(self, c: dict, tid: str) -> dict | None:
         t = self.trabajos.get(tid)
@@ -445,6 +473,9 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                 return self._json(r, 200 if r.get("id") else 404)
             if ruta.startswith("/salida/"):
                 return self._archivo(ruta[len("/salida/"):])
+            if ruta.startswith("/api/elegir_carpeta/"):
+                x = sala.pedidos_carpeta.get(ruta.rsplit("/", 1)[-1])
+                return self._json({k: x[k] for k in ("estado", "ruta", "error")} if x else {"estado": "cancelada", "ruta": "", "error": ""})
             if ruta.startswith("/api/locales/"):
                 return self._json(sala.locales_de(ruta.rsplit("/", 1)[-1]))
             if ruta.startswith("/api/miniatura/"):
@@ -538,6 +569,9 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
             if ruta.startswith("/api/proyecto/") and ruta.endswith("/borrar"):
                 r = sala.borrar_proyecto(ruta.split("/")[3])
                 return self._json(r, 400 if "error" in r else 200)
+            if ruta == "/api/elegir_carpeta":
+                r = sala.pedir_carpeta(str(d.get("compu", "")))
+                return self._json(r, 400 if "error" in r else 200)
             if ruta == "/api/chat":
                 r = sala.mensaje(str(d.get("proyecto") or "") or None, str(d.get("texto", "")))
                 return self._json(r, 400 if "error" in r else 200)
@@ -570,6 +604,8 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                     return self._json(r)
                 if accion == "carpetas":
                     return self._json(sala.reportar_carpetas(c, d))
+                if accion == "carpeta_elegida":
+                    return self._json(sala.carpeta_elegida(c, d))
                 if accion == "avance":
                     return self._json(sala.avance(c, tid, d))
                 if accion == "terminar":

@@ -346,9 +346,10 @@ def lugares() -> list[dict]:
     return salida[:80]
 
 
-def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list[str] | None = None) -> None:
+def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list | None = None, analizar_ahora: bool = True) -> None:
     """Le dice a la oficina qué clips hay en cada carpeta (nombre, duración y miniatura chiquita, nunca el video):
-    las de productos de TikTok y cualquier otra carpeta (cada una es un proyecto de la sala)."""
+    las de productos de TikTok y cualquier otra carpeta (cada una es un proyecto de la sala).
+    Primero manda la lista con miniaturas (al momento) y después analiza los clips uno por uno."""
     preparar_carpetas(pedidas, proyectos)
     de_productos = {}
     for p in pedidas:
@@ -357,13 +358,23 @@ def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list[str] |
             de_productos[d.name] = p["id"]
     lugares_ = [(de_productos.get(d.name) or f"carpeta:{d.name}", d) for d in sorted(CLIPS.iterdir())
                 if d.is_dir() and not d.name.startswith(".") and d != MUSICA]
+    errores = {}
     for pr in proyectos or []:  # proyectos con una carpeta tuya fuera de la sala
-        if isinstance(pr, dict) and pr.get("ruta") and Path(pr["ruta"]).is_dir():
-            lugares_.append((f"proyecto:{pr['id']}", Path(pr["ruta"])))
-    carpetas, firmas = {}, []
+        if isinstance(pr, dict) and pr.get("ruta"):
+            ruta = Path(str(pr["ruta"]).strip().strip('"').strip())
+            if ruta.is_dir():
+                lugares_.append((f"proyecto:{pr['id']}", ruta))
+            else:
+                errores[f"proyecto:{pr['id']}"] = f"No encontré la carpeta «{ruta}» en esta compu. Revisa la ruta."
+    carpetas, firmas = {}, list(errores)
     for clave, d in lugares_:
         clips = []
-        for f in sorted(d.iterdir()):
+        try:
+            archivos = sorted(d.iterdir())
+        except OSError as exc:
+            errores[clave] = f"No pude abrir la carpeta ({exc.__class__.__name__})."
+            archivos = []
+        for f in archivos:
             if f.is_file() and f.suffix.lower() in EXT_VIDEO and not f.name.startswith("."):
                 firma = f"{f.stat().st_size}-{int(f.stat().st_mtime)}"
                 firmas.append(f"{clave}/{f.name}/{firma}")
@@ -372,30 +383,79 @@ def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list[str] |
     musica = sorted(f.name for f in MUSICA.iterdir() if f.is_file() and f.suffix.lower() in EXT_AUDIO) if MUSICA.exists() else []
     firmas += [f"musica/{m}" for m in musica]
     resumen = "|".join(firmas)
-    if resumen == _ultimo_reporte["firma"] and time.time() - _ultimo_reporte["t"] < 120:
+    pendientes = [(pid, f, firma) for pid, clips in carpetas.items() if pid.startswith(("carpeta:", "proyecto:"))
+                  for f, firma in clips if f"{pid}/{f.name}/{firma}" not in _ultimo_reporte.get("con_analisis", set())]
+    if resumen == _ultimo_reporte["firma"] and time.time() - _ultimo_reporte["t"] < 120 and not (pendientes and analizar_ahora):
         return  # nada cambió (y se repite cada 2 min por si la sala se reinició)
-    envio, hechos = {}, 0
-    for pid, clips in carpetas.items():
-        envio[pid] = []
-        for f, firma in clips:
-            jpg, segundos, audio = _miniatura(f)
-            ya = f"{pid}/{f.name}/{firma}" in _ultimo_reporte["con_miniatura"]
-            dato = {"nombre": f.name, "mb": round(f.stat().st_size / 1024 / 1024, 1), "segundos": segundos,
-                    "tiene_audio": audio, "firma": firma, "miniatura": "" if ya else jpg}
-            if pid.startswith(("carpeta:", "proyecto:")) and f"{pid}/{f.name}/{firma}" not in _ultimo_reporte.get("con_analisis", set()):
-                hechos += 1
-                ESTADO_COMPU["texto"] = f"Analizando tus clips ({hechos}) · {f.name[:30]}"
-                try:  # los proyectos de la sala: el editor necesita "ver" y "oír" el clip
-                    a = analizar(f)
-                    dato["analisis"] = {k: a.get(k) for k in ("frases", "calidad")}
-                    dato["hoja"] = a.get("hoja", "")
-                except Exception as exc:  # noqa: BLE001
-                    log(f"No pude analizar {f.name}: {exc}")
-            envio[pid].append(dato)
+
+    def mandar(analizado: dict) -> None:
+        envio = {}
+        for pid, clips in carpetas.items():
+            envio[pid] = []
+            for f, firma in clips:
+                jpg, segundos, audio = _miniatura(f)
+                ya = f"{pid}/{f.name}/{firma}" in _ultimo_reporte["con_miniatura"]
+                dato = {"nombre": f.name, "mb": round(f.stat().st_size / 1024 / 1024, 1), "segundos": segundos,
+                        "tiene_audio": audio, "firma": firma, "miniatura": "" if ya else jpg}
+                if (pid, f.name) in analizado:
+                    dato.update(analizado[(pid, f.name)])
+                envio[pid].append(dato)
+        r = of.post("carpetas", {"carpetas": envio, "ruta": str(CLIPS), "musica": musica, "lugares": lugares(),
+                                 "errores": errores}, timeout=60)
+        _ultimo_reporte.update(firma=resumen, t=time.time(), con_miniatura=set(r.get("con_miniatura") or []),
+                               con_analisis=set(r.get("con_analisis") or []))
+
+    mandar({})  # al momento: la oficina ya ve tus clips con sus miniaturas
+    if not analizar_ahora:
+        return
+    for k, (pid, f, firma) in enumerate(pendientes, 1):  # luego, uno por uno: qué dices y cómo se ve
+        ESTADO_COMPU["texto"] = f"Analizando tus clips ({k} de {len(pendientes)}) · {f.name[:30]}"
+        try:
+            a = analizar(f)
+            mandar({(pid, f.name): {"analisis": {x: a.get(x) for x in ("frases", "calidad")}, "hoja": a.get("hoja", "")}})
+        except Exception as exc:  # noqa: BLE001
+            log(f"No pude analizar {f.name}: {exc}")
     ESTADO_COMPU["texto"] = "Lista"
-    r = of.post("carpetas", {"carpetas": envio, "ruta": str(CLIPS), "musica": musica, "lugares": lugares()}, timeout=60)
-    _ultimo_reporte.update(firma=resumen, t=time.time(), con_miniatura=set(r.get("con_miniatura") or []),
-                           con_analisis=set(r.get("con_analisis") or []))
+
+
+def elegir_carpeta(pedido: str) -> None:
+    """La oficina pidió elegir una carpeta: se abre en esta compu la ventana normal de Windows para escogerla."""
+    cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+    ruta, error = "", ""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        raiz = tk.Tk()
+        raiz.withdraw()
+        raiz.attributes("-topmost", True)  # que salga encima de todo
+        raiz.update()
+        inicio = Path(os.environ.get("USERPROFILE") or Path.home()) / "Desktop"
+        ruta = filedialog.askdirectory(parent=raiz, title="Sala de edición: elige la carpeta con tus clips",
+                                       initialdir=str(inicio if inicio.is_dir() else Path.home()), mustexist=True) or ""
+        raiz.destroy()
+    except Exception as exc:  # noqa: BLE001
+        error = f"No pude abrir la ventana para elegir carpeta: {exc}"[:200]
+        if WINDOWS:  # respaldo: la ventana de Windows (sin tkinter), con PowerShell
+            try:
+                script = ("Add-Type -AssemblyName System.Windows.Forms;"
+                          "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
+                          "$d.Description = 'Sala de edicion: elige la carpeta con tus clips';"
+                          "$f = New-Object System.Windows.Forms.Form; $f.TopMost = $true;"
+                          "if ($d.ShowDialog($f) -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }")
+                r = _PopenOriginal(["powershell", "-NoProfile", "-STA", "-Command", script], stdout=subprocess.PIPE,
+                                   creationflags=0x08000000, text=True)  # sin consola, pero la ventana sí se ve
+                ruta = (r.communicate(timeout=600)[0] or "").strip()
+                error = ""
+            except Exception as exc2:  # noqa: BLE001
+                error = f"No pude abrir la ventana para elegir carpeta: {exc2}"[:200]
+        if error:
+            log(error)
+    if ruta and WINDOWS:
+        ruta = ruta.replace("/", "\\")
+    try:
+        Oficina(cfg["servidor"], cfg["token"]).post("carpeta_elegida", {"id": pedido, "ruta": ruta, "error": error}, timeout=20)
+    except requests.RequestException as exc:
+        log(f"No pude avisar qué carpeta elegiste: {exc}")
 
 
 def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
@@ -404,14 +464,16 @@ def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     editor_libre.analizar = analizar  # para saltarse partes movidas/borrosas
     par, tid = t["parametros"], t["id"]
     if par.get("ruta"):  # tu propia carpeta (fuera de la sala)
-        clips = Path(par["ruta"])
+        clips = Path(str(par["ruta"]).strip().strip('"').strip())
         if not clips.is_dir():
             raise RuntimeError(f"No encontré tu carpeta {par['ruta']} en esta compu.")
     else:
         clips = CLIPS / _limpio(par["carpeta"])
         clips.mkdir(parents=True, exist_ok=True)
+    musica_nueva = set(par.get("musica_entradas") or [])
+    MUSICA.mkdir(parents=True, exist_ok=True)
     for e in t["entradas"]:  # clips que subiste desde la oficina: quedan en la carpeta de tu compu
-        destino = clips / e["nombre"]
+        destino = (MUSICA if e["nombre"] in musica_nueva else clips) / e["nombre"]
         if not destino.exists() or destino.stat().st_size != e.get("bytes"):
             avance(f"Bajando {e['nombre']}", 0.01)
             of.bajar(tid, e["n"], destino)
@@ -536,7 +598,7 @@ def trabajar() -> None:
         of2 = Oficina(cfg["servidor"], cfg["token"])
         while True:
             try:
-                of2.post("latido", {**datos, "libre": False, "estado": ESTADO_COMPU["texto"]}, timeout=20)
+                of2.post("latido", {**datos, "libre": False, "pulso": True, "estado": ESTADO_COMPU["texto"]}, timeout=20)
             except (requests.RequestException, ValueError):
                 pass
             except SystemExit as exc:
@@ -559,9 +621,8 @@ def trabajar() -> None:
         while True:
             pedido["evento"].wait()
             pedido["evento"].clear()
-            listo.wait()
-            try:
-                reportar_carpetas(of3, *pedido["carpetas"])
+            try:  # la lista de clips va al momento; el análisis, cuando el oído ya está listo
+                reportar_carpetas(of3, *pedido["carpetas"], analizar_ahora=listo.is_set())
             except Exception as exc:  # noqa: BLE001 — las carpetas nunca deben frenar la edición
                 log(f"No pude revisar las carpetas de clips: {exc}")
                 ESTADO_COMPU["texto"] = "Lista"
@@ -576,6 +637,8 @@ def trabajar() -> None:
         try:
             r = of.post("latido", {**datos, "libre": listo.is_set(), "estado": ESTADO_COMPU["texto"]}, timeout=20)
             espera = 5
+            if r.get("pedir_carpeta"):  # «📂 Elegir carpeta…» desde la oficina
+                threading.Thread(target=elegir_carpeta, args=(r["pedir_carpeta"]["id"],), daemon=True).start()
             if "carpetas" in r and not pedido["evento"].is_set():
                 pedido["carpetas"] = (r["carpetas"], r.get("proyectos"))
                 pedido["evento"].set()

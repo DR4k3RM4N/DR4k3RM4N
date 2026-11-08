@@ -42,6 +42,8 @@ def respuesta_schema(con_plan: bool) -> dict:
         "cambios": {"type": "array", "items": {"type": "string"},
                     "description": "si accion=editar: lista corta de lo que hiciste/cambiaste en esta versión"},
         "no_puedo": {"type": "string", "description": "lo que pidió y NO se puede hacer (o vacío)"},
+        "buscar_musica": {"type": "string", "description": "si quiere música y no hay una buena en su carpeta (o pide "
+                          "otra): 3 a 6 palabras EN INGLÉS para buscar música libre, ej. 'upbeat acoustic travel'; si no, vacío"},
     }
     if con_plan:
         props["plan"] = PLAN_SCHEMA
@@ -198,7 +200,9 @@ class Proyectos:
             if not p:
                 return {"error": "No encontré ese proyecto."}
             t = self.trabajos.get(p.get("trabajo") or "")
+            error_carpeta = ((self.locales.get(p.get("compu") or "") or {}).get("errores") or {}).get(self.clave(p))
             return {**{k: v for k, v in p.items()}, "clips": self.clips(p), "musica": self.musica(p), "clave": self.clave(p),
+                    "error_carpeta": error_carpeta,
                     "editor": self._nombre_editor(p.get("encargado")), "paso": t.get("paso") if t else "",
                     "avance": t.get("avance") if t else 0}
 
@@ -340,7 +344,10 @@ class Proyectos:
                 [*imagenes, {"type": "text", "text":
                 f"Proyecto: {p['nombre']}\nFormato: {p.get('formato') or 'no lo ha dicho'}\n"
                 "Clips (usa exactamente estos nombres en el plan):\n" + "\n".join(fichas) + "\n"
-                f"Música disponible (carpeta Musica): {json.dumps(self.musica(p), ensure_ascii=False)}\n"
+                f"Música en su carpeta Musica: {json.dumps(self.musica(p), ensure_ascii=False)}\n"
+                + (f"Música libre que ya le encontraste (úsala con archivo 'opcion:N'): "
+                   + "; ".join(f"opcion:{o['n']} «{o['titulo']}» de {o['autor']} ({o['segundos']} s)" for o in p.get("musica_opciones") or []) + "\n"
+                   if p.get("musica_opciones") else "") +
                 f"Plan de la última versión: {json.dumps(p.get('plan'), ensure_ascii=False) if p.get('plan') else 'todavía no hay'}\n"
                 f"Conversación:\n" + "\n".join(historial) + f"\n\nNuevo mensaje de Miguel: «{texto}»\n\n"
                 "Reglas: si no sabes si es vertical u horizontal y no se deduce, accion='preguntar' y pregúntalo. Si no hay clips, "
@@ -348,10 +355,11 @@ class Proyectos:
                 "para correcciones cambia SOLO lo que pidió y deja lo demás como en el plan anterior. Si solo platica, accion='nada'. "
                 "Para elegir lo mejor: mira los cuadros y la calidad; si repitió algo, usa la última toma buena (desde/hasta "
                 "con los tiempos de 'Dice'); evita partes movidas/borrosas (o activa saltar_malas/estabilizar). Si pide "
-                "música: elige una de la lista y pon reducir_ruido=true; si el ruido de fondo molesta, audio_original="
-                "'solo_voz' (o 'silenciar' si no habla). Si no hay música en la lista, dile que ponga MP3 en la carpeta "
-                "Musica. En 'cambios' explica en frases cortas qué hiciste. Si accion no es 'editar', manda un plan "
-                "cualquiera válido (se ignora)."}],
+                "música: usa una de su carpeta o una opción ya encontrada ('opcion:N'); si no hay ninguna que quede o pide "
+                "otra, llena buscar_musica (en inglés) y en el plan pon musica.archivo='opcion:1'. Con música pon "
+                "reducir_ruido=true; si el ruido de fondo molesta, audio_original='solo_voz' (o 'silenciar' si no habla). "
+                "En 'cambios' explica en frases cortas qué hiciste. Si accion no es 'editar', manda un plan cualquiera "
+                "válido (se ignora)."}],
                 respuesta_schema(True), tarea="sala", effort="medium", que="editor de la sala")
         if r.get("formato") in ("vertical", "horizontal"):
             p["formato"] = r["formato"]
@@ -361,10 +369,21 @@ class Proyectos:
         if r.get("no_puedo"):
             texto_resp += f"\n⚠️ Eso no lo puedo hacer: {r['no_puedo']}"
         plan = r.get("plan") or {}
-        musica = (plan.get("musica") or {}).get("archivo")
-        if r.get("accion") == "editar" and musica and musica not in self.musica(p):
+        if r.get("buscar_musica"):
+            self._buscar_musica(p, r["buscar_musica"], quien)
+        musica = (plan.get("musica") or {}).get("archivo") or ""
+        extra_musica = []
+        if r.get("accion") == "editar" and musica.startswith("opcion:"):
+            try:
+                nombre, ruta_m, o = self._bajar_opcion(p, int(musica.split(":")[1] or 1))
+                plan["musica"]["archivo"], extra_musica = nombre, [ruta_m]
+                texto_resp += f"\n🎵 Música: «{o['titulo']}» de {o['autor']}." + (f"\n📝 Crédito para la descripción: {o['credito']}" if o["credito"] else "")
+            except Exception as exc:  # noqa: BLE001
+                plan["musica"] = {"archivo": "", "volumen": 0.15}
+                texto_resp += f"\n🎵 No pude bajar esa música ({str(exc)[:80]}); va sin música."
+        elif r.get("accion") == "editar" and musica and musica not in self.musica(p):
             plan["musica"] = {"archivo": "", "volumen": 0.15}
-            texto_resp += "\n🎵 No encontré esa canción: pon tus MP3 en la carpeta Musica de la sala en tu compu y me dices."
+            texto_resp += "\n🎵 No encontré esa canción: pídeme que busque música libre o pon tus MP3 en la carpeta Musica."
         self._decir(p, quien, texto_resp)
         if r.get("accion") == "editar":
             nombres = {x["nombre"] for x in clips}
@@ -372,20 +391,61 @@ class Proyectos:
             if not plan["clips"]:
                 return self._decir(p, quien, "No encontré clips para usar. Pásalos a la carpeta o súbelos y me dices.")
             plan["formato"] = plan.get("formato") or p.get("formato") or "vertical"
-            self.lanzar_edicion(p, plan)
+            self.lanzar_edicion(p, plan, extra_musica)
 
-    def lanzar_edicion(self, p: dict, plan: dict) -> None:
+    def _buscar_musica(self, p: dict, consulta: str, quien: str) -> None:
+        """Busca música libre (Openverse) y te enseña 3 opciones en el chat para escucharlas."""
+        try:
+            if self.demo:
+                opciones = [{"n": i, "titulo": f"Pista de prueba {i}", "autor": "Demo", "licencia": "cc0", "version": "", "url": "",
+                             "pagina": "", "segundos": 60, "fuente": "demo", "id": f"demo{i}", "credito": ""} for i in (1, 2, 3)]
+            else:
+                import musica_libre
+                total = sum(x.get("segundos") or 0 for x in self.clips(p))
+                opciones = musica_libre.buscar(consulta, total)
+        except Exception as exc:  # noqa: BLE001
+            return self._decir(p, quien, f"🎵 No pude buscar música ahorita ({str(exc)[:80]}).")
+        if not opciones:
+            return self._decir(p, quien, f"🎵 No encontré música libre para «{consulta}». Dime otro estilo.")
+        p["musica_opciones"] = opciones
+        self._decir(p, quien, f"🎵 Encontré estas pistas libres para «{consulta}» (se pueden usar con monetización). "
+                              "Escúchalas y dime «usa la 2» si prefieres otra:", musica=opciones)
+
+    def _bajar_opcion(self, p: dict, n: int) -> tuple[str, str, dict]:
+        opciones = p.get("musica_opciones") or []
+        o = next((x for x in opciones if x["n"] == n), opciones[0] if opciones else None)
+        if not o:
+            raise RuntimeError("no hay opciones de música")
+        carpeta = SALIDA / p["id"] / "musica"
+        if self.demo:
+            import subprocess
+            carpeta.mkdir(parents=True, exist_ok=True)
+            nombre = f"pista-demo-{o['n']}.mp3"
+            if not (carpeta / nombre).exists():
+                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"sine=frequency={200 + 60 * o['n']}:duration=40",
+                                "-c:a", "libmp3lame", str(carpeta / nombre)], check=True)
+        else:
+            import musica_libre
+            nombre = musica_libre.descargar(o, carpeta)
+        with self.lock:
+            if o.get("credito"):
+                p.setdefault("creditos", [])
+                if o["credito"] not in p["creditos"]:
+                    p["creditos"].append(o["credito"])
+        return nombre, str(carpeta / nombre), o
+
+    def lanzar_edicion(self, p: dict, plan: dict, extra_musica: list | None = None) -> None:
         n = len(p["versiones"]) + 1
         servidor = SALIDA / p["id"] / "clips"
         entradas = [str(f) for f in sorted(servidor.iterdir())] if servidor.exists() else []
         usados = {c["archivo"] for c in plan["clips"]}
-        entradas = [e for e in entradas if Path(e).name in usados]
+        entradas = [e for e in entradas if Path(e).name in usados] + list(extra_musica or [])
         (SALIDA / p["id"]).mkdir(parents=True, exist_ok=True)
         r = self.crear({"tipo": "libre", "origen": "sala", "etiqueta": f"{p['nombre']} · v{n}", "entradas": entradas,
                         "salida": str(SALIDA / p["id"]), "compu": p.get("compu") or None,
                         "local": {"carpeta": p["carpeta"]},
                         "parametros": {"plan": plan, "version": n, "proyecto": p["id"], "carpeta": p["carpeta"],
-                                       "ruta": p.get("ruta", "")}})
+                                       "ruta": p.get("ruta", ""), "musica_entradas": [Path(m).name for m in extra_musica or []]}})
         if "error" in r:
             return self._decir(p, self.editor_id(p["encargado"]) if p.get("encargado") else "sala", r["error"])
         with self.lock:
@@ -452,9 +512,14 @@ class Proyectos:
                 base["subtitulos"] = {**base["subtitulos"], "tamano": "grande"}
         if not formato:
             return {"respuesta": "¿Lo quieres vertical (TikTok/Reels) u horizontal (YouTube)? (demo)", "accion": "preguntar",
-                    "formato": "", "plan": base, "cambios": [], "no_puedo": ""}
+                    "formato": "", "plan": base, "cambios": [], "no_puedo": "", "buscar_musica": ""}
         if not clips:
             return {"respuesta": "Pásame los clips a la carpeta y me avisas. (demo)", "accion": "nada", "formato": formato, "plan": base,
-                    "cambios": [], "no_puedo": ""}
+                    "cambios": [], "no_puedo": "", "buscar_musica": ""}
+        pide_musica = "música" in t or "musica" in t
+        m = re.search(r"usa la (?:música |musica )?(\d)", t)
+        if pide_musica or m:
+            base["musica"] = {"archivo": f"opcion:{m.group(1) if m else 1}", "volumen": 0.15}
         return {"respuesta": f"Va, lo armo {formato} con {len(clips)} clips. (demo)", "accion": "editar", "formato": formato, "plan": base,
-                "cambios": ["Quité silencios y partes movidas", "Subtítulos " + base["subtitulos"]["tamano"]], "no_puedo": ""}
+                "cambios": ["Quité silencios y partes movidas", "Subtítulos " + base["subtitulos"]["tamano"]], "no_puedo": "",
+                "buscar_musica": "upbeat travel" if pide_musica and not m else ""}

@@ -487,3 +487,10 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .linea-tiempo.grande { height: 10px; margin: 6px 0 2px; }
 @media (max-width: 900px) { .proyecto-ventana .pv-cuerpo { grid-template-columns: 1fr; } }
 .nuevo-proyecto[hidden] { display: none; }
+
+.opciones-musica { display: grid; gap: 6px; margin-top: 6px; }
+.pista-musica { display: grid; gap: 4px; padding: 6px; border-radius: 8px; background: rgba(0,0,0,.2); }
+.pista-musica small { color: var(--suave); }
+.pista-musica audio { width: 100%; height: 32px; }
+.creditos summary { cursor: pointer; font-size: 13px; }
+#np-elegir[hidden] { display: none; }

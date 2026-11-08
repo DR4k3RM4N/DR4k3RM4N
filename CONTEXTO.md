@@ -209,3 +209,11 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   `proyecto:<id>`; versiones en <ruta>\Ediciones. "Compu desconectada": compu.py ahora manda un pulso aparte cada 10 s,
   revisa carpetas/analiza clips y prepara el oído en hilos aparte, se reinicia al actualizarse con Popen+os._exit (execv
   fallaba con espacios en Windows) y reporta `estado` («Analizando…», «Preparando el oído…») que se ve en el monitor.
+- Nov 2026 (4): "📂 Elegir carpeta…": la oficina pide a la compu (`/api/elegir_carpeta` → latido normal, no el pulso →
+  `compu.elegir_carpeta`) que abra la ventana de Windows (tkinter askdirectory; respaldo PowerShell FolderBrowserDialog)
+  y la ruta vuelve sola. "📤 Subir una carpeta" (webkitdirectory) en la ventana del proyecto. Clips de la ruta: la compu
+  manda la lista con miniaturas al momento y analiza después (antes esperaba al oído → no salían). Errores de carpeta se
+  ven en el proyecto. Música libre: `salaedicion/musica_libre.py` con Openverse (sin clave, license_type=commercial,
+  modification, category=music); Pixabay NO tiene API de música. El editor llena `buscar_musica` (inglés), la sala enseña
+  3 opciones en el chat (reproductor + "Usar esta" → "usa la música N"), baja la elegida (opcion:N) y va a la carpeta
+  Musica de la compu; créditos CC BY en el proyecto. No probado contra Openverse real (sin red aquí).

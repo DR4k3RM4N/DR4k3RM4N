@@ -1050,7 +1050,7 @@
   // Ventana de un proyecto: chat con su editor, versiones y clips
   let proyectoSala = null, versionVista = null;
   const SUGERENCIAS = ["Hazlo vertical con subtítulos", "Horizontal para YouTube", "Que dure 30 segundos", "Subtítulos más grandes",
-                       "Quita los silencios", "Ponle música bajita", "Más rápido al inicio", "Otra vez"];
+                       "Quita los silencios", "Búscame música alegre", "Quita el ruido de fondo", "Estabiliza las tomas movidas", "Otra vez"];
   async function abrirProyectoSala(pid) {
     try { proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(pid)}`); } catch (err) { return alert(err.message); }
     versionVista = null;
@@ -1081,7 +1081,10 @@
         ${p.formato ? ` · ${p.formato === "vertical" ? "▯ vertical" : "▭ horizontal"}` : ""} · ${esc(ESTADO_PROYECTO[p.estado] || p.estado)}
         <button type="button" class="btn btn-mini" data-borrar-proyecto>Borrar proyecto</button></p>
       ${p.estado === "editando" ? `<div class="linea-tiempo grande"><b style="width:${av}%"></b></div><p class="pista">✂️ ${esc(p.paso || "Editando")} · ${av} %</p>` : ""}
-      ${p.error ? `<p class="error">${esc(p.error)}</p>` : ""}`;
+      ${p.error ? `<p class="error">${esc(p.error)}</p>` : ""}
+      ${p.error_carpeta ? `<p class="error">📁 ${esc(p.error_carpeta)}</p>` : ""}
+      ${(p.creditos || []).length ? `<details class="creditos"><summary>📝 Créditos de música para la descripción</summary>
+        <div class="copiable">${p.creditos.map(esc).join("<br>")}</div></details>` : ""}`;
     $("#pv-editor").textContent = p.editor;
     const vs = p.versiones || [], v = vs.find((x) => x.n === versionVista) || vs[vs.length - 1];
     const ruta = (f) => `/sala/salida/${encodeURIComponent(p.id)}/${encodeURIComponent(f)}`;
@@ -1102,6 +1105,7 @@
           <figcaption><span class="nombre-clip" title="${esc(x.nombre)}">${k + 1}. ${esc(x.nombre)}</span><small>${x.segundos ? `${esc(x.segundos)} s · ` : ""}${esc(x.mb)} MB</small></figcaption>
         </figure>`).join("")}</div>
       <label class="btn btn-mini subir">📤 Subir clips<input type="file" accept="video/*" multiple hidden data-subir-sala></label>
+      <label class="btn btn-mini subir">📤 Subir una carpeta<input type="file" webkitdirectory multiple hidden data-subir-sala></label>
       <span id="pv-subiendo" class="pista"></span>
       ${(p.musica || []).length ? `<p class="pista">🎵 Música disponible: ${p.musica.map(esc).join(", ")}</p>` : `<p class="pista">🎵 Para música, pon tus canciones en la carpeta <b>Musica</b> de la sala en tu compu.</p>`}`;
     if ($("#pv-clips").dataset.html !== htmlClips) { $("#pv-clips").innerHTML = htmlClips; $("#pv-clips").dataset.html = htmlClips; }
@@ -1129,6 +1133,11 @@
     const b = e.target.closest("button");
     if (!b || !proyectoSala || !$("#pv-cabeza")) return;
     if (b.dataset.sugerencia) { $("#pv-texto").value = b.dataset.sugerencia; $("#pv-texto").focus(); }
+    if (b.dataset.usarMusica) {
+      b.disabled = true;
+      await salaApi("/api/chat", { proyecto: proyectoSala.id, texto: `usa la música ${b.dataset.usarMusica}` }).catch((err) => alert(err.message));
+      proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}`); pintarProyectoSala();
+    }
     if (b.dataset.version) { versionVista = Number(b.dataset.version); $("#pv-video").innerHTML = ""; pintarProyectoSala(); }
     if (b.dataset.copiarRutaProy) navigator.clipboard?.writeText(b.dataset.copiarRutaProy).then(() => { b.textContent = "¡Copiada!"; });
     if (b.dataset.borrarProyecto !== undefined && confirm(`¿Borrar el proyecto «${proyectoSala.nombre}»? (Los clips de tu compu no se tocan)`)) {
@@ -1139,7 +1148,8 @@
   $("#modal-cuerpo").addEventListener("change", async (e) => {
     const input = e.target.closest("[data-subir-sala]");
     if (!input || !proyectoSala) return;
-    const archivos = [...input.files];
+    const archivos = [...input.files].filter((f) => /\.(mp4|mov|m4v|webm|3gp|mkv)$/i.test(f.name));
+    if (!archivos.length) return alert("En esa carpeta no hay videos.");
     for (const [k, f] of archivos.entries()) {
       await new Promise((listo) => {
         const xhr = new XMLHttpRequest();
@@ -1190,7 +1200,8 @@
         <form id="nuevo-proyecto" class="tarjeta nuevo-proyecto" hidden>
           <input id="np-nombre" maxlength="60" placeholder="Nombre (ej. Viaje Monterrey)">
           <select id="np-donde" aria-label="En qué compu"></select>
-          <select id="np-carpeta" aria-label="Qué carpeta"></select>
+          <div class="fila"><select id="np-carpeta" aria-label="Qué carpeta"></select>
+            <button type="button" class="btn btn-mini" id="np-elegir" title="Abre en tu compu la ventana de Windows para escoger la carpeta">📂 Elegir carpeta…</button></div>
           <input id="np-ruta" maxlength="300" placeholder="Pega la ruta, ej. C:\\Users\\Miguel\\Desktop\\Viaje" hidden>
           <small class="pista" id="np-ayuda"></small>
           <button class="btn btn-primario" type="submit">Crear</button>
@@ -1204,12 +1215,18 @@
   const colorEditor = (q) => q === "jefe" ? "#cbd5e1" : (estadoSala?.editores || []).find((e) => e.id === q)?.color || "#a78bfa";
   const lineaChat = (m) => `<li class="${m.quien === "jefe" ? "mio" : ""}"><b style="color:${colorEditor(m.quien)}">${esc(nombreEditor(m.quien))}</b>
     <span>${esc(m.texto)}</span>${m.proyecto ? ` <button type="button" class="btn btn-mini" data-abrir-sala="${esc(m.proyecto)}">Abrir →</button>` : ""}
+    ${(m.musica || []).length ? `<div class="opciones-musica">${m.musica.map((o) => `<div class="pista-musica">
+        <b>${o.n}. ${esc(o.titulo)}</b> <small>de ${esc(o.autor)} · ${o.segundos ? `${o.segundos} s · ` : ""}${esc((o.licencia || "").toUpperCase())}${o.fuente ? ` · ${esc(o.fuente)}` : ""}</small>
+        ${o.url ? `<audio controls preload="none" src="${esc(o.url)}"></audio>` : ""}
+        <span class="fila"><button type="button" class="btn btn-mini" data-usar-musica="${o.n}">🎵 Usar esta</button>
+        ${o.pagina ? `<a class="btn btn-mini" href="${esc(o.pagina)}" target="_blank" rel="noopener">Ver página</a>` : ""}</span></div>`).join("")}</div>` : ""}
     <small>${hora(m.t)}</small></li>`;
   // Al crear un proyecto en una compu: carpeta nueva en la sala, una carpeta que ya tienes, o pegar la ruta
   function carpetasDeCompu() {
     const donde = $("#np-donde").value, sel = $("#np-carpeta");
     if (!sel) return;
     sel.hidden = !donde;
+    $("#np-elegir").hidden = !donde;
     const lugares = estadoSala?.locales?.[donde]?.lugares || [];
     const firma = donde + "|" + lugares.map((l) => l.ruta).join("|");
     if (sel.dataset.firma !== firma) {
@@ -1224,6 +1241,33 @@
     $("#np-ayuda").textContent = !donde ? "Tus clips se suben al servidor desde la ventana del proyecto."
       : sel.value === "" ? "Se crea la carpeta en Videos → Sala de edicion de esa compu."
       : "Tus clips se quedan donde están; las versiones caen en su subcarpeta «Ediciones».";
+  }
+  // «📂 Elegir carpeta…»: se abre en tu compu la ventana de Windows para escogerla y la ruta llega sola
+  async function elegirCarpetaEnCompu(boton) {
+    const compu = $("#np-donde").value;
+    if (!compu) return;
+    boton.disabled = true;
+    const ayuda = $("#np-ayuda");
+    try {
+      const { id } = await salaApi("/api/elegir_carpeta", { compu });
+      ayuda.textContent = "👀 Mira tu compu: se abre una ventana para elegir la carpeta (puede tardar unos segundos)…";
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const x = await salaApi(`/api/elegir_carpeta/${id}`);
+        if (x.estado === "elegida") {
+          const sel = $("#np-carpeta");
+          sel.value = [...sel.options].some((o) => o.value === x.ruta) ? x.ruta : "__otra";
+          $("#np-ruta").value = x.ruta;
+          if (!$("#np-nombre").value) $("#np-nombre").value = x.ruta.replace(/\\/g, "/").split("/").pop();
+          carpetasDeCompu();
+          ayuda.textContent = `✔ Elegiste ${x.ruta}. Dale «Crear».`;
+          break;
+        }
+        if (x.estado === "cancelada") { ayuda.textContent = x.error || "No elegiste carpeta."; break; }
+        if (i === 89) ayuda.textContent = "Tu compu no abrió la ventana. ¿Está prendida y con la sala actualizada?";
+      }
+    } catch (err) { alert(err.message); }
+    boton.disabled = false;
   }
   const ESTADO_PROYECTO = { esperando: "Esperando tus clips/instrucciones", editando: "✂️ Editando", listo: "✔ Versión lista", error: "Con problema" };
 
@@ -1330,6 +1374,7 @@
     const b = e.target.closest("button");
     if (!b) return;
     if (b.dataset.abrirSala) return abrirProyectoSala(b.dataset.abrirSala);
+    if (b.id === "np-elegir") return elegirCarpetaEnCompu(b);
     if (b.dataset.nuevoProyecto !== undefined) { $("#nuevo-proyecto").hidden = !$("#nuevo-proyecto").hidden; return $("#np-nombre").focus(); }
     if (b.dataset.abrirProducto) return abrirGuionTT(b.dataset.abrirProducto);
     try {
