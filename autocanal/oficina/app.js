@@ -1104,8 +1104,11 @@
           ${x.donde === "compu" ? `<img loading="lazy" alt="" src="/sala/api/miniatura/${encodeURIComponent(p.compu)}/${encodeURIComponent(p.clave)}/${encodeURIComponent(x.nombre)}">` : `<div class="sin-mini">☁️</div>`}
           <figcaption><span class="nombre-clip" title="${esc(x.nombre)}">${k + 1}. ${esc(x.nombre)}</span><small>${x.segundos ? `${esc(x.segundos)} s · ` : ""}${esc(x.mb)} MB</small></figcaption>
         </figure>`).join("")}</div>
-      <label class="btn btn-mini subir">📤 Subir clips<input type="file" accept="video/*" multiple hidden data-subir-sala></label>
-      <label class="btn btn-mini subir">📤 Subir una carpeta<input type="file" webkitdirectory multiple hidden data-subir-sala></label>
+      <div class="fila acciones-clips">
+        ${(estadoSala?.compus || []).length ? `<button type="button" class="btn btn-mini btn-primario" data-usar-carpeta>📂 Usar una carpeta de mi compu</button>` : ""}
+        <label class="btn btn-mini subir" title="Manda una copia de los videos al servidor">☁️ Subir clips al servidor<input type="file" accept="video/*" multiple hidden data-subir-sala></label>
+      </div>
+      <small class="pista" id="pv-carpeta-ayuda">${p.compu ? "Tus clips se quedan en tu compu: no se suben." : "«Usar una carpeta de mi compu» abre la ventana de Windows en tu compu para escogerla (sin subir nada)."}</small>
       <span id="pv-subiendo" class="pista"></span>
       ${(p.musica || []).length ? `<p class="pista">🎵 Música disponible: ${p.musica.map(esc).join(", ")}</p>` : `<p class="pista">🎵 Para música, pon tus canciones en la carpeta <b>Musica</b> de la sala en tu compu.</p>`}`;
     if ($("#pv-clips").dataset.html !== htmlClips) { $("#pv-clips").innerHTML = htmlClips; $("#pv-clips").dataset.html = htmlClips; }
@@ -1133,6 +1136,7 @@
     const b = e.target.closest("button");
     if (!b || !proyectoSala || !$("#pv-cabeza")) return;
     if (b.dataset.sugerencia) { $("#pv-texto").value = b.dataset.sugerencia; $("#pv-texto").focus(); }
+    if (b.dataset.usarCarpeta !== undefined) return usarCarpetaDeCompu(b);
     if (b.dataset.usarMusica) {
       b.disabled = true;
       await salaApi("/api/chat", { proyecto: proyectoSala.id, texto: `usa la música ${b.dataset.usarMusica}` }).catch((err) => alert(err.message));
@@ -1242,6 +1246,39 @@
       : sel.value === "" ? "Se crea la carpeta en Videos → Sala de edicion de esa compu."
       : "Tus clips se quedan donde están; las versiones caen en su subcarpeta «Ediciones».";
   }
+  // Ventana del proyecto: «📂 Usar una carpeta de mi compu» (se elige allá, no se sube nada)
+  async function usarCarpetaDeCompu(boton) {
+    const compus = (estadoSala?.compus || []).filter((c) => c.viva);
+    if (!compus.length) return alert("Ninguna compu de la sala está prendida.");
+    let compu = proyectoSala.compu && compus.some((c) => c.id === proyectoSala.compu) ? proyectoSala.compu : compus[0].id;
+    if (compus.length > 1) {
+      const lista = compus.map((c, k) => `${k + 1}. ${c.nombre}`).join("\n");
+      const n = Number(prompt(`¿En qué compu está la carpeta?\n${lista}`, String(compus.findIndex((c) => c.id === compu) + 1)));
+      if (!n || !compus[n - 1]) return;
+      compu = compus[n - 1].id;
+    }
+    boton.disabled = true;
+    const ayuda = $("#pv-carpeta-ayuda");
+    try {
+      const { id } = await salaApi("/api/elegir_carpeta", { compu });
+      ayuda.textContent = "👀 Mira tu compu: se abre una ventana para elegir la carpeta…";
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const x = await salaApi(`/api/elegir_carpeta/${id}`);
+        if (x.estado === "elegida") {
+          await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}/carpeta`, { compu, ruta: x.ruta });
+          proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}`);
+          $("#pv-clips").dataset.html = "";
+          pintarProyectoSala();
+          return;
+        }
+        if (x.estado === "cancelada") { ayuda.textContent = x.error || "No elegiste carpeta."; break; }
+        if (i === 89) ayuda.textContent = "Tu compu no abrió la ventana. ¿Está prendida y con la sala actualizada?";
+      }
+    } catch (err) { alert(err.message); }
+    boton.disabled = false;
+  }
+
   // «📂 Elegir carpeta…»: se abre en tu compu la ventana de Windows para escogerla y la ruta llega sola
   async function elegirCarpetaEnCompu(boton) {
     const compu = $("#np-donde").value;

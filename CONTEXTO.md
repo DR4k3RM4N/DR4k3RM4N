@@ -217,3 +217,6 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   modification, category=music); Pixabay NO tiene API de música. El editor llena `buscar_musica` (inglés), la sala enseña
   3 opciones en el chat (reproductor + "Usar esta" → "usa la música N"), baja la elegida (opcion:N) y va a la carpeta
   Musica de la compu; créditos CC BY en el proyecto. No probado contra Openverse real (sin red aquí).
+- Nov 2026 (5): Miguel NO quiere subir carpetas: quitado "Subir una carpeta" (webkitdirectory). En la ventana del proyecto
+  "📂 Usar una carpeta de mi compu" (ventana de Windows en la compu → `/api/proyecto/<id>/carpeta` {compu, ruta}); lo subido
+  al servidor de ese proyecto se borra. "☁️ Subir clips al servidor" queda solo para cuando la compu está apagada.

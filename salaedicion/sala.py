@@ -566,6 +566,9 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
             if ruta == "/api/proyecto":
                 r = sala.crear_proyecto(str(d.get("nombre", "")), str(d.get("donde", "")), ruta=str(d.get("ruta", ""))[:300])
                 return self._json(r, 400 if "error" in r else 200)
+            if ruta.startswith("/api/proyecto/") and ruta.endswith("/carpeta"):
+                r = sala.usar_carpeta(ruta.split("/")[3], str(d.get("compu", "")), str(d.get("ruta", ""))[:300])
+                return self._json(r, 400 if "error" in r else 200)
             if ruta.startswith("/api/proyecto/") and ruta.endswith("/borrar"):
                 r = sala.borrar_proyecto(ruta.split("/")[3])
                 return self._json(r, 400 if "error" in r else 200)

@@ -206,6 +206,24 @@ class Proyectos:
                     "editor": self._nombre_editor(p.get("encargado")), "paso": t.get("paso") if t else "",
                     "avance": t.get("avance") if t else 0}
 
+    def usar_carpeta(self, pid: str, compu: str, ruta: str) -> dict:
+        """El proyecto trabaja con una carpeta de tu compu (no se sube nada). Lo subido por error al servidor se borra."""
+        p = self.proyectos.get(pid)
+        if not p:
+            return {"error": "No encontré ese proyecto."}
+        ruta = (ruta or "").strip().strip('"').strip()
+        if compu not in self.compus or not ruta:
+            return {"error": "Elige la compu y la carpeta."}
+        if p["estado"] == "editando":
+            return {"error": "Espera a que termine la versión que está haciendo."}
+        with self.lock:
+            p.update(compu=compu, ruta=ruta, encargado=compu, error=None)
+            self._tocar()
+        shutil.rmtree(SALIDA / pid / "clips", ignore_errors=True)
+        self._decir(p, self.editor_id(compu), f"Listo: trabajo con tu carpeta {ruta} en {self._nombre_editor(compu)}. "
+                                              "Tus clips se quedan ahí; las versiones caen en su subcarpeta Ediciones.")
+        return {"ok": True}
+
     def borrar_proyecto(self, pid: str) -> dict:
         with self.lock:
             p = self.proyectos.pop(pid, None)
