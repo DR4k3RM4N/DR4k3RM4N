@@ -67,7 +67,11 @@ tienen trabajo, y **Paola (productora) le propone ideas al jefe y le pide su opi
   ya está publicada). WhatsApp Cloud API está programado (opcional).
 
 ## 4. Pendientes y problemas conocidos
-- **(Arreglo listo, nov 2026, sin tocar .htaccess)**: plugin `autocanal/wordpress/autocanal-conexion.php`; se baja en la
+- **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
+  Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes
+  de tiempo (WordPress lo trataba como visitante); el plugin 1.3 valida con `wp_authenticate_application_password`
+  en `rest_api_init`. WP_ESTADO sigue en draft salvo que Miguel lo cambie.
+- **(Arreglo, nov 2026, sin tocar .htaccess)**: plugin `autocanal/wordpress/autocanal-conexion.php`; se baja en la
   oficina (Proyectos → «Plugin para el blog») y se sube en wp-admin → Plugins → Añadir nuevo → Subir plugin. `blog.py`
   manda también la cabecera `X-AutoCanal-Auth`, que el plugin pasa a PHP_AUTH_USER/PW. Falta que Miguel lo instale.
 - **WordPress da 401 `rest_cannot_create`**: el hosting le quita el encabezado `Authorization` a las peticiones.
