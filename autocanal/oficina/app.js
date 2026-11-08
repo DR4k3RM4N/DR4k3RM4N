@@ -234,6 +234,7 @@
     if (nombre === "chat") $("#chat").scrollTop = $("#chat").scrollHeight;
     if (nombre === "equipo") pintarEquipo();
     if (nombre === "estilo") pintarEstilo();
+    if (nombre === "sala" && typeof pintarSala === "function") pintarSala();
   }
   document.querySelectorAll(".pestana").forEach((p) => p.addEventListener("click", () => abrirPestana(p.dataset.tab)));
 
@@ -348,9 +349,11 @@
   const equipoCompleto = () => [...estado.agentes, ...(window.Oficina.equipoTT?.() || [])];
   function equipoVisible() {
     const ala = window.Oficina.ala?.() || "todo";
+    if (ala === "edicion") return equipoCompleto().filter((a) => ["editor", "tt_editor", "jefe"].includes(a.id));
     return equipoCompleto().filter((a) => ala === "todo" || a.id === "jefe" || (ala === "tiktok") === esTT(a.id));
   }
-  const TITULO_ALA = { todo: "Todo el edificio", youtube: "▶ Equipo YouTube", tiktok: "🛒 Equipo TikTok Shop" };
+  const TITULO_ALA = { todo: "Todo el edificio", youtube: "▶ Equipo YouTube", tiktok: "🛒 Equipo TikTok Shop",
+                       edicion: "🎬 Los editores (y tus compus en la pestaña Sala)" };
   function estadoAgente(a) {
     const ts = tareasDe(a.id);
     if (ts.some((t) => t.estado === "trabajando")) return ["Trabajando", "trab"];
@@ -468,12 +471,13 @@
 
   $("#lienzo").addEventListener("click", (e) => {
     const id = window.Oficina.agenteEn(e.clientX, e.clientY);
-    if (id) verAgente(id);
+    if (id) return verAgente(id);
+    if (window.Oficina.compuEn(e.clientX, e.clientY)) abrirPestana("sala");
   });
   $("#lienzo").addEventListener("mousemove", (e) => {
     const id = window.Oficina.agenteEn(e.clientX, e.clientY);
     window.Oficina.encima(id);
-    $("#lienzo").style.cursor = id ? "pointer" : "default";
+    $("#lienzo").style.cursor = id || window.Oficina.compuEn(e.clientX, e.clientY) ? "pointer" : "default";
   });
   $("#lienzo").addEventListener("mouseleave", () => window.Oficina.encima(null));
 
@@ -858,8 +862,78 @@
       .catch(() => alert("No se pudo copiar; selecciónalo y cópialo a mano."));
   });
 
+  // ---------- Sala de edición (tercera oficina): tus compus editan en lugar del servidor ----------
+  let estadoSala = null, versionSala = -1, codigoSala = null;
+  async function consultarSala() {
+    try {
+      const r = await fetch("/sala/api/estado");
+      if (!r.ok) throw new Error();
+      const n = await r.json();
+      // cada consulta cambia "visto hace…": se repinta si cambió algo o cada ~15 s
+      if (n.version !== versionSala || !estadoSala || Date.now() - (estadoSala._pintado || 0) > 15000) {
+        versionSala = n.version; estadoSala = { ...n, _pintado: Date.now() }; window.Oficina.actualizarSala(n); pintarSala();
+      } else window.Oficina.actualizarSala(n);
+    } catch {
+      if (estadoSala !== null || versionSala === -1) { estadoSala = null; versionSala = -2; window.Oficina.actualizarSala(null); pintarSala(); }
+    }
+  }
+  const haceRato = (t) => { const s = Date.now() / 1000 - t; return s < 90 ? "hace un momento" : s < 3600 ? `hace ${Math.round(s / 60)} min` : s < 86400 ? `hace ${Math.round(s / 3600)} h` : `hace ${Math.round(s / 86400)} d`; };
+  const ESTADO_TRABAJO = { en_cola: "⏳ Esperando compu", asignado: "📥 Bajando clips", trabajando: "⚙️ Editando", listo: "✔ Listo",
+                           error: "✖ Falló (lo hizo el servidor)", cancelado: "↩ Lo hizo el servidor" };
+
+  function pintarSala() {
+    const cont = $("#sala-panel");
+    if (!cont) return;
+    if (!estadoSala) { cont.innerHTML = `<p class="vacio">La sala de edición está apagada en el servidor. Mientras, Cris edita en el servidor como siempre.</p>`; return; }
+    const compus = estadoSala.compus;
+    cont.innerHTML = `
+      <p class="pista">🎬 Tus compus editan en lugar del servidor (más rápido, con tu tarjeta de video y mejores subtítulos). Si están apagadas, edita el servidor: nada se detiene.</p>
+      ${compus.length ? compus.map((c) => `<article class="tarjeta compu">
+          <div class="cabeza"><h4>🖥️ ${esc(c.nombre)}</h4>
+            <span class="chip ${c.trabajo ? "chip-estado-revision" : c.viva ? "chip-estado-publicado" : ""}">${c.trabajo ? "Editando" : c.viva ? "Lista" : "Apagada"}</span></div>
+          ${c.trabajo ? `<p class="ahora-pc">⚙️ ${esc(c.trabajo.etiqueta)} · ${esc(c.trabajo.paso || "")} · <b>${Math.round((c.trabajo.avance || 0) * 100)} %</b></p>` : ""}
+          <p class="datos">${esc(c.gpu || "—")} · NVENC ${c.nvenc ? "sí" : "no"} · oído ${esc(c.oido || "—")} · ${c.editados || 0} videos editados${c.viva ? "" : ` · visto ${haceRato(c.ultimo)}`}</p>
+          <div><button class="btn btn-mini" data-quitar-compu="${esc(c.id)}">Quitar</button></div>
+        </article>`).join("") : `<p class="vacio">Todavía no hay compus en la sala.</p>`}
+      <article class="tarjeta">
+        <h4>➕ Agregar una compu (Windows)</h4>
+        <ol class="pasos-alta">
+          <li>En esa compu, abre tu oficina en el navegador y baja el instalador:<br>
+            <a class="btn btn-mini btn-primario" href="/sala/descargar/INSTALAR_SALA.bat" download>⬇️ INSTALAR_SALA.bat</a></li>
+          <li>Ábrelo con doble clic. Si Windows dice "Windows protegió su PC": <b>Más información → Ejecutar de todas formas</b>. Instala lo que falte (tarda unos minutos la primera vez).</li>
+          <li>Cuando te pida el código, genéralo aquí (sirve 15 min y una sola vez):<br>
+            ${codigoSala && codigoSala.vence * 1000 > Date.now() ? `<span class="codigo-sala">${esc(codigoSala.codigo.slice(0, 3))} ${esc(codigoSala.codigo.slice(3))}</span>
+              <br><small>Dirección: <b>${esc(location.origin)}</b></small>` : `<button class="btn btn-mini" data-codigo-sala>🔑 Generar código</button>`}</li>
+          <li>Listo: en unos segundos aparece arriba y en la sala del edificio. Arranca sola cada que prendes la compu.</li>
+        </ol>
+      </article>
+      ${estadoSala.trabajos.length ? `<h4 class="seccion-mini">Últimos trabajos</h4><ul class="trabajos-sala">${estadoSala.trabajos.map((t) => `<li>
+          <b>${esc(t.etiqueta)}</b> · ${esc(ESTADO_TRABAJO[t.estado] || t.estado)}${t.inicio && t.fin ? ` · ${duracion(t.fin - t.inicio)}` : ""} · ${haceRato(t.creado)}
+          ${t.error ? `<br><small>${esc(t.error)}</small>` : ""}</li>`).join("")}</ul>` : ""}`;
+  }
+
+  $("#sala-panel").addEventListener("click", async (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    try {
+      if (b.dataset.codigoSala !== undefined) {
+        const r = await fetch("/sala/api/codigo", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        if (!r.ok) throw new Error("No pude generar el código.");
+        codigoSala = await r.json();
+        setTimeout(pintarSala, (codigoSala.vence * 1000 - Date.now()) + 500);
+      }
+      if (b.dataset.quitarCompu && confirm("¿Quitar esta compu de la sala? (Para volver a usarla hay que reinstalarla con un código nuevo)")) {
+        await fetch(`/sala/api/quitar/${encodeURIComponent(b.dataset.quitarCompu)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      }
+    } catch (err) { alert(err.message); }
+    pintarSala();
+    consultarSala();
+  });
+
   api("/api/estado").then(pintar).catch(() => {});
   conectar();
   consultarTT();
   setInterval(consultarTT, 2000);
+  consultarSala();
+  setInterval(consultarSala, 3000);
 })();

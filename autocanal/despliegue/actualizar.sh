@@ -23,6 +23,8 @@ if [ -n "$DOMINIO" ] && [ -f "$APP/despliegue/caddy.sh" ]; then bash "$APP/despl
 systemctl restart oficina
 # La oficina de TikTok Shop (ala derecha del edificio)
 if [ -f "$APP/despliegue/tienda.sh" ]; then bash "$APP/despliegue/tienda.sh"; fi
+# La Sala de edición (tus compus editan los videos)
+if [ -f "$APP/despliegue/sala.sh" ]; then bash "$APP/despliegue/sala.sh"; fi
 # Revisar que todo quedó prendido (la oficina y Caddy, que la deja entrar desde internet).
 sleep 3
 for servicio in oficina caddy; do

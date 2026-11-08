@@ -34,12 +34,16 @@ except ImportError:  # pragma: no cover
 from agentes import claude as ia  # noqa: E402
 from agentes import config  # noqa: E402
 
+import requests  # noqa: E402
+
 import cris  # noqa: E402
 import shop  # noqa: E402
 
 ESTADO = AQUI / "tienda_estado.json"
 ZONA = config.env("IDEAS_ZONA", "America/Mexico_City")
 LIMITE_DIARIO = float(config.env("LIMITE_DIARIO", "1") or 0)
+SALA_URL = config.env("SALA_URL", "http://127.0.0.1:8767").rstrip("/")  # sala de edición (tus compus)
+PUERTO = 8766
 
 EQUIPO = [
     # id, nombre, rol, color, peinado, qué hace
@@ -323,41 +327,24 @@ class Tienda:
                 t.update(paso=paso, avance=round(fraccion, 3))
                 self._tocar()
 
-        videos = []
+        trabajo = {"guion": g, "tomas": (p.get("tomas") or {}).get("tomas", []), "letras": letras, "modo": modo,
+                   "pista": pista, "archivos": {"tomas": {n: c["archivo"] for n, c in clips.get("tomas", {}).items()},
+                                                "completo": (clips.get("completo") or {}).get("archivo")}}
         for viejo in [*carpeta.glob("video_*"), *carpeta.glob("portada_*")]:  # que no queden videos de la edición anterior
             viejo.unlink(missing_ok=True)
+        videos = self._editar_en_compu(p, t, trabajo, carpeta, avance)  # primero tus compus; si no, el servidor
         try:
-            from agentes import cola_video
-            with cola_video.turno("Cris (TikTok Shop)", lambda texto: (avance(texto, 0.0), self.decir("tt_editor", texto))):
-                if not cris.whisper_disponible() and not self.demo:
-                    self.decir("tt_editor", "No tengo el oído instalado (Whisper): edito sin subtítulos esta vez.")
-                avance("Escuchando tus clips", 0.02)
-                for k, letra in enumerate(letras):
-                    if modo == "completo":
-                        piezas = cris.piezas_por_completo(carpeta / "clips" / clips["completo"]["archivo"], g, letra, pista)
-                    else:
-                        archivos = {n: carpeta / "clips" / c["archivo"] for n, c in clips.get("tomas", {}).items()}
-                        piezas = cris.piezas_por_tomas((p.get("tomas") or {}).get("tomas", []), archivos, letra, pista)
-                    if len(letras) > 1 and not any(x["bloque"] == f"gancho_{letra}" for x in piezas):
-                        continue  # de este gancho no hay toma: no se hace su video
-                    destino = carpeta / f"video_{letra}.mp4"
-                    base, parte = k / len(letras), 1 / len(letras)
-                    dur = cris.render(piezas, g, letra, destino, pista,
-                                      lambda paso, f, letra=letra, base=base, parte=parte:
-                                      avance(f"Gancho {letra}: {paso}", base + f * parte))
-                    videos.append({"gancho": letra, "video": destino.name, "segundos": round(dur, 1), "v": int(time.time())})
-                if not videos:  # no subió tomas de ningún gancho: un solo video con el cuerpo
-                    piezas = (cris.piezas_por_completo(carpeta / "clips" / clips["completo"]["archivo"], g, None, pista)
-                              if modo == "completo" else
-                              cris.piezas_por_tomas((p.get("tomas") or {}).get("tomas", []),
-                                                    {n: carpeta / "clips" / c["archivo"] for n, c in clips.get("tomas", {}).items()},
-                                                    None, pista))
-                    destino = carpeta / "video_cuerpo.mp4"
-                    dur = cris.render(piezas, g, None, destino, pista, avance)
-                    videos.append({"gancho": "", "video": destino.name, "segundos": round(dur, 1), "v": int(time.time())})
+            if not videos:
+                from agentes import cola_video
+                with cola_video.turno("Cris (TikTok Shop)", lambda texto: (avance(texto, 0.0), self.decir("tt_editor", texto))):
+                    if not cris.whisper_disponible() and not self.demo:
+                        self.decir("tt_editor", "No tengo el oído instalado (Whisper): edito sin subtítulos esta vez.")
+                    videos = cris.editar_todo(carpeta / "clips", trabajo, carpeta, avance)
         except Exception as exc:  # noqa: BLE001
             ia.contexto.tarea = None
             return fallo(t, "video", "tt_editor", exc)
+        for v in videos:
+            v["v"] = int(time.time())
         ia.contexto.tarea = None
         if cris.ultimo_error:
             self.decir("tt_editor", "No pude escuchar tus clips, así que esta vez van sin subtítulos karaoke. 😕")
@@ -388,7 +375,84 @@ class Tienda:
             p["videos"], p["estado"] = videos, "video_listo"
             self._tocar()
         self.poner("tt_disenadora", estado="libre")
-        self.decir("tt_disenadora", f"¡Listo, jefe! {'Tus ' + str(len(videos)) + ' videos' if len(videos) > 1 else 'Tu video'} de {p['nombre']} ya se pueden subir 🎬")
+        self.decir("tt_disenadora", f"¡Listo, jefe! Tus {len(videos)} videos de {p['nombre']} ya se pueden subir 🎬"
+                   if len(videos) > 1 else f"¡Listo, jefe! Tu video de {p['nombre']} ya se puede subir 🎬")
+
+    def _editar_en_compu(self, p: dict, t: dict, trabajo: dict, carpeta: Path, avance) -> list | None:
+        """Si una de tus compus de la sala de edición está prendida, edita ahí (más rápido, con tu tarjeta de video).
+        Si no hay compu, o falla, regresa None y edita el servidor: nada se detiene."""
+        try:
+            if not requests.get(f"{SALA_URL}/interno/disponible", params={"tipo": "cris"}, timeout=3).json().get("compus"):
+                return None
+        except (requests.RequestException, ValueError):
+            return None
+        archivos = trabajo["archivos"]
+        nombres = [archivos["completo"]] if trabajo["modo"] == "completo" else list(archivos["tomas"].values())
+        try:
+            tid = requests.post(f"{SALA_URL}/interno/trabajo", timeout=10, json={
+                "tipo": "cris", "origen": "tiktok", "etiqueta": p["nombre"], "parametros": trabajo,
+                "entradas": [str(carpeta / "clips" / n) for n in nombres if n], "salida": str(carpeta),
+                "clasificar": f"http://127.0.0.1:{PUERTO}/interno/clasificar/{p['id']}"}).json().get("id")
+        except (requests.RequestException, ValueError):
+            return None
+        if not tid:
+            return None
+        self.decir("tt_editor", "Le paso tus clips a la sala de edición: tu compu lo hace más rápido 🚀")
+
+        def cancelar(motivo: str):
+            try:
+                requests.post(f"{SALA_URL}/interno/cancelar/{tid}", json={}, timeout=5)
+            except requests.RequestException:
+                pass
+            self.poner("tt_editor", ubicacion="casa")
+            self.decir("tt_editor", f"{motivo} Lo edito aquí en el servidor.")
+
+        en_cola_desde, fallas, sala_vista = time.time(), 0, None
+        while True:
+            time.sleep(2)
+            try:
+                e = requests.get(f"{SALA_URL}/interno/trabajo/{tid}", timeout=5).json()
+                fallas = 0
+            except (requests.RequestException, ValueError):
+                fallas += 1
+                if fallas >= 8:
+                    return cancelar("Se perdió la sala de edición.")
+                continue
+            estado = e.get("estado")
+            if estado == "listo":
+                self.poner("tt_editor", ubicacion="casa")
+                videos = (e.get("resultado") or {}).get("videos") or []
+                if all((carpeta / v["video"]).exists() for v in videos) and videos:
+                    with self.lock:
+                        t["en"] = e.get("compu")
+                    return videos
+                return cancelar("La compu terminó pero no llegaron los videos.")
+            if estado in ("error", "cancelado"):
+                return cancelar(f"La compu no pudo ({(e.get('error') or '')[:90]}).")
+            if estado == "en_cola":
+                if time.time() - en_cola_desde > 90:
+                    return cancelar("Ninguna compu lo agarró.")
+                avance("Esperando a tu compu…", 0.0)
+                continue
+            en_cola_desde = time.time()
+            if e.get("slot") and e["slot"] != sala_vista:
+                sala_vista = e["slot"]
+                self.poner("tt_editor", ubicacion=f"visita:sala_{sala_vista}")
+            avance(f"En {e.get('compu') or 'tu compu'}: {e.get('paso') or 'editando'}", float(e.get("avance") or 0))
+
+    def clasificar(self, pid: str, datos: dict) -> dict:
+        """Lo pide la compu que edita un video completo: qué parte del guion es cada trozo (el gasto va al producto)."""
+        p = self.productos.get(pid)
+        if not p:
+            return {"error": "No encontré ese producto."}
+        ia.contexto.proyecto, ia.contexto.etapa = pid, "video"
+        ia.contexto.tarea = next((t for t in reversed(self.tareas) if t["proyecto"] == pid and t["etapa"] == "video"), None)
+        try:
+            return {"partes": cris.clasificar(datos.get("trozos") or [], datos.get("guion") or p["guion"])}
+        except ia.ErrorIA as exc:
+            return {"error": str(exc)}
+        finally:
+            ia.contexto.tarea = None
 
     def detalle(self, pid: str) -> dict:
         with self.lock:
@@ -581,6 +645,9 @@ def crear_servidor(tienda: Tienda, puerto: int) -> ThreadingHTTPServer:
             except json.JSONDecodeError:
                 return self._json({"error": "JSON inválido"}, 400)
             ruta = unquote(urlparse(self.path).path)
+            if ruta.startswith("/interno/clasificar/"):  # solo desde la sala (no pasa por internet)
+                r = tienda.clasificar(ruta.rsplit("/", 1)[-1], datos)
+                return self._json(r, 400 if "error" in r else 200)
             if ruta == "/api/producto":
                 r = tienda.nuevo_producto(datos)
             elif ruta.startswith("/api/producto/"):
@@ -597,6 +664,8 @@ def main() -> None:
     a.add_argument("--demo", action="store_true", help="simula Claude y Google")
     a.add_argument("--puerto", type=int, default=int(config.env("TIENDA_PUERTO", "8766") or 8766))
     args = a.parse_args()
+    global PUERTO
+    PUERTO = args.puerto
     if args.demo:
         activar_demo()
     servidor = crear_servidor(Tienda(args.demo), args.puerto)

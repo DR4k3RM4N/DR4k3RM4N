@@ -70,6 +70,8 @@ def _norm(t: str) -> str:
 
 # ---------- escuchar los clips (Whisper, gratis en el servidor) ----------
 _modelo = None
+# Cómo escucha Cris. En el servidor: CPU. En tus compus (sala de edición) se cambia a la tarjeta de video.
+OIDO = {"modelo": config.env("WHISPER_MODELO", "small") or "small", "dispositivo": "cpu", "computo": "int8", "hilos": 2}
 ultimo_error = ""  # si Whisper falla, Cris lo avisa y edita sin subtítulos
 
 
@@ -92,8 +94,8 @@ def transcribir(ruta: Path, pista: str = "") -> list[dict]:
     try:
         from faster_whisper import WhisperModel
         if _modelo is None:  # la primera vez baja el modelo (~500 MB con "small")
-            _modelo = WhisperModel(config.env("WHISPER_MODELO", "small") or "small", device="cpu", compute_type="int8",
-                                   cpu_threads=2)
+            _modelo = WhisperModel(OIDO["modelo"], device=OIDO["dispositivo"], compute_type=OIDO["computo"],
+                                   cpu_threads=OIDO["hilos"])
         segmentos, _ = _modelo.transcribe(str(ruta), language="es", word_timestamps=True, beam_size=2,
                                           initial_prompt=(pista[:600] or None), condition_on_previous_text=False)
         palabras = [{"w": w.word.strip(), "t": round(w.start, 3), "d": round(max(0.05, w.end - w.start), 3)}
@@ -308,6 +310,39 @@ def render(piezas: list[dict], guion: dict, letra: str | None, destino: Path, pi
         raise ErrorEdicion("ffmpeg falló al poner los textos: " + (r.stderr.strip().splitlines() or [""])[-1][:200])
     shutil.rmtree(trabajo, ignore_errors=True)
     return t0
+
+
+# ---------- todo el trabajo de Cris (igual en el servidor que en tus compus) ----------
+def editar_todo(carpeta_clips: Path, trabajo: dict, salida: Path, al_avanzar=None) -> list[dict]:
+    """trabajo = {guion, tomas, letras, modo, archivos: {tomas: {n: archivo}, completo: archivo}, pista}.
+    Deja video_X.mp4 (y su cuadro limpio para la portada) en `salida`. Un video por gancho con tomas."""
+    g, letras, modo, pista = trabajo["guion"], trabajo["letras"], trabajo["modo"], trabajo.get("pista", "")
+    archivos = trabajo.get("archivos") or {}
+    salida.mkdir(parents=True, exist_ok=True)
+    avance = al_avanzar or (lambda paso, f: None)
+
+    def piezas(letra):
+        if modo == "completo":
+            return piezas_por_completo(carpeta_clips / archivos["completo"], g, letra, pista)
+        return piezas_por_tomas(trabajo.get("tomas") or [],
+                                {n: carpeta_clips / a for n, a in (archivos.get("tomas") or {}).items()}, letra, pista)
+
+    avance("Escuchando tus clips", 0.02)
+    videos = []
+    for k, letra in enumerate(letras):
+        ps = piezas(letra)
+        if len(letras) > 1 and not any(x["bloque"] == f"gancho_{letra}" for x in ps):
+            continue  # de este gancho no hay toma: no se hace su video
+        destino = salida / f"video_{letra}.mp4"
+        base, parte = k / len(letras), 1 / len(letras)
+        dur = render(ps, g, letra, destino, pista,
+                     lambda paso, f, letra=letra, base=base, parte=parte: avance(f"Gancho {letra}: {paso}", base + f * parte))
+        videos.append({"gancho": letra, "video": destino.name, "segundos": round(dur, 1)})
+    if not videos:  # no hay tomas de ningún gancho: un solo video con el cuerpo
+        destino = salida / "video_cuerpo.mp4"
+        dur = render(piezas(None), g, None, destino, pista, avance)
+        videos.append({"gancho": "", "video": destino.name, "segundos": round(dur, 1)})
+    return videos
 
 
 # ---------- Vale: portada ----------

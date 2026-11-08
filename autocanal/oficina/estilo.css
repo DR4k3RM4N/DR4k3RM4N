@@ -51,6 +51,16 @@ button, input, textarea { font: inherit; color: inherit; }
 .escenario { position: relative; }
 #capas { position: absolute; top: 0; left: 0; pointer-events: none; overflow: hidden; }
 #capas [hidden] { display: none !important; }
+.nombre.pc { background: rgba(30, 16, 64, .85); }
+.compu { display: grid; gap: 4px; }
+.compu .datos { font-size: 12.5px; color: var(--suave); }
+.compu .ahora-pc { font-size: 13px; }
+.codigo-sala { font-family: var(--pixel); font-size: 34px; letter-spacing: 6px; color: var(--acento); margin: 6px 0; }
+.pasos-alta { padding-left: 18px; font-size: 13.5px; }
+.pasos-alta li { margin: 6px 0; }
+.trabajos-sala { list-style: none; padding: 0; font-size: 12.5px; }
+.trabajos-sala li { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+.nombre.pc.apagada { opacity: .65; }
 .alas { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; justify-content: center; }
 .ala {
   font-family: var(--pixel); font-size: 12px; padding: 6px 10px; border-radius: 8px; cursor: pointer;

@@ -3,9 +3,11 @@
   const K = 2; // densidad: cada "pixel" de diseño de muebles mide K pixeles reales; los personajes usan el detalle completo
   // El edificio: ala de YouTube (x 0–13), pasillo con el despacho del jefe (x 14–16) y ala de TikTok Shop (x 17–30).
   // Abajo (filas 10–14) el patio de descanso que comparten los dos equipos.
-  const COLS = 31, OFI = 10, ROWS = 15, TW = 32 * K, TH = 16 * K, MURO = 74, PAD = 16 * K;
-  const ALA_TT = 17, PASILLO = 14; // primera columna de cada zona
-  const MAMPARAS = [PASILLO, ALA_TT]; // muros de vidrio entre zonas (sobre la línea x = …)
+  // A la derecha de TikTok, la sala de edición (x 31–37): tus compus editan ahí.
+  const COLS = 38, OFI = 10, ROWS = 15, TW = 32 * K, TH = 16 * K, MURO = 74, PAD = 16 * K;
+  const ALA_TT = 17, PASILLO = 14, ALA_SALA = 31; // primera columna de cada zona
+  const MAMPARAS = [PASILLO, ALA_TT, ALA_SALA]; // muros de vidrio entre zonas (sobre la línea x = …)
+  const PCS = { 1: [32, 1], 2: [35, 1], 3: [32, 5], 4: [35, 5] }; // lugar de cada compu (escritorio de 2 casillas)
   const PUERTAS = new Set([6, 7]); // filas donde las mamparas tienen puerta
   const ANCHO = (COLS + ROWS) * TW / 2 + PAD * 2;
   const ALTO = MURO * K + (COLS + ROWS) * TH / 2 + PAD * 2 + 14 * K;
@@ -37,6 +39,7 @@
   };
   const CASA = { jefe: [15, 1] };
   const VISITA = { jefe: [15, 3] };
+  for (const [slot, [x, y]] of Object.entries(PCS)) VISITA[`sala_${slot}`] = [x + 1, y + 2]; // junto a la compu
   for (const [id, [x, y]] of Object.entries(ESCRITORIOS)) {
     CASA[id] = [x, y + 1];
     VISITA[id] = [x + 1, y + 1];
@@ -78,11 +81,14 @@
   // ala TikTok: estudio de grabación, esquina de descanso y plantas
   [[27, 2], [28, 2], [29, 3], [27, 4], [24, 0], [25, 0], [30, 5], [30, 6], [30, 7], [30, 8], [30, 9], [29, 8], [30, 0], [17, 9]]
     .forEach(([x, y]) => bloquear(x, y));
+  // sala de edición: escritorios de las compus y su rack
+  for (const [x, y] of Object.values(PCS)) { bloquear(x, y); bloquear(x + 1, y); }
+  [[37, 0], [37, 9], [31, 9]].forEach(([x, y]) => bloquear(x, y));
   // jardineras entre el edificio y el patio, con una entrada por zona
-  const ENTRADAS = new Set([6, 7, 15, 23, 24]);
+  const ENTRADAS = new Set([6, 7, 15, 23, 24, 34]);
   for (let x = 0; x < COLS; x++) if (!ENTRADAS.has(x)) bloquear(x, OFI);
   [[2, 12], [3, 12], [0, 11], [6, 13], [8, 11], [0, 14], [13, 14], [13, 11],
-   [19, 12], [20, 12], [23, 13], [25, 11], [30, 11], [17, 14], [30, 14]].forEach(([x, y]) => bloquear(x, y));
+   [19, 12], [20, 12], [23, 13], [25, 11], [30, 11], [17, 14], [30, 14], [36, 11], [33, 14], [37, 14]].forEach(([x, y]) => bloquear(x, y));
   // las mamparas de vidrio solo se cruzan por sus puertas
   const cruzaMampara = (p, n) => p[1] < OFI && p[0] !== n[0] && MAMPARAS.includes(Math.max(p[0], n[0])) && !PUERTAS.has(p[1]);
 
@@ -146,7 +152,7 @@
   function piso(estado, t) {
     for (let x = 0; x < COLS; x++) for (let y = 0; y < ROWS; y++) {
       if (y >= OFI) { // patio: pasto, con un camino de deck desde la puerta
-        const deck = ENTRADAS.has(x) || (y === 13 && ((x >= 4 && x <= 8) || (x >= 14 && x <= 16) || (x >= 21 && x <= 25)))
+        const deck = ENTRADAS.has(x) || (y === 13 && ((x >= 4 && x <= 8) || (x >= 14 && x <= 16) || (x >= 21 && x <= 25) || (x >= 32 && x <= 35)))
                      || (y === 12 && ((x >= 1 && x <= 4) || (x >= 18 && x <= 21)));
         const c = deck ? ((x + y) % 2 ? "#c79a6a" : "#bb8d5d") : ((x * 7 + y * 3) % 5 === 0 ? "#6fbf5f" : (x + y) % 2 ? "#7ccb6b" : "#74c263");
         poligono([iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)], c, deck ? "rgba(90,55,25,.25)" : "rgba(40,90,30,.18)");
@@ -158,6 +164,10 @@
         continue;
       }
       const celda = [iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)];
+      if (x >= ALA_SALA) { // sala de edición: piso oscuro tipo estudio, con rejilla
+        poligono(celda, (x + y) % 2 ? "#2a2e3a" : "#262a35", "rgba(120,140,255,.10)");
+        continue;
+      }
       if (x >= ALA_TT) { // ala TikTok: loseta clara
         poligono(celda, (x + y) % 2 ? "#e4e7ec" : "#d7dbe2", "rgba(90,100,120,.22)");
         continue;
@@ -177,7 +187,7 @@
       g.fillRect(Math.round(vx), Math.round(vy), 10, 1);
     }
     // escalones de las puertas al patio y tapetes de bienvenida
-    for (const [a, b, color] of [[6, 8, "#a16207"], [15, 16, "#7f1d1d"], [23, 25, "#ea580c"]]) {
+    for (const [a, b, color] of [[6, 8, "#a16207"], [15, 16, "#7f1d1d"], [23, 25, "#ea580c"], [34, 35, "#6d28d9"]]) {
       poligono([iso(a, OFI - 0.08), iso(b, OFI - 0.08), iso(b, OFI + 0.08), iso(a, OFI + 0.08)], "#8f6a44");
       poligono([iso(a + 0.2, OFI + 0.2), iso(b - 0.2, OFI + 0.2), iso(b - 0.2, OFI + 0.8), iso(a + 0.2, OFI + 0.8)], color);
     }
@@ -232,7 +242,8 @@
     // muro del fondo, con un color por zona: YouTube (crema), despacho (madera) y TikTok (blanco)
     for (const [a, b, c] of [[0, PASILLO, ["#f1e6d2", "#d6bf99", "#b39771", "#9c8059", "#a88a63"]],
                              [PASILLO, ALA_TT, ["#8a6446", "#6f4e35", "#5a3e2a", "#4a3222", "#5a3e2a"]],
-                             [ALA_TT, COLS, ["#f4f6f9", "#2b2d3a", "#f97316", "#1f2130", "#3a3d4e"]]]) {
+                             [ALA_TT, ALA_SALA, ["#f4f6f9", "#2b2d3a", "#f97316", "#1f2130", "#3a3d4e"]],
+                             [ALA_SALA, COLS, ["#1d2030", "#141622", "#8b5cf6", "#0d0f18", "#2a2e44"]]]) {
       poligono([muroD(a, 0), muroD(b, 0), muroD(b, MURO), muroD(a, MURO)], c[0]);
       poligono([muroD(a, 0), muroD(b, 0), muroD(b, 18), muroD(a, 18)], c[1]); // franja inferior
       poligono([muroD(a, 18), muroD(b, 18), muroD(b, 19), muroD(a, 19)], c[2]);
@@ -315,6 +326,24 @@
     // lámparas tipo neón con el nombre de cada ala
     letrero(3.75, 72.5, "▶ YOUTUBE", "#ef4444", 7);
     letrero(17.6, 72.5, "TIKTOK SHOP", "#22d3ee", 7, "#f472b6");
+    // sala de edición: tira de luz neón que cambia de color y letrero
+    const tono = (t * 40) % 360;
+    g.save(); g.globalAlpha = 0.9;
+    for (let x = ALA_SALA; x < COLS; x += 0.25) {
+      const [a1, a2] = [muroD(x, 60), muroD(x + 0.25, 61)];
+      g.fillStyle = `hsl(${(tono + x * 25) % 360} 90% 60%)`; g.fillRect(Math.round(a1[0]), Math.round(a1[1]), Math.ceil(a2[0] - a1[0]) + 1, 2 * K);
+    }
+    g.restore();
+    letrero(31.5, 72.5, "SALA DE EDICIÓN", "#c4b5fd", 7, "#4c1d95");
+    // pantalla grande con lo que pasa en la sala
+    poligono([muroD(33.4, 26), muroD(35.6, 26), muroD(35.6, 52), muroD(33.4, 52)], "#0b0d16", "#000");
+    const compus = salaEd?.compus || [];
+    compus.slice(0, 4).forEach((c, i) => {
+      const y0 = 30 + i * 5.5, av = c.trabajo ? Math.max(0.04, c.trabajo.avance || 0) : 0;
+      poligono([muroD(33.6, y0), muroD(33.75, y0), muroD(33.75, y0 + 3), muroD(33.6, y0 + 3)], c.viva ? "#22c55e" : "#475569");
+      poligono([muroD(33.9, y0), muroD(35.4, y0), muroD(35.4, y0 + 3), muroD(33.9, y0 + 3)], "#1e2235");
+      if (av) poligono([muroD(33.9, y0), muroD(33.9 + 1.5 * av, y0), muroD(33.9 + 1.5 * av, y0 + 3), muroD(33.9, y0 + 3)], "#a78bfa");
+    });
   }
 
   // Texto pintado sobre el muro del fondo (sigue la inclinación del muro)
@@ -443,6 +472,71 @@
     caja(x + 0.3, y + 0.3, x + 0.7, y + 0.7, 0, 20, "#e5e7eb", "#d1d5db", "#9ca3af");
     caja(x + 0.32, y + 0.32, x + 0.68, y + 0.68, 20, 16, "rgba(125,211,252,.85)", "rgba(56,189,248,.75)", "rgba(14,165,233,.75)");
     caja(x + 0.62, y + 0.45, x + 0.7, y + 0.55, 12, 3, "#3b82f6", "#1d4ed8", "#1e40af"); // llave
+  }
+
+  // ---------- sala de edición: tus compus ----------
+  let salaEd = null; // estado que manda la sala (compus prendidas, qué editan)
+  function compuEn(slot) { return (salaEd?.compus || []).find((c) => c.slot === Number(slot)); }
+
+  function pcGamer(slot, t) {
+    const [x, y] = PCS[slot];
+    const c = compuEn(slot);
+    const viva = c?.viva, trabajando = viva && c?.trabajo;
+    caja(x + 0.05, y + 0.15, x + 1.95, y + 0.85, 0, 13, "#1f2433", "#151926", "#10131d"); // escritorio
+    caja(x + 0.05, y + 0.15, x + 1.95, y + 0.85, 12, 1, "#2e3446", "#1f2433", "#151926");
+    if (!c && slot > 2) return; // los lugares 3 y 4 solo aparecen si agregas más compus
+    if (!c) { // lugar libre para otra compu
+      caja(x + 0.8, y + 0.4, x + 1.2, y + 0.6, 13, 1, "#3b4257", "#2a3042", "#222838");
+      return;
+    }
+    // torre con vidrio y RGB
+    const tono = (t * 60 + slot * 90) % 360;
+    const rgb = viva ? `hsl(${tono} 90% 60%)` : "#2a3042";
+    caja(x + 1.55, y + 0.25, x + 1.9, y + 0.75, 13, 26, "#111827", "#0b0f19", "#151a28");
+    caja(x + 1.55, y + 0.3, x + 1.57, y + 0.7, 15, 22, rgb, rgb, rgb);
+    if (viva) { // ventiladores girando
+      const [fx, fy] = iso(x + 1.56, y + 0.5, 26 - 8);
+      g.strokeStyle = rgb; g.lineWidth = 1.5;
+      for (const dz of [0, 8]) { g.beginPath(); g.ellipse(fx, fy - dz * K + 6, 4, 5, 0, t * 9, t * 9 + 4.5); g.stroke(); }
+      g.lineWidth = 1;
+    }
+    // dos monitores: el grande muestra el avance
+    for (const [m0, m1, alto] of [[0.2, 0.85, 14], [0.9, 1.4, 11]]) {
+      caja(x + (m0 + m1) / 2 - 0.03, y + 0.3, x + (m0 + m1) / 2 + 0.03, y + 0.36, 13, 3, "#111827", "#111827", "#111827");
+      const pantalla = trabajando ? "#2e1065" : viva ? "#0f172a" : "#0b0d14";
+      caja(x + m0, y + 0.28, x + m1, y + 0.34, 16, alto, "#1f2937", pantalla, "#111827");
+    }
+    if (trabajando) { // barra de avance y "línea de tiempo" en el monitor grande
+      const av = Math.max(0.05, c.trabajo.avance || 0);
+      poligono([iso(x + 0.25, y + 0.34, 19), iso(x + 0.25 + 0.55 * av, y + 0.34, 19), iso(x + 0.25 + 0.55 * av, y + 0.34, 21), iso(x + 0.25, y + 0.34, 21)], "#a78bfa");
+      for (let i = 0; i < 3; i++) {
+        const w = 0.1 + ((Math.sin(t * 2 + i * 1.7 + slot) + 1) / 2) * 0.35;
+        poligono([iso(x + 0.25, y + 0.34, 24 + i * 2), iso(x + 0.25 + w, y + 0.34, 24 + i * 2), iso(x + 0.25 + w, y + 0.34, 25 + i * 2), iso(x + 0.25, y + 0.34, 25 + i * 2)],
+                 ["#f472b6", "#22d3ee", "#facc15"][i]);
+      }
+    } else if (viva) {
+      const [lx, ly] = iso(x + 0.5, y + 0.34, 22);
+      g.fillStyle = Math.floor(t * 2) % 2 ? "#22c55e" : "#166534"; g.fillRect(Math.round(lx), Math.round(ly), 2 * K, 2 * K);
+    }
+    caja(x + 0.35, y + 0.55, x + 0.95, y + 0.7, 13, 1, "#111827", "#000", "#000"); // teclado
+    if (viva) caja(x + 0.35, y + 0.55, x + 0.95, y + 0.57, 14, 0.4, rgb, rgb, rgb);
+    // brillo en el piso
+    if (viva) {
+      g.save(); g.globalCompositeOperation = "lighter";
+      const [cx, cy] = iso(x + 1, y + 1.05);
+      const gr = g.createRadialGradient(cx, cy, 2, cx, cy, 60);
+      gr.addColorStop(0, `hsla(${tono} 90% 60% / ${trabajando ? 0.28 : 0.14})`); gr.addColorStop(1, "hsla(0 0% 0% / 0)");
+      g.fillStyle = gr; g.beginPath(); g.ellipse(cx, cy, 60, 30, 0, 0, Math.PI * 2); g.fill();
+      g.restore();
+    }
+  }
+  function rack(t) { // el "servidor" de la casa, con lucecitas
+    caja(37.15, 0.15, 37.85, 0.85, 0, 44, "#111827", "#0b0f19", "#151a28");
+    for (let i = 0; i < 6; i++) {
+      const [lx, ly] = iso(37.15, 0.5, 8 + i * 6);
+      g.fillStyle = (Math.floor(t * 4 + i * 3) % 5) ? "#22c55e" : "#0f3d22"; g.fillRect(Math.round(lx) - 6, Math.round(ly), 2 * K, K);
+      g.fillStyle = (Math.floor(t * 3 + i) % 4) ? "#38bdf8" : "#0c3550"; g.fillRect(Math.round(lx) - 12, Math.round(ly) + 2, 2 * K, K);
+    }
   }
 
   // ---------- estudio de grabación (ala TikTok) ----------
@@ -641,22 +735,22 @@
   function foquitos(t) { // guirnalda de focos sobre el patio
     const noche = esDeNoche();
     for (const fila of [10.6, 14.4]) {
-      for (let k = 0; k <= 60; k++) {
+      for (let k = 0; k <= 74; k++) {
         const x = 0.5 + k * 0.5, z = 62 - Math.sin((k % 15) / 15 * Math.PI) * 10;
         const [bx, by] = iso(x, fila, z);
-        if (k < 60) { const [nx, ny] = iso(x + 0.5, fila, 62 - Math.sin(((k + 1) % 15) / 15 * Math.PI) * 10); g.strokeStyle = "rgba(40,40,40,.6)"; g.lineWidth = 1; g.beginPath(); g.moveTo(bx, by); g.lineTo(nx, ny); g.stroke(); }
+        if (k < 74) { const [nx, ny] = iso(x + 0.5, fila, 62 - Math.sin(((k + 1) % 15) / 15 * Math.PI) * 10); g.strokeStyle = "rgba(40,40,40,.6)"; g.lineWidth = 1; g.beginPath(); g.moveTo(bx, by); g.lineTo(nx, ny); g.stroke(); }
         const color = ["#fde047", "#fb7185", "#60a5fa", "#4ade80"][k % 4];
         g.fillStyle = noche ? color : aclarar(color, 0.8);
         g.beginPath(); g.arc(bx, by + 3, 3, 0, Math.PI * 2); g.fill();
       }
     }
-    for (const [x, y] of [[0.3, 10.6], [15.5, 10.6], [30.7, 10.6], [0.3, 14.4], [15.5, 14.4], [30.7, 14.4]]) caja(x - 0.04, y - 0.04, x + 0.04, y + 0.04, 0, 62, "#57534e", "#44403c", "#292524");
+    for (const [x, y] of [[0.3, 10.6], [15.5, 10.6], [30.7, 10.6], [37.7, 10.6], [0.3, 14.4], [15.5, 14.4], [30.7, 14.4], [37.7, 14.4]]) caja(x - 0.04, y - 0.04, x + 0.04, y + 0.04, 0, 62, "#57534e", "#44403c", "#292524");
   }
 
   function brilloFoquitos() {
     g.save();
     g.globalCompositeOperation = "source-atop";
-    for (const fila of [10.6, 14.4]) for (let k = 0; k <= 60; k += 2) {
+    for (const fila of [10.6, 14.4]) for (let k = 0; k <= 74; k += 2) {
       const [bx, by] = iso(0.5 + k * 0.5, fila, 30);
       const gr = g.createRadialGradient(bx, by, 2, bx, by, 60);
       gr.addColorStop(0, "rgba(255,220,140,.16)"); gr.addColorStop(1, "rgba(255,220,140,0)");
@@ -886,6 +980,9 @@
     agrega(19 + ALA_TT, () => cafetera(t, tomandoCafe(CAFE_TT), ALA_TT));
     agrega(20 + ALA_TT, () => lampara(t, ALA_TT));
     agrega(21.5 + ALA_TT, () => sillon(ALA_TT, ["#0f766e", "#115e59", "#134e4a", "#14b8a6", "#0d9488"]));
+    // sala de edición
+    for (const slot of Object.keys(PCS)) { const [x, y] = PCS[slot]; agrega(x + 1 + y + 0.5, () => pcGamer(slot, t)); }
+    agrega(37.5 + 0.5, () => rack(t)); agrega(37 + 9 + 0.5, () => planta(37, 9, true)); agrega(31 + 9 + 0.5, () => planta(31, 9));
     // mamparas de vidrio entre zonas, con marcos en las puertas
     for (const lx of MAMPARAS) {
       for (let y = 0; y < OFI; y++) if (!PUERTAS.has(y)) agrega(lx + y + 0.5, () => mampara(lx, y));
@@ -907,6 +1004,7 @@
     agrega(23.5 + 13.5 + 0.3, () => mesaSombrilla(t, ALA_TT, "#f97316"));
     agrega(25.5 + 11.5 + 0.5, () => arbol(25, 11)); agrega(30.5 + 11.5 + 0.5, () => arbol(30, 11));
     agrega(17.5 + 14.5 + 0.5, () => arbol(17, 14)); agrega(30.5 + 14.5 + 0.5, () => arbol(30, 14));
+    agrega(36.5 + 11.5 + 0.5, () => arbol(36, 11)); agrega(33.5 + 14.5 + 0.5, () => arbol(33, 14)); agrega(37.5 + 14.5 + 0.5, () => arbol(37, 14));
     agrega(100, () => foquitos(t));
 
     for (const [id, v] of Object.entries(vivos)) {
@@ -1031,7 +1129,33 @@
     g.restore();
   }
 
+  // letreros de las compus de la sala de edición
+  const pcDom = {};
+  function capasCompus() {
+    for (const slot of Object.keys(PCS)) {
+      const c = compuEn(slot);
+      let el = pcDom[slot];
+      if (!el) {
+        el = pcDom[slot] = document.createElement("div");
+        el.className = "nombre pc";
+        el.innerHTML = `<i class="pto"></i><span></span>`;
+        capas.append(el);
+      }
+      const [x0, y0] = PCS[slot];
+      const [px, py] = aPantalla(...iso(x0 + 1, y0 + 0.5, 46));
+      el.hidden = !c || px < -40 || px > lienzoW + 40 || py < 0 || py > lienzoH;
+      if (el.hidden) continue;
+      const texto = `🖥️ ${c.nombre} · ${c.trabajo ? `${Math.round((c.trabajo.avance || 0) * 100)} %` : c.viva ? "lista" : "apagada"}`;
+      if (el.lastChild.textContent !== texto) el.lastChild.textContent = texto;
+      el.style.setProperty("--c", c.viva ? "#a78bfa" : "#475569");
+      el.querySelector(".pto").className = `pto ${c.trabajo ? "trab" : c.viva ? "" : "cola"}`;
+      el.classList.toggle("apagada", !c.viva);
+      el.style.transform = `translate(${px}px, ${py}px) translate(-50%, -100%)`;
+    }
+  }
+
   function capasDom(ahora) {
+    capasCompus();
     const pendientes = (estado.propuestas?.length || 0) + (estado.proyectos || []).filter((p) => ["revision", "error"].includes(p.estado)).length;
     const relojServidor = (estado.ahora || Date.now() / 1000) + (Date.now() - (estado._recibido || Date.now())) / 1000;
     for (const [id, v] of Object.entries(vivos)) {
@@ -1089,7 +1213,8 @@
     const m = 10 * K;
     return { x: izq - m, y: arriba - m, w: der - izq + m * 2, h: abajo - arriba + m * 2 };
   }
-  const VISTAS = { todo: { x: 0, y: 0, w: ANCHO, h: ALTO }, youtube: marco(0, ALA_TT), tiktok: marco(PASILLO, COLS) };
+  const VISTAS = { todo: { x: 0, y: 0, w: ANCHO, h: ALTO }, youtube: marco(0, ALA_TT), tiktok: marco(PASILLO, ALA_SALA + 1),
+                   edicion: marco(ALA_SALA - 2, COLS) };
   const leerAla = () => { try { return localStorage.getItem("ala"); } catch { return null; } };
   let ala = VISTAS[leerAla()] ? leerAla() : (window.innerWidth < 760 ? "youtube" : "todo");
   const cam = { ...VISTAS[ala] };
@@ -1169,15 +1294,28 @@
     actualizar: (n) => { n._recibido = Date.now(); actualizar(n); },
     actualizarTT,
     agenteEn, retrato,
+    // ¿picaste una compu de la sala de edición? → su lugar (1–4)
+    compuEn: (clientX, clientY) => {
+      const r = lienzo.getBoundingClientRect();
+      const nx = (clientX - r.left - offX) / escala + cam.x, ny = (clientY - r.top - offY) / escala + cam.y;
+      return Object.keys(PCS).find((slot) => {
+        if (!compuEn(slot)) return false;
+        const [x, y] = PCS[slot], [px, py] = iso(x + 1, y + 0.5, 15);
+        return Math.abs(nx - px) < 70 && ny > py - 60 && ny < py + 30;
+      }) || null;
+    },
     escala: () => escala,
     posicion: (id) => vivos[id]?.pantalla,
     seleccionar: (id) => {
       if (id && id !== seleccionado) foco = { id, desde: performance.now() };
       seleccionado = id;
       // si el agente está en la otra ala, la cámara se va para allá
-      if (id && ala !== "todo" && (esTT(id) ? "tiktok" : "youtube") !== ala && id !== "jefe") verAla(esTT(id) ? "tiktok" : "youtube");
+      const enSala = estado.agentes[id]?.ubicacion?.startsWith("visita:sala_");
+      if (id && ala !== "todo" && id !== "jefe" && !(ala === "edicion" && enSala)
+          && (esTT(id) ? "tiktok" : "youtube") !== ala) verAla(enSala ? "edicion" : esTT(id) ? "tiktok" : "youtube");
     },
     ala: () => ala,
+    actualizarSala: (s) => { salaEd = s; },
     equipoTT: () => equipoTT,
     encima: (id) => { encima = id; },
     verAla,

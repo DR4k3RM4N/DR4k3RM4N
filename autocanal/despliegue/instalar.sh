@@ -86,6 +86,7 @@ UNIT
 
 paso "Creando el servicio de la oficina de TikTok Shop"
 bash "$APP/despliegue/tienda.sh" || true
+bash "$APP/despliegue/sala.sh" || true
 
 paso "Configurando HTTPS para $DOMINIO"
 bash "$APP/despliegue/caddy.sh" "$DOMINIO"

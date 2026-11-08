@@ -47,6 +47,8 @@ IDEAS_ZONA = config.env("IDEAS_ZONA", "America/Mexico_City")
 IDEAS_GUIA = config.env("IDEAS_GUIA")
 # Oficina de TikTok Shop (ala derecha del edificio): corre aparte y se entra por aquí en /tiktok/
 TIENDA_URL = config.env("TIENDA_URL", "http://127.0.0.1:8766").rstrip("/")
+# Sala de edición (tercera oficina): tus compus editan en lugar del servidor. Se entra por aquí en /sala/
+SALA_URL = config.env("SALA_URL", "http://127.0.0.1:8767").rstrip("/")
 LIMPIAR_DIAS = int(config.env("LIMPIAR_DIAS", "30") or 30)
 # Tope de gasto en Claude por día (USD). Al llegar, los agentes paran y Paola te avisa. 0 = sin tope.
 LIMITE_DIARIO = float(config.env("LIMITE_DIARIO", "1") or 0)
@@ -1202,10 +1204,15 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             """Pasa la petición a la oficina de TikTok Shop (misma contraseña que esta). Los videos y los clips
             pasan en trozos, sin cargarlos completos en memoria."""
             ruta = urlparse(self.path)
-            if not ruta.path.startswith(("/tiktok/api/", "/tiktok/salida/")):
+            if ruta.path.startswith(("/sala/api/", "/sala/descargar/")):
+                destino = SALA_URL + self.path[len("/sala"):]
+            elif ruta.path.startswith(("/tiktok/api/", "/tiktok/salida/")):
+                destino = TIENDA_URL + self.path[len("/tiktok"):]
+            else:  # lo interno (/interno/…) nunca se pasa desde internet
                 return self._json({"error": "no encontrado"}, 404)
-            destino = TIENDA_URL + self.path[len("/tiktok"):]
             cabeceras = {"Content-Type": tipo} if cuerpo is not None else {}
+            if self.headers.get("X-Compu-Token"):
+                cabeceras["X-Compu-Token"] = self.headers["X-Compu-Token"]
             if largo is not None:
                 cabeceras["Content-Length"] = str(largo)
             if self.headers.get("Range"):
@@ -1214,7 +1221,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 r = requests.request(metodo, destino, data=cuerpo, headers=cabeceras, stream=True,
                                      timeout=(10, 1800 if largo else 60))
             except requests.RequestException:
-                return self._json({"error": "La oficina de TikTok Shop está apagada.", "apagada": True}, 503)
+                quien = "La sala de edición" if ruta.path.startswith("/sala/") else "La oficina de TikTok Shop"
+                return self._json({"error": f"{quien} está apagada.", "apagada": True}, 503)
             self.send_response(r.status_code)
             for clave in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control"):
                 if r.headers.get(clave):
@@ -1229,8 +1237,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 r.close()
 
         def _tienda_subir(self):
-            """Un clip desde el cel → oficina de TikTok, en trozos. Va en binario: otra página no lo puede
-            mandar sin permiso del navegador (protege contra CSRF), igual que las subidas de estilo."""
+            """Un clip desde el cel → oficina de TikTok (o un video terminado de tus compus → sala), en trozos.
+            Va en binario: otra página no lo puede mandar sin permiso del navegador (protege contra CSRF)."""
             if "application/octet-stream" not in self.headers.get("Content-Type", ""):
                 return self._json({"error": "tipo no permitido"}, 403)
             origen = self.headers.get("Origin")
@@ -1270,6 +1278,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                         hmac.compare_digest(q.get("hub.verify_token", [""])[0], wa.VERIFY_TOKEN):
                     return self._texto(q.get("hub.challenge", [""])[0])
                 return self._texto("token inválido", 403)
+            if urlparse(self.path).path.startswith("/sala/api/maquina/"):  # tus compus: la sala revisa su llave
+                return self._tienda("GET")
             if not self._autorizado():
                 return
             ruta = unquote(urlparse(self.path).path)
@@ -1289,7 +1299,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json(oficina.detalle(ruta.rsplit("/", 1)[-1]))
             if ruta == "/eventos":
                 return self._eventos()
-            if ruta.startswith("/tiktok/"):
+            if ruta.startswith(("/tiktok/", "/sala/")):
                 return self._tienda("GET")
             self._json({"error": "no encontrado"}, 404)
 
@@ -1326,6 +1336,11 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 except (json.JSONDecodeError, AttributeError):
                     pass
                 return
+            if urlparse(self.path).path.startswith("/sala/api/maquina/"):  # tus compus: la sala revisa su llave
+                if urlparse(self.path).path.startswith("/sala/api/maquina/subir/"):
+                    return self._tienda_subir()
+                largo = int(self.headers.get("Content-Length") or 0)
+                return self._tienda("POST", self.rfile.read(min(largo, 2_000_000)))
             if not self._autorizado():
                 return
             if urlparse(self.path).path == "/api/estilo/subir":
@@ -1335,7 +1350,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             if not self._mismo_origen():
                 return self._json({"error": "origen no permitido"}, 403)
             largo = int(self.headers.get("Content-Length") or 0)
-            if urlparse(self.path).path.startswith("/tiktok/"):
+            if urlparse(self.path).path.startswith(("/tiktok/", "/sala/")):
                 return self._tienda("POST", self.rfile.read(min(largo, 100_000)), largo=None)
             try:
                 datos = json.loads(self.rfile.read(largo) or b"{}")
@@ -1389,17 +1404,18 @@ def prender_tienda_demo() -> None:
     import subprocess
     import sys
 
-    script = config.BASE.parent / "tiktokshop" / "tienda.py"
-    if not script.exists():
-        return
-    try:
-        requests.get(TIENDA_URL + "/api/estado", timeout=1)
-        return  # ya está prendida
-    except requests.RequestException:
-        pass
-    puerto = urlparse(TIENDA_URL).port or 8766
-    proceso = subprocess.Popen([sys.executable, str(script), "--demo", "--puerto", str(puerto)], cwd=script.parent)
-    atexit.register(proceso.terminate)
+    for script, url, defecto in ((config.BASE.parent / "tiktokshop" / "tienda.py", TIENDA_URL, 8766),
+                                 (config.BASE.parent / "salaedicion" / "sala.py", SALA_URL, 8767)):
+        if not script.exists():
+            continue
+        try:
+            requests.get(url + "/api/estado", timeout=1)
+            continue  # ya está prendida
+        except requests.RequestException:
+            pass
+        puerto = urlparse(url).port or defecto
+        proceso = subprocess.Popen([sys.executable, str(script), "--demo", "--puerto", str(puerto)], cwd=script.parent)
+        atexit.register(proceso.terminate)
 
 
 def main() -> None:

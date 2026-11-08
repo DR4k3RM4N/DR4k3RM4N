@@ -137,3 +137,17 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   con video completo quita silencios/tomas repetidas y Haiku clasifica trozos; Vale hace portada de un cuadro limpio;
   cola común con Edu en `agentes/cola_video.py` (flock en /opt/canal/.cola_video.lock); sin música: tendencia en TikTok) · 4) registrar resultados y aprender · 5) servidor (puerto 8766,
   Caddy con ruta `/tiktok/` en el mismo sitio; **ojo: `despliegue/caddy.sh` hoy reescribe todo el Caddyfile**).
+
+### 6.2 Sala de edición (tercera oficina) — nov 2026
+- Miguel tiene 2 compus Windows (i7 + RTX 3070, Xeon + RTX 5060). `salaedicion/sala.py` (servicio `sala`, 127.0.0.1:8767)
+  lleva la cola de trabajos; el edificio la pasa en `/sala/…` (pestaña **Sala**, botón 🎬 Edición, cuarto a la derecha de
+  TikTok con las compus dibujadas). Las compus corren `salaedicion/compu.py` (lo instala `windows/INSTALAR_SALA.bat` →
+  baja `instalar.ps1` de GitHub raw de esta rama; winget instala Git, Python 3.12 y ffmpeg; arranca sola al prender).
+- Alta con código de 6 números (pestaña Sala, 15 min) → la compu guarda su llave en %LOCALAPPDATA%\SalaEdicion;
+  entra en `/sala/api/maquina/…` con cabecera X-Compu-Token (sin la contraseña de la oficina). Lo interno (`/interno/…`)
+  no se pasa desde internet.
+- Cris primero pregunta a la sala; si hay compu prendida, el trabajo va ahí (NVENC + Whisper large-v3-turbo en GPU, si
+  falla usa CPU) y Cris "camina" a la sala. Si no hay compu, nadie lo toma en 90 s, o la compu se apaga/falla → edita el
+  servidor. Con video completo, la compu pide a Claude por la sala → tienda (`/interno/clasificar`), el gasto queda allá.
+- Pendiente: Edu (YouTube) en las compus; pizarrón de muestras de TikTok Shop con días restantes (fecha límite copiada
+  del panel de TikTok) + aviso por Telegram cada mañana. No probado en Windows real (aquí no hay Windows).

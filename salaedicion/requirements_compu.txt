@@ -1,0 +1,9 @@
+# Lo que necesita el programa de tus compus (sala de edición)
+requests>=2.32
+Pillow>=11.0
+python-dotenv>=1.0
+anthropic>=2.3
+faster-whisper>=1.1
+# Librerías de NVIDIA para Whisper en la tarjeta de video (CUDA 12)
+nvidia-cublas-cu12; sys_platform == "win32" or sys_platform == "linux"
+nvidia-cudnn-cu12>=9,<10; sys_platform == "win32" or sys_platform == "linux"
