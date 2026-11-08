@@ -106,23 +106,34 @@ class Proyectos:
             self._tocar()
 
     # ---------- proyectos ----------
-    def crear_proyecto(self, nombre: str, donde: str = "", origen: str = "oficina") -> dict:
-        nombre = " ".join((nombre or "").split())[:60]
+    def clave(self, p: dict) -> str:
+        """Cómo reporta la compu los clips de este proyecto."""
+        return f"proyecto:{p['id']}" if p.get("ruta") else f"carpeta:{p['carpeta']}"
+
+    def crear_proyecto(self, nombre: str, donde: str = "", origen: str = "oficina", ruta: str = "") -> dict:
+        ruta = (ruta or "").strip().strip('"')
+        nombre = " ".join((nombre or "").split())[:60] or (ruta.replace("\\", "/").rstrip("/").split("/")[-1] if ruta else "")
         if len(nombre) < 2:
             return {"error": "Ponle nombre al proyecto."}
         compu = donde if donde in self.compus else None
+        if ruta and not compu:
+            return {"error": "Para usar una carpeta tuya, elige en qué compu está."}
+        if ruta and any(x.get("ruta", "").lower() == ruta.lower() and x.get("compu") == compu for x in self.proyectos.values()):
+            return {"error": "Ya hay un proyecto con esa carpeta."}
         carpeta = limpio(nombre)
         with self.lock:
-            if any(x.get("carpeta", "").lower() == carpeta.lower() and x.get("compu") == compu for x in self.proyectos.values()):
+            if not ruta and any(x.get("carpeta", "").lower() == carpeta.lower() and x.get("compu") == compu and not x.get("ruta")
+                                for x in self.proyectos.values()):
                 return {"error": "Ya hay un proyecto con ese nombre ahí."}
-            p = {"id": uuid.uuid4().hex[:8], "nombre": nombre, "carpeta": carpeta, "compu": compu, "origen": origen,
+            p = {"id": uuid.uuid4().hex[:8], "nombre": nombre, "carpeta": carpeta, "compu": compu, "origen": origen, "ruta": ruta,
                  "estado": "esperando", "formato": "", "plan": None, "versiones": [], "mensajes": [], "creado": time.time(),
                  "trabajo": None, "error": None}
             p["encargado"] = self._editor_para(p)
             self.proyectos[p["id"]] = p
             self._tocar()
         quien = self.editor_id(p["encargado"]) if p["encargado"] else "sala"
-        donde_txt = (f"Ya hice la carpeta «{carpeta}» en {self._nombre_editor(compu)} (Videos → Sala de edicion): pasa ahí tus clips"
+        donde_txt = (f"Uso tu carpeta {ruta} en {self._nombre_editor(compu)} (las versiones las dejo en su subcarpeta Ediciones)" if ruta
+                     else f"Ya hice la carpeta «{carpeta}» en {self._nombre_editor(compu)} (Videos → Sala de edicion): pasa ahí tus clips"
                      if compu else "Súbeme tus clips aquí en el proyecto (📤 Subir clips)")
         if origen == "compu":
             self._decir(p, quien, f"Vi la carpeta nueva «{carpeta}» en tu compu: ya es un proyecto. ¿Qué video quieres que haga "
@@ -135,7 +146,7 @@ class Proyectos:
     def proyectos_de_carpetas(self, cid: str, claves: list[str]) -> None:
         """Una carpeta nueva en tu compu (que no es de TikTok ni de otro proyecto) se vuelve proyecto."""
         for clave in claves:
-            if not clave.startswith("carpeta:"):
+            if not clave.startswith("carpeta:"):  # "proyecto:…" ya es un proyecto con carpeta propia
                 continue
             nombre = clave[len("carpeta:"):]
             if nombre.lower() in ("musica", "música", "ediciones"):
@@ -144,15 +155,16 @@ class Proyectos:
                 continue
             self.crear_proyecto(nombre, cid, origen="compu")
 
-    def carpetas_de_proyectos(self, cid: str) -> list[str]:
-        """Carpetas que esa compu debe tener (proyectos creados desde la oficina)."""
-        return [p["carpeta"] for p in self.proyectos.values() if p.get("compu") == cid]
+    def carpetas_de_proyectos(self, cid: str) -> list[dict]:
+        """Proyectos de esa compu: los de la sala (carpeta que debe tener) y los que usan una carpeta tuya (ruta)."""
+        return [{"id": p["id"], "carpeta": p["carpeta"], "ruta": p.get("ruta", "")} for p in self.proyectos.values()
+                if p.get("compu") == cid]
 
     def clips(self, p: dict) -> list[dict]:
         lista = []
         if p.get("compu"):
             loc = (self.locales.get(p["compu"]) or {}).get("carpetas", {})
-            for x in loc.get(f"carpeta:{p['carpeta']}", []):
+            for x in loc.get(self.clave(p), []):
                 lista.append({**x, "donde": "compu"})
         carpeta = SALIDA / p["id"] / "clips"
         if carpeta.exists():
@@ -186,7 +198,7 @@ class Proyectos:
             if not p:
                 return {"error": "No encontré ese proyecto."}
             t = self.trabajos.get(p.get("trabajo") or "")
-            return {**{k: v for k, v in p.items()}, "clips": self.clips(p), "musica": self.musica(p),
+            return {**{k: v for k, v in p.items()}, "clips": self.clips(p), "musica": self.musica(p), "clave": self.clave(p),
                     "editor": self._nombre_editor(p.get("encargado")), "paso": t.get("paso") if t else "",
                     "avance": t.get("avance") if t else 0}
 
@@ -304,7 +316,7 @@ class Proyectos:
             return self._decir(p, quien, "Estoy terminando la versión anterior; en cuanto acabe aplico esto. 👌")
         historial = [f"{'Miguel' if m['quien'] == 'jefe' else 'Tú'}: {m['texto']}" for m in p["mensajes"][-14:]]
         fichas, imagenes = [], []
-        clave = f"carpeta:{p['carpeta']}"
+        clave = self.clave(p)
         for i, x in enumerate(clips, 1):
             a = self.analisis.get((p.get("compu"), clave, x["nombre"])) or {}
             malas = [f"{c[0]}-{c[1]} s {c[2]}" for c in a.get("calidad", []) if c[2] != "bien"]
@@ -372,7 +384,8 @@ class Proyectos:
         r = self.crear({"tipo": "libre", "origen": "sala", "etiqueta": f"{p['nombre']} · v{n}", "entradas": entradas,
                         "salida": str(SALIDA / p["id"]), "compu": p.get("compu") or None,
                         "local": {"carpeta": p["carpeta"]},
-                        "parametros": {"plan": plan, "version": n, "proyecto": p["id"], "carpeta": p["carpeta"]}})
+                        "parametros": {"plan": plan, "version": n, "proyecto": p["id"], "carpeta": p["carpeta"],
+                                       "ruta": p.get("ruta", "")}})
         if "error" in r:
             return self._decir(p, self.editor_id(p["encargado"]) if p.get("encargado") else "sala", r["error"])
         with self.lock:

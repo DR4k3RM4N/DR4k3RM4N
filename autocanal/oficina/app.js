@@ -1094,11 +1094,11 @@
           <a class="btn btn-mini" href="${ruta(v.video)}" download="${esc(p.nombre)} v${v.n}.mp4">⬇️ Bajar v${v.n}</a> <small>${esc(v.segundos)} s</small></div>`;
     }
     const sep = (estadoSala?.locales?.[p.compu]?.ruta || "").includes("\\") ? "\\" : "/";
-    const rutaCarpeta = p.compu ? `${estadoSala?.locales?.[p.compu]?.ruta || "Videos/Sala de edicion"}${sep}${p.carpeta}` : "";
+    const rutaCarpeta = p.ruta || (p.compu ? `${estadoSala?.locales?.[p.compu]?.ruta || "Videos/Sala de edicion"}${sep}${p.carpeta}` : "");
     const htmlClips = `<h3>🎞️ Clips (${p.clips.length})</h3>
       ${p.compu ? `<p class="pista ruta-proy">📁 ${esc(rutaCarpeta)} <button type="button" class="btn btn-mini" data-copiar-ruta-proy="${esc(rutaCarpeta)}">Copiar ruta</button></p>` : ""}
       <div class="clips-grid">${p.clips.map((x, k) => `<figure class="clip-local">
-          ${x.donde === "compu" ? `<img loading="lazy" alt="" src="/sala/api/miniatura/${encodeURIComponent(p.compu)}/${encodeURIComponent("carpeta:" + p.carpeta)}/${encodeURIComponent(x.nombre)}">` : `<div class="sin-mini">☁️</div>`}
+          ${x.donde === "compu" ? `<img loading="lazy" alt="" src="/sala/api/miniatura/${encodeURIComponent(p.compu)}/${encodeURIComponent(p.clave)}/${encodeURIComponent(x.nombre)}">` : `<div class="sin-mini">☁️</div>`}
           <figcaption><span class="nombre-clip" title="${esc(x.nombre)}">${k + 1}. ${esc(x.nombre)}</span><small>${x.segundos ? `${esc(x.segundos)} s · ` : ""}${esc(x.mb)} MB</small></figcaption>
         </figure>`).join("")}</div>
       <label class="btn btn-mini subir">📤 Subir clips<input type="file" accept="video/*" multiple hidden data-subir-sala></label>
@@ -1188,8 +1188,11 @@
         <div class="seccion-cabeza"><h4 class="seccion-mini">📂 Proyectos</h4>
           <button type="button" class="btn btn-mini" data-nuevo-proyecto>➕ Nuevo proyecto</button></div>
         <form id="nuevo-proyecto" class="tarjeta nuevo-proyecto" hidden>
-          <input id="np-nombre" maxlength="60" placeholder="Nombre (ej. Viaje Monterrey)" required>
-          <select id="np-donde" aria-label="Dónde van los clips"></select>
+          <input id="np-nombre" maxlength="60" placeholder="Nombre (ej. Viaje Monterrey)">
+          <select id="np-donde" aria-label="En qué compu"></select>
+          <select id="np-carpeta" aria-label="Qué carpeta"></select>
+          <input id="np-ruta" maxlength="300" placeholder="Pega la ruta, ej. C:\\Users\\Miguel\\Desktop\\Viaje" hidden>
+          <small class="pista" id="np-ayuda"></small>
           <button class="btn btn-primario" type="submit">Crear</button>
         </form>
         <div id="sala-proyectos"></div>
@@ -1202,6 +1205,26 @@
   const lineaChat = (m) => `<li class="${m.quien === "jefe" ? "mio" : ""}"><b style="color:${colorEditor(m.quien)}">${esc(nombreEditor(m.quien))}</b>
     <span>${esc(m.texto)}</span>${m.proyecto ? ` <button type="button" class="btn btn-mini" data-abrir-sala="${esc(m.proyecto)}">Abrir →</button>` : ""}
     <small>${hora(m.t)}</small></li>`;
+  // Al crear un proyecto en una compu: carpeta nueva en la sala, una carpeta que ya tienes, o pegar la ruta
+  function carpetasDeCompu() {
+    const donde = $("#np-donde").value, sel = $("#np-carpeta");
+    if (!sel) return;
+    sel.hidden = !donde;
+    const lugares = estadoSala?.locales?.[donde]?.lugares || [];
+    const firma = donde + "|" + lugares.map((l) => l.ruta).join("|");
+    if (sel.dataset.firma !== firma) {
+      const antes = sel.value;
+      sel.innerHTML = `<option value="">📁 Carpeta nueva en Sala de edicion</option>`
+        + (lugares.length ? `<optgroup label="Carpetas que ya tienes">${lugares.map((l) => `<option value="${esc(l.ruta)}">${esc(l.nombre)}${l.videos ? ` (${l.videos} videos)` : ""}</option>`).join("")}</optgroup>` : "")
+        + `<option value="__otra">✍️ Pegar otra ruta…</option>`;
+      if ([...sel.options].some((o) => o.value === antes)) sel.value = antes;
+      sel.dataset.firma = firma;
+    }
+    $("#np-ruta").hidden = !donde || sel.value !== "__otra";
+    $("#np-ayuda").textContent = !donde ? "Tus clips se suben al servidor desde la ventana del proyecto."
+      : sel.value === "" ? "Se crea la carpeta en Videos → Sala de edicion de esa compu."
+      : "Tus clips se quedan donde están; las versiones caen en su subcarpeta «Ediciones».";
+  }
   const ESTADO_PROYECTO = { esperando: "Esperando tus clips/instrucciones", editando: "✂️ Editando", listo: "✔ Versión lista", error: "Con problema" };
 
   function pintarSala() {
@@ -1218,6 +1241,7 @@
     donde.innerHTML = estadoSala.compus.map((c) => `<option value="${esc(c.id)}">🖥️ En ${esc(c.nombre)} (carpeta en tu compu)</option>`).join("")
       + `<option value="">☁️ Subirlos al servidor</option>`;
     if (elegido !== "" && [...donde.options].some((o) => o.value === elegido)) donde.value = elegido;
+    carpetasDeCompu();
     // proyectos
     $("#sala-proyectos").innerHTML = (estadoSala.proyectos || []).map((p) => `<button type="button" class="proyecto-sala ${esc(p.estado)}" data-abrir-sala="${esc(p.id)}">
         <span class="miniatura-proy">${p.ultima?.cuadro ? `<img alt="" loading="lazy" src="/sala/salida/${encodeURIComponent(p.id)}/${encodeURIComponent(p.ultima.cuadro)}">` : "🎞️"}</span>
@@ -1238,7 +1262,8 @@
               <div class="pantalla-paso">${esc(t.paso || "Editando")}</div>
               <div class="pantalla-num">${av}<small>%</small></div>
               <div class="linea-tiempo"><b style="width:${av}%"></b>${[0, 1, 2, 3, 4, 5].map((k) => `<i style="left:${k * 17 + 2}%"></i>`).join("")}</div>`
-            : c.viva ? `<div class="pantalla-num chico">💤</div><div class="pantalla-paso">Lista para editar</div>`
+            : c.viva ? (c.estado_texto && c.estado_texto !== "Lista" ? `<div class="pantalla-num chico">⚙️</div><div class="pantalla-paso">${esc(c.estado_texto)}</div>`
+              : `<div class="pantalla-num chico">💤</div><div class="pantalla-paso">Lista para editar</div>`)
             : `<div class="pantalla-num chico">⏻</div><div class="pantalla-paso">Apagada · visto ${haceRato(c.ultimo)}</div>`}
         </div>
         <div class="pc-base">
@@ -1286,12 +1311,20 @@
     }
     if (e.target.id === "nuevo-proyecto") {
       try {
-        const r = await salaApi("/api/proyecto", { nombre: $("#np-nombre").value, donde: $("#np-donde").value });
-        $("#np-nombre").value = ""; $("#nuevo-proyecto").hidden = true;
+        const carpeta = $("#np-carpeta").value, donde = $("#np-donde").value;
+        const ruta = !donde ? "" : carpeta === "__otra" ? $("#np-ruta").value.trim() : carpeta;
+        if (!$("#np-nombre").value.trim() && !ruta) return alert("Ponle nombre al proyecto o elige una carpeta.");
+        const r = await salaApi("/api/proyecto", { nombre: $("#np-nombre").value, donde, ruta });
+        $("#np-nombre").value = ""; $("#np-ruta").value = ""; $("#nuevo-proyecto").hidden = true;
         await consultarSala();
         abrirProyectoSala(r.id);
       } catch (err) { alert(err.message); }
     }
+  });
+  $("#sala-panel").addEventListener("change", (e) => {
+    if (["np-donde", "np-carpeta"].includes(e.target.id)) carpetasDeCompu();
+    if (e.target.id === "np-carpeta" && e.target.value && e.target.value !== "__otra" && !$("#np-nombre").value)
+      $("#np-nombre").value = e.target.value.replace(/\\/g, "/").split("/").pop();
   });
   $("#sala-panel").addEventListener("click", async (e) => {
     const b = e.target.closest("button");

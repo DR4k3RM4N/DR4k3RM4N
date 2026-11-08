@@ -204,3 +204,8 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   manda a Claude con imágenes (visión). Plan nuevo: saltar_malas, estabilizar (deshake), audio_original
   (normal/solo_voz/silenciar), reducir_ruido (afftdn); música con sidechain (baja cuando hablas). La respuesta trae
   "cambios" y "no_puedo"; si la canción no existe, avisa. Modelo propio: tarea "sala" (MODELO_SALA en .env, Haiku medium).
+- Nov 2026 (3): proyectos con carpeta propia (`ruta`): al crear se elige de una lista de carpetas que la compu reporta
+  (`lugares`: Escritorio, Videos, Descargas, Imágenes, Documentos con conteo de videos) o se pega la ruta; clave de clips
+  `proyecto:<id>`; versiones en <ruta>\Ediciones. "Compu desconectada": compu.py ahora manda un pulso aparte cada 10 s,
+  revisa carpetas/analiza clips y prepara el oído en hilos aparte, se reinicia al actualizarse con Popen+os._exit (execv
+  fallaba con espacios en Windows) y reporta `estado` («Analizando…», «Preparando el oído…») que se ve en el monitor.

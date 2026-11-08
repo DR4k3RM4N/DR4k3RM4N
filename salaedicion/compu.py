@@ -209,11 +209,13 @@ def carpeta_de(pid: str) -> Path | None:
     return None
 
 
-def preparar_carpetas(pedidas: list[dict], proyectos: list[str] | None = None) -> None:
+def preparar_carpetas(pedidas: list[dict], proyectos: list | None = None) -> None:
     CLIPS.mkdir(parents=True, exist_ok=True)
     MUSICA.mkdir(exist_ok=True)
-    for nombre in proyectos or []:  # proyectos que creaste desde la oficina
-        nombre = _limpio(nombre)
+    for pr in proyectos or []:  # proyectos que creaste desde la oficina (los que usan tu propia carpeta no se tocan)
+        if isinstance(pr, dict) and pr.get("ruta"):
+            continue
+        nombre = _limpio(pr["carpeta"] if isinstance(pr, dict) else pr)
         if nombre and not (CLIPS / nombre).exists():
             (CLIPS / nombre).mkdir()
     leeme = CLIPS / "LEEME.txt"
@@ -315,6 +317,33 @@ def _miniatura(clip: Path) -> tuple[str, float, bool]:
 
 
 _ultimo_reporte = {"firma": "", "t": 0.0, "con_miniatura": set()}
+ESTADO_COMPU = {"texto": "Arrancando…"}  # lo que se ve en la oficina («Analizando 3 de 12 clips»)
+
+
+def lugares() -> list[dict]:
+    """Carpetas que ya tienes (Escritorio, Videos, Descargas, Imágenes, Documentos) para elegirlas como proyecto."""
+    casa = Path(os.environ.get("USERPROFILE") or Path.home())
+    bases = [("Escritorio", casa / "Desktop"), ("Escritorio", casa / "OneDrive" / "Desktop"),
+             ("Escritorio", casa / "OneDrive" / "Escritorio"), ("Videos", casa / "Videos"), ("Descargas", casa / "Downloads"),
+             ("Imágenes", casa / "Pictures"), ("Documentos", casa / "Documents")]
+    salida, vistos = [], set()
+    for nombre, base in bases:
+        try:
+            if not base.is_dir():
+                continue
+            for d in sorted(base.iterdir()):
+                if not d.is_dir() or d.name.startswith(".") or d == CLIPS or d.resolve() in vistos:
+                    continue
+                vistos.add(d.resolve())
+                try:
+                    videos = sum(1 for f in d.iterdir() if f.is_file() and f.suffix.lower() in EXT_VIDEO)
+                except OSError:
+                    continue
+                salida.append({"ruta": str(d), "nombre": f"{nombre} › {d.name}", "videos": videos})
+        except OSError:
+            continue
+    salida.sort(key=lambda x: (-x["videos"], x["nombre"].lower()))
+    return salida[:80]
 
 
 def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list[str] | None = None) -> None:
@@ -326,10 +355,13 @@ def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list[str] |
         d = carpeta_de(p["id"])
         if d:
             de_productos[d.name] = p["id"]
-    lugares = [(de_productos.get(d.name) or f"carpeta:{d.name}", d) for d in sorted(CLIPS.iterdir())
-               if d.is_dir() and not d.name.startswith(".") and d != MUSICA]
+    lugares_ = [(de_productos.get(d.name) or f"carpeta:{d.name}", d) for d in sorted(CLIPS.iterdir())
+                if d.is_dir() and not d.name.startswith(".") and d != MUSICA]
+    for pr in proyectos or []:  # proyectos con una carpeta tuya fuera de la sala
+        if isinstance(pr, dict) and pr.get("ruta") and Path(pr["ruta"]).is_dir():
+            lugares_.append((f"proyecto:{pr['id']}", Path(pr["ruta"])))
     carpetas, firmas = {}, []
-    for clave, d in lugares:
+    for clave, d in lugares_:
         clips = []
         for f in sorted(d.iterdir()):
             if f.is_file() and f.suffix.lower() in EXT_VIDEO and not f.name.startswith("."):
@@ -342,7 +374,7 @@ def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list[str] |
     resumen = "|".join(firmas)
     if resumen == _ultimo_reporte["firma"] and time.time() - _ultimo_reporte["t"] < 120:
         return  # nada cambió (y se repite cada 2 min por si la sala se reinició)
-    envio = {}
+    envio, hechos = {}, 0
     for pid, clips in carpetas.items():
         envio[pid] = []
         for f, firma in clips:
@@ -350,7 +382,9 @@ def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list[str] |
             ya = f"{pid}/{f.name}/{firma}" in _ultimo_reporte["con_miniatura"]
             dato = {"nombre": f.name, "mb": round(f.stat().st_size / 1024 / 1024, 1), "segundos": segundos,
                     "tiene_audio": audio, "firma": firma, "miniatura": "" if ya else jpg}
-            if pid.startswith("carpeta:") and f"{pid}/{f.name}/{firma}" not in _ultimo_reporte.get("con_analisis", set()):
+            if pid.startswith(("carpeta:", "proyecto:")) and f"{pid}/{f.name}/{firma}" not in _ultimo_reporte.get("con_analisis", set()):
+                hechos += 1
+                ESTADO_COMPU["texto"] = f"Analizando tus clips ({hechos}) · {f.name[:30]}"
                 try:  # los proyectos de la sala: el editor necesita "ver" y "oír" el clip
                     a = analizar(f)
                     dato["analisis"] = {k: a.get(k) for k in ("frases", "calidad")}
@@ -358,7 +392,8 @@ def reportar_carpetas(of: "Oficina", pedidas: list[dict], proyectos: list[str] |
                 except Exception as exc:  # noqa: BLE001
                     log(f"No pude analizar {f.name}: {exc}")
             envio[pid].append(dato)
-    r = of.post("carpetas", {"carpetas": envio, "ruta": str(CLIPS), "musica": musica}, timeout=60)
+    ESTADO_COMPU["texto"] = "Lista"
+    r = of.post("carpetas", {"carpetas": envio, "ruta": str(CLIPS), "musica": musica, "lugares": lugares()}, timeout=60)
     _ultimo_reporte.update(firma=resumen, t=time.time(), con_miniatura=set(r.get("con_miniatura") or []),
                            con_analisis=set(r.get("con_analisis") or []))
 
@@ -368,8 +403,13 @@ def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     import editor_libre
     editor_libre.analizar = analizar  # para saltarse partes movidas/borrosas
     par, tid = t["parametros"], t["id"]
-    clips = CLIPS / _limpio(par["carpeta"])
-    clips.mkdir(parents=True, exist_ok=True)
+    if par.get("ruta"):  # tu propia carpeta (fuera de la sala)
+        clips = Path(par["ruta"])
+        if not clips.is_dir():
+            raise RuntimeError(f"No encontré tu carpeta {par['ruta']} en esta compu.")
+    else:
+        clips = CLIPS / _limpio(par["carpeta"])
+        clips.mkdir(parents=True, exist_ok=True)
     for e in t["entradas"]:  # clips que subiste desde la oficina: quedan en la carpeta de tu compu
         destino = clips / e["nombre"]
         if not destino.exists() or destino.stat().st_size != e.get("bytes"):
@@ -471,7 +511,8 @@ def actualizarme() -> None:
         if nueva and actual and nueva != actual:
             subprocess.run(["git", "-C", str(REPO), "reset", "-q", "--hard", "FETCH_HEAD"], capture_output=True, timeout=60)
             log("Hay versión nueva del programa de la sala: me actualizo y me reinicio.")
-            os.execv(sys.executable, [sys.executable, *sys.argv])
+            subprocess.Popen([sys.executable, *sys.argv], cwd=str(REPO), close_fds=True)
+            os._exit(0)
     except (OSError, subprocess.SubprocessError) as exc:
         log(f"No pude buscar actualizaciones ({exc}); sigo con esta versión.")
 
@@ -481,31 +522,68 @@ def trabajar() -> None:
         raise SystemExit("Esta compu no está dada de alta. Corre INSTALAR_SALA.bat (o compu.py --vincular CODIGO).")
     cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
     of = Oficina(cfg["servidor"], cfg["token"])
+    import threading
     tarjeta = gpu()
     con_nvenc = bool(tarjeta) and nvenc()
     configurar_editor(con_nvenc)
-    oido = preparar_oido(bool(tarjeta))
     cris.CACHE = CARPETA / "oido"
     cris.CACHE.mkdir(parents=True, exist_ok=True)
-    datos = {"gpu": tarjeta or platform.processor()[:60], "nvenc": con_nvenc, "oido": oido, "version": version(),
+    datos = {"gpu": tarjeta or platform.processor()[:60], "nvenc": con_nvenc, "oido": "preparando…", "version": version(),
              "tipos": ["cris", "libre"], "con_carpetas": True}
-    log(f"Sala de edición: {cfg.get('nombre')} · {datos['gpu'] or 'sin tarjeta NVIDIA'} · NVENC {'sí' if con_nvenc else 'no'}"
-        f" · oído {oido} · tus clips en {CLIPS}")
+    listo = threading.Event()
+
+    def pulso():  # "sigo prendida" cada 10 s, aunque esté ocupada analizando o editando
+        of2 = Oficina(cfg["servidor"], cfg["token"])
+        while True:
+            try:
+                of2.post("latido", {**datos, "libre": False, "estado": ESTADO_COMPU["texto"]}, timeout=20)
+            except (requests.RequestException, ValueError):
+                pass
+            except SystemExit as exc:
+                log(str(exc))
+                os._exit(1)
+            time.sleep(10)
+
+    def preparar():  # el oído grande (la primera vez baja ~1.5 GB): sin frenar el pulso
+        ESTADO_COMPU["texto"] = "Preparando el oído (la primera vez baja ~1.5 GB)…"
+        datos["oido"] = preparar_oido(bool(tarjeta))
+        ESTADO_COMPU["texto"] = "Lista"
+        log(f"Sala de edición: {cfg.get('nombre')} · {datos['gpu'] or 'sin tarjeta NVIDIA'} · NVENC {'sí' if con_nvenc else 'no'}"
+            f" · oído {datos['oido']} · tus clips en {CLIPS}")
+        listo.set()
+
+    pedido = {"carpetas": None, "evento": threading.Event()}
+
+    def carpetas():  # revisar carpetas y analizar clips, aparte (puede tardar la primera vez)
+        of3 = Oficina(cfg["servidor"], cfg["token"])
+        while True:
+            pedido["evento"].wait()
+            pedido["evento"].clear()
+            listo.wait()
+            try:
+                reportar_carpetas(of3, *pedido["carpetas"])
+            except Exception as exc:  # noqa: BLE001 — las carpetas nunca deben frenar la edición
+                log(f"No pude revisar las carpetas de clips: {exc}")
+                ESTADO_COMPU["texto"] = "Lista"
+
+    for f in (pulso, preparar, carpetas):
+        threading.Thread(target=f, daemon=True).start()
     espera, revisado = 5, time.time()
     while True:
         if time.time() - revisado > 1800:  # cada 30 min, entre trabajos
             revisado = time.time()
             actualizarme()
         try:
-            r = of.post("latido", {**datos, "libre": True}, timeout=20)
+            r = of.post("latido", {**datos, "libre": listo.is_set(), "estado": ESTADO_COMPU["texto"]}, timeout=20)
             espera = 5
-            if "carpetas" in r:
-                try:
-                    reportar_carpetas(of, r["carpetas"], r.get("proyectos"))
-                except Exception as exc:  # noqa: BLE001 — las carpetas nunca deben frenar la edición
-                    log(f"No pude revisar las carpetas de clips: {exc}")
+            if "carpetas" in r and not pedido["evento"].is_set():
+                pedido["carpetas"] = (r["carpetas"], r.get("proyectos"))
+                pedido["evento"].set()
             if r.get("trabajo"):
+                antes = ESTADO_COMPU["texto"]
+                ESTADO_COMPU["texto"] = f"Editando {r['trabajo'].get('etiqueta', '')}"[:60]
                 hacer(of, r["trabajo"])
+                ESTADO_COMPU["texto"] = antes if antes.startswith("Analizando") else "Lista"
                 espera = 1
         except requests.RequestException as exc:
             log(f"Sin conexión con la oficina ({exc.__class__.__name__}); reintento en {espera} s.")

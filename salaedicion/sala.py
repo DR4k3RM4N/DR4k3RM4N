@@ -92,7 +92,7 @@ class Sala(Proyectos):
             for c in sorted(self.compus.values(), key=lambda c: c["slot"]):
                 t = self.trabajos.get(c.get("trabajo") or "")
                 compus.append({k: c.get(k) for k in ("id", "nombre", "slot", "gpu", "sistema", "version", "ultimo",
-                                                     "nvenc", "oido", "editados")}
+                                                     "nvenc", "oido", "editados", "estado_texto")}
                               | {"viva": self.viva(c),
                                  "trabajo": {k: t.get(k) for k in ("id", "etiqueta", "origen", "paso", "avance")} if t else None})
             trabajos = [{k: t.get(k) for k in ("id", "tipo", "origen", "etiqueta", "estado", "compu", "creado", "inicio",
@@ -230,6 +230,8 @@ class Sala(Proyectos):
     def latido(self, c: dict, d: dict) -> dict:
         """La compu avisa que está prendida y pregunta si hay trabajo."""
         with self.lock:
+            if d.get("estado"):
+                c["estado_texto"] = str(d["estado"])[:80]
             c.update(ultimo=time.time(), gpu=str(d.get("gpu") or c.get("gpu") or "")[:60],
                      version=str(d.get("version") or "")[:12], nvenc=bool(d.get("nvenc")), oido=str(d.get("oido") or "")[:40],
                      tipos=[x for x in (d.get("tipos") or ["cris"]) if isinstance(x, str)][:5])
@@ -293,7 +295,10 @@ class Sala(Proyectos):
             carpetas[str(pid)[:80]] = lista
         with self.lock:
             self.locales[c["id"]] = {"carpetas": carpetas, "ruta": str(d.get("ruta") or "")[:200], "t": time.time(),
-                                     "musica": [Path(str(m)).name[:100] for m in (d.get("musica") or [])][:60]}
+                                     "musica": [Path(str(m)).name[:100] for m in (d.get("musica") or [])][:60],
+                                     "lugares": [{"ruta": str(x.get("ruta", ""))[:300], "nombre": str(x.get("nombre", ""))[:120],
+                                                  "videos": int(x.get("videos") or 0)} for x in (d.get("lugares") or [])[:80]
+                                                 if isinstance(x, dict)]}
         self.proyectos_de_carpetas(c["id"], list(carpetas))
         # firmas que la sala ya tiene con miniatura: la compu no las vuelve a mandar
         return {"ok": True, "con_miniatura": [f"{pid}/{x['nombre']}/{x['firma']}" for pid, xs in carpetas.items()
@@ -313,7 +318,8 @@ class Sala(Proyectos):
 
     def resumen_locales(self) -> dict:
         with self.lock:
-            return {cid: {"ruta": loc.get("ruta", ""), "carpetas": {pid: len(xs) for pid, xs in loc.get("carpetas", {}).items()},
+            return {cid: {"ruta": loc.get("ruta", ""), "lugares": loc.get("lugares", []),
+                          "carpetas": {pid: len(xs) for pid, xs in loc.get("carpetas", {}).items()},
                           "muestra": {pid: [x["nombre"] for x in xs[:6]] for pid, xs in loc.get("carpetas", {}).items()}}
                     for cid, loc in self.locales.items()}
 
@@ -527,7 +533,7 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
             if ruta == "/api/codigo":
                 return self._json(sala.nuevo_codigo())
             if ruta == "/api/proyecto":
-                r = sala.crear_proyecto(str(d.get("nombre", "")), str(d.get("donde", "")))
+                r = sala.crear_proyecto(str(d.get("nombre", "")), str(d.get("donde", "")), ruta=str(d.get("ruta", ""))[:300])
                 return self._json(r, 400 if "error" in r else 200)
             if ruta.startswith("/api/proyecto/") and ruta.endswith("/borrar"):
                 r = sala.borrar_proyecto(ruta.split("/")[3])
