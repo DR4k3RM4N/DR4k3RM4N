@@ -12,6 +12,7 @@ Tus compus entran por /sala/api/maquina/… con su propia llave (se la da un có
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import hmac
 import json
@@ -36,6 +37,7 @@ VIVA = 30  # segundos sin noticias para dar una compu por apagada
 CODIGO_DURA = 15 * 60
 RAICES = [REPO / "tiktokshop" / "salida", REPO / "autocanal" / "salida"]  # de dónde se pueden mandar clips
 EXT_RESULTADO = {".mp4", ".jpg", ".json"}
+TIENDA_URL = "http://127.0.0.1:8766"  # oficina de TikTok (para saber a qué productos hacerles carpeta en tus compus)
 MAX_RESULTADO = 2 * 1024 ** 3
 
 
@@ -52,6 +54,8 @@ class Sala:
         self.compus: dict = datos.get("compus", {})
         self.trabajos: dict = datos.get("trabajos", {})
         self.codigos: dict = {}  # código → vence
+        self.locales: dict = {}  # compu → {producto: [clips en su carpeta]}  (solo nombres y miniaturas, nunca videos)
+        self.miniaturas: dict = {}  # (compu, producto, archivo) → jpg chiquito
         self.intentos: list[float] = []
         for t in self.trabajos.values():  # lo que quedó a medias al apagar: lo vuelve a pedir la oficina
             if t["estado"] in ("en_cola", "asignado", "trabajando"):
@@ -83,7 +87,8 @@ class Sala:
             trabajos = [{k: t.get(k) for k in ("id", "tipo", "origen", "etiqueta", "estado", "compu", "creado", "inicio",
                                                 "fin", "error", "paso", "avance")}
                         for t in sorted(self.trabajos.values(), key=lambda t: -t["creado"])[:15]]
-            return {"version": self.version, "demo": self.demo, "ahora": time.time(), "compus": compus, "trabajos": trabajos}
+            return {"version": self.version, "demo": self.demo, "ahora": time.time(), "compus": compus, "trabajos": trabajos,
+                    "locales": self.resumen_locales()}
 
     # ---------- dar de alta una compu ----------
     def nuevo_codigo(self) -> dict:
@@ -147,7 +152,11 @@ class Sala:
         salida = Path(d.get("salida", "")).resolve()
         if not any(salida.is_relative_to(r.resolve()) for r in RAICES):
             return {"error": "Carpeta de salida no permitida."}
+        fija = str(d.get("compu") or "")
+        if fija and fija not in self.compus:
+            return {"error": "Esa compu ya no está en la sala."}
         t = {"id": uuid.uuid4().hex[:10], "tipo": str(d.get("tipo", "cris")), "origen": str(d.get("origen", "")),
+             "fija": fija or None, "local": d.get("local") or None,
              "etiqueta": str(d.get("etiqueta", ""))[:80], "parametros": d.get("parametros") or {}, "entradas": entradas,
              "salida": str(salida), "clasificar": str(d.get("clasificar", "")), "estado": "en_cola", "compu": None,
              "slot": None, "creado": time.time(), "inicio": None, "fin": None, "error": None, "paso": "", "avance": 0,
@@ -195,7 +204,8 @@ class Sala:
             c["trabajo"] = None
             libre = d.get("libre", True)
             pendiente = next((t for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])
-                              if t["estado"] == "en_cola" and t["tipo"] in c["tipos"]), None) if libre else None
+                              if t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])),
+                             None) if libre else None
             if pendiente:
                 pendiente.update(estado="asignado", compu=c["id"], slot=c["slot"], inicio=time.time(), paso="Bajando tus clips")
                 c["trabajo"] = pendiente["id"]
@@ -203,9 +213,60 @@ class Sala:
             return {"trabajo": self._para_compu(pendiente) if pendiente else None}
 
     def _para_compu(self, t: dict) -> dict:
-        return {"id": t["id"], "tipo": t["tipo"], "etiqueta": t["etiqueta"], "parametros": t["parametros"],
+        return {"id": t["id"], "tipo": t["tipo"], "etiqueta": t["etiqueta"], "parametros": t["parametros"], "local": t.get("local"),
                 "entradas": [{"n": i, "nombre": Path(e).name, "bytes": Path(e).stat().st_size if Path(e).exists() else 0}
                              for i, e in enumerate(t["entradas"])]}
+
+    # ---------- carpetas en tus compus (los clips se quedan allá) ----------
+    def carpetas_pedidas(self) -> list[dict]:
+        """Productos de TikTok listos para grabar: tus compus les hacen carpeta."""
+        try:
+            prods = requests.get(f"{TIENDA_URL}/api/estado", timeout=5).json().get("productos", [])
+        except (requests.RequestException, ValueError):
+            return []
+        return [{"id": p["id"], "nombre": p["nombre"]} for p in prods
+                if (p.get("etapas") or {}).get("tomas") == "hecha"][:40]
+
+    def reportar_carpetas(self, c: dict, d: dict) -> dict:
+        """La compu dice qué clips hay en cada carpeta (nombre, duración y una miniatura chiquita)."""
+        carpetas = {}
+        for pid, clips in list((d.get("carpetas") or {}).items())[:40]:
+            lista = []
+            for x in (clips or [])[:80]:
+                nombre = Path(str(x.get("nombre", ""))).name[:120]
+                if not nombre:
+                    continue
+                lista.append({"nombre": nombre, "mb": float(x.get("mb") or 0), "segundos": float(x.get("segundos") or 0),
+                              "tiene_audio": bool(x.get("tiene_audio", True)), "firma": str(x.get("firma", ""))[:40]})
+                if x.get("miniatura"):
+                    try:
+                        jpg = base64.b64decode(x["miniatura"])
+                        if len(jpg) < 80_000 and jpg[:2] == b"\xff\xd8":
+                            self.miniaturas[(c["id"], pid, nombre)] = jpg
+                    except ValueError:
+                        pass
+            carpetas[str(pid)[:80]] = lista
+        with self.lock:
+            self.locales[c["id"]] = {"carpetas": carpetas, "ruta": str(d.get("ruta") or "")[:200], "t": time.time()}
+        # firmas que la sala ya tiene con miniatura: la compu no las vuelve a mandar
+        return {"ok": True, "con_miniatura": [f"{pid}/{x['nombre']}/{x['firma']}" for pid, xs in carpetas.items()
+                                              for x in xs if (c["id"], pid, x["nombre"]) in self.miniaturas]}
+
+    def locales_de(self, pid: str) -> dict:
+        with self.lock:
+            compus = []
+            for c in sorted(self.compus.values(), key=lambda c: c["slot"]):
+                loc = self.locales.get(c["id"]) or {}
+                compus.append({"id": c["id"], "nombre": c["nombre"], "viva": self.viva(c), "ruta": loc.get("ruta", ""),
+                               "carpeta": next((k for k in (loc.get("carpetas") or {}) if k == pid), None) is not None,
+                               "clips": (loc.get("carpetas") or {}).get(pid, [])})
+            return {"compus": compus}
+
+    def resumen_locales(self) -> dict:
+        with self.lock:
+            return {cid: {"ruta": loc.get("ruta", ""), "carpetas": {pid: len(xs) for pid, xs in loc.get("carpetas", {}).items()},
+                          "muestra": {pid: [x["nombre"] for x in xs[:6]] for pid, xs in loc.get("carpetas", {}).items()}}
+                    for cid, loc in self.locales.items()}
 
     def del_compu(self, c: dict, tid: str) -> dict | None:
         t = self.trabajos.get(tid)
@@ -322,6 +383,19 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                 if archivo.is_relative_to(DESCARGAS.resolve()) and archivo.is_file():
                     return self._mandar(archivo)
                 return self._json({"error": "no encontrado"}, 404)
+            if ruta.startswith("/api/locales/"):
+                return self._json(sala.locales_de(ruta.rsplit("/", 1)[-1]))
+            if ruta.startswith("/api/miniatura/"):
+                partes = ruta.split("/")
+                jpg = sala.miniaturas.get((partes[3], partes[4], "/".join(partes[5:]))) if len(partes) >= 6 else None
+                if not jpg:
+                    return self._json({"error": "no encontrado"}, 404)
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(jpg)))
+                self.send_header("Cache-Control", "max-age=300")
+                self.end_headers()
+                return self.wfile.write(jpg)
             if ruta == "/interno/disponible":
                 return self._json({"compus": sala.disponibles(parse_qs(url.query).get("tipo", ["cris"])[0])})
             if ruta.startswith("/interno/trabajo/"):
@@ -377,7 +451,12 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                 partes = ruta.split("/")
                 accion, tid = partes[3], (partes[4] if len(partes) > 4 else "")
                 if accion == "latido":
-                    return self._json(sala.latido(c, d))
+                    r = sala.latido(c, d)
+                    if d.get("con_carpetas"):  # versión que maneja carpetas: le decimos a qué productos hacerles una
+                        r["carpetas"] = sala.carpetas_pedidas()
+                    return self._json(r)
+                if accion == "carpetas":
+                    return self._json(sala.reportar_carpetas(c, d))
                 if accion == "avance":
                     return self._json(sala.avance(c, tid, d))
                 if accion == "terminar":
@@ -390,11 +469,13 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
 
 
 def main() -> None:
-    global ESTADO
+    global ESTADO, TIENDA_URL
     a = argparse.ArgumentParser(description="Sala de edición (tus compus editan en lugar del servidor)")
     a.add_argument("--demo", action="store_true")
     a.add_argument("--puerto", type=int, default=8767)
+    a.add_argument("--tienda", default="http://127.0.0.1:8766")
     args = a.parse_args()
+    TIENDA_URL = args.tienda.rstrip("/")
     if args.demo:
         ESTADO = AQUI / "sala_estado_demo.json"
     servidor = crear_servidor(Sala(args.demo), args.puerto)

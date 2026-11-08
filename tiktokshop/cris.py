@@ -11,6 +11,7 @@ y Vale saca la portada de un cuadro del video con el texto del gancho.
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import re
 import shutil
@@ -72,6 +73,7 @@ def _norm(t: str) -> str:
 _modelo = None
 # Cómo escucha Cris. En el servidor: CPU. En tus compus (sala de edición) se cambia a la tarjeta de video.
 OIDO = {"modelo": config.env("WHISPER_MODELO", "small") or "small", "dispositivo": "cpu", "computo": "int8", "hilos": 2}
+CACHE: Path | None = None  # dónde guardar lo que escuchó (None = junto al clip)
 ultimo_error = ""  # si Whisper falla, Cris lo avisa y edita sin subtítulos
 
 
@@ -85,7 +87,11 @@ def whisper_disponible() -> bool:
 
 def transcribir(ruta: Path, pista: str = "") -> list[dict]:
     """Palabras con su tiempo: [{"w": "hola", "t": 1.2, "d": 0.3}]. Se guarda junto al clip para no repetirlo."""
-    cache = ruta.with_name(ruta.name + ".palabras.json")
+    if CACHE:
+        firma = hashlib.sha1(f"{ruta.resolve()}|{ruta.stat().st_mtime}|{ruta.stat().st_size}".encode()).hexdigest()[:16]
+        cache = CACHE / f"{firma}.palabras.json"
+    else:
+        cache = ruta.with_name(ruta.name + ".palabras.json")
     if cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))
     if not tiene_audio(ruta) or not whisper_disponible():

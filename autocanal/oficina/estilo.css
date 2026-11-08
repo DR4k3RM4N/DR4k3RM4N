@@ -394,3 +394,51 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .opcion-ia:active { transform: scale(.98); }
 .opcion-ia.sel { border-color: var(--acento); background: rgba(255,210,63,.08); }
 .opcion-ia small { color: var(--suave); margin-left: 6px; }
+
+/* clips en tu compu (dentro del producto) */
+.compu-clips { border: 2px solid var(--borde); border-radius: 10px; padding: 10px; margin: 8px 0; background: rgba(255,255,255,.02); }
+.compu-clips.apagada { opacity: .7; }
+.compu-clips-cabeza { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; margin-bottom: 8px; }
+.compu-clips-cabeza .ruta { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--suave); word-break: break-all; flex: 1 1 200px; }
+.clips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.clip-local { margin: 0; border: 2px solid var(--borde); border-radius: 8px; overflow: hidden; background: #0b0d16; transition: border-color .15s ease-out; }
+.clip-local.usado { border-color: var(--acento); }
+.clip-local img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; display: block; background: #151926; max-height: 170px; }
+.clip-local figcaption { padding: 5px; display: grid; gap: 3px; font-size: 11.5px; }
+.clip-local .nombre-clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clip-local small { color: var(--suave); }
+.clip-local select { width: 100%; font-size: 11.5px; padding: 3px; }
+
+/* sala de edición: tus compus como monitores */
+.pc-lista { display: grid; gap: 14px; margin: 10px 0; }
+.pc-monitor { border: 3px solid #0d0f18; border-radius: 12px; background: #1b1e2c; overflow: hidden; box-shadow: 0 4px 0 #0d0f18; }
+.pc-monitor .pantalla { position: relative; margin: 10px 10px 0; border-radius: 8px; padding: 12px; min-height: 108px;
+  background: radial-gradient(circle at 30% 20%, #241a4d, #0b0d16 70%); border: 2px solid #000; color: #e9e5ff; overflow: hidden; }
+.pc-monitor.apagada .pantalla { background: #07080d; color: #4b5068; }
+.pc-monitor.lista .pantalla { background: radial-gradient(circle at 30% 20%, #10251c, #0b0d16 70%); }
+.pantalla-titulo { font-family: var(--pixel); font-size: 12px; color: #c4b5fd; }
+.pantalla-paso { font-size: 12.5px; opacity: .85; margin-top: 2px; }
+.pantalla-num { font-family: var(--pixel); font-size: 40px; line-height: 1.1; margin-top: 6px; }
+.pantalla-num small { font-size: 18px; margin-left: 2px; }
+.pantalla-num.chico { font-size: 30px; }
+.linea-tiempo { position: relative; height: 12px; margin-top: 8px; border-radius: 3px; background: #1d2135; overflow: hidden; }
+.linea-tiempo b { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #8b5cf6, #22d3ee); transition: width .6s ease-out; }
+.linea-tiempo i { position: absolute; top: 2px; bottom: 2px; width: 12%; border-radius: 2px; background: rgba(255,255,255,.12); }
+.pc-monitor.editando .pantalla::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 1px, transparent 1px 3px); }
+.pc-base { padding: 10px; display: grid; gap: 6px; }
+.pc-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.pc-chips .chip { text-transform: none; font-weight: 600; }
+.pc-carpetas { padding: 0 10px 8px; display: grid; gap: 6px; }
+.pc-carpetas > small { color: var(--suave); font-family: ui-monospace, monospace; font-size: 11px; word-break: break-all; }
+.pc-carpeta { display: flex; gap: 10px; align-items: center; text-align: left; padding: 6px; border-radius: 8px; cursor: pointer; color: inherit;
+  font: inherit; background: rgba(255,255,255,.04); border: 2px solid var(--borde); transition: border-color .15s ease-out, transform .12s ease-out; }
+.pc-carpeta:hover { border-color: rgba(167,139,250,.7); }
+.pc-carpeta:active { transform: scale(.98); }
+.pc-carpeta .tiras { display: flex; gap: 2px; flex: none; }
+.pc-carpeta .tiras img { width: 24px; height: 42px; object-fit: cover; border-radius: 3px; background: #151926; }
+.pc-carpeta .tiras i { font-size: 11px; color: var(--suave); }
+.pc-carpeta-txt { display: grid; font-size: 13px; }
+.pc-carpeta-txt small { color: var(--suave); }
+.pc-acciones { padding: 0 10px 10px; }
+@media (prefers-reduced-motion: reduce) { .linea-tiempo b { transition: none; } }

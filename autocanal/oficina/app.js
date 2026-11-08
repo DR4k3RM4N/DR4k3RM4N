@@ -525,6 +525,17 @@
   });
   setInterval(() => { if (agenteVisto || !$("#tab-equipo").hidden) pintarEquipo(); }, 1000);
   window.addEventListener("ala", () => pintarEquipo(true));
+  // A la derecha solo los menús de la oficina que estás viendo (en "Todo", todos)
+  const PESTANAS_ALA = { youtube: ["bandeja", "proyectos", "estilo", "equipo", "chat"], tiktok: ["shop", "equipo", "chat"],
+                         edicion: ["sala", "equipo"] };
+  function menusDelAla(ala) {
+    const visibles = PESTANAS_ALA[ala];
+    document.querySelectorAll(".pestana").forEach((b) => (b.hidden = !!visibles && !visibles.includes(b.dataset.tab)));
+    const activa = document.querySelector(".pestana.activa");
+    if (activa?.hidden) abrirPestana(visibles[0]);
+  }
+  window.addEventListener("ala", (e) => menusDelAla(e.detail));
+  menusDelAla(window.Oficina.ala?.());
   // pasar el mouse por una tarjeta del equipo marca al agente en la oficina
   $("#equipo").addEventListener("mouseover", (e) => window.Oficina.encima(e.target.closest("[data-agente]")?.dataset.agente || null));
   $("#equipo").addEventListener("mouseleave", () => window.Oficina.encima(null));
@@ -776,21 +787,25 @@
 
   function seccionEdicion(p, clips, letras) {
     const nTomas = Object.keys(clips.tomas || {}).length;
+    const nLocal = Object.values(p.local?.asignacion || {}).filter(Boolean).length;
     const trabajando = p.estado === "trabajando";
-    const modo = p.modo_edicion || (nTomas ? "tomas" : clips.completo ? "completo" : "tomas");
+    const modo = p.modo_edicion || (nLocal ? "local" : nTomas ? "tomas" : clips.completo ? "completo" : "tomas");
     const videos = p.videos || [];
     return `<div class="edicion">
+      <h3>🖥️ Tus clips en tu compu <small class="pista">(no se suben: Cris edita ahí mismo)</small></h3>
+      <div id="locales-tt"><p class="pista">Buscando tus compus…</p></div>
       <h3>📤 ¿Grabaste todo seguido? Sube el video completo</h3>
       <p class="pista">Cris le quita los silencios y las tomas repetidas (se queda con la última). Habla mientras haces la demo: lo que quede callado mucho rato se corta.</p>
       <p>${slotSubida("completo", clips.completo)}</p>
       <h3>✂️ Edición de Cris</h3>
-      ${nTomas || clips.completo ? `<div class="fila modos">
+      ${nTomas || clips.completo || nLocal ? `<div class="fila modos">
+          <label><input type="radio" name="modo-ed" value="local" ${modo === "local" ? "checked" : ""} ${nLocal ? "" : "disabled"}> 🖥️ Clips en mi compu (${nLocal})</label>
           <label><input type="radio" name="modo-ed" value="tomas" ${modo === "tomas" ? "checked" : ""} ${nTomas ? "" : "disabled"}> Mis clips por toma (${nTomas})</label>
           <label><input type="radio" name="modo-ed" value="completo" ${modo === "completo" ? "checked" : ""} ${clips.completo ? "" : "disabled"}> Mi video completo</label>
         </div>
         <p class="pista">Va a sacar ${letras.length > 1 ? "un video por cada gancho que hayas grabado (A, B y C)" : `el video con el gancho ${esc(letras[0])}`}: vertical, con tus textos, subtítulos karaoke de tu voz y cortes rápidos. Sin música: ponle un sonido en tendencia desde TikTok.</p>
         <button type="button" class="btn btn-primario" data-editar ${trabajando || Object.keys(subiendo).length ? "disabled" : ""}>${trabajando ? "Cris está editando…" : videos.length ? "✂️ Volver a editar" : "✂️ Que Cris lo edite"}</button>`
-      : `<p class="vacio">Sube tus clips en la lista de tomas (📤 Subir) o el video completo arriba, y aquí le das a Cris.</p>`}
+      : `<p class="vacio">Pasa tus clips a la carpeta de tu compu (arriba) o súbelos en la lista de tomas (📤 Subir), y aquí le das a Cris.</p>`}
       ${videos.length ? `<h3>🎬 Tus videos</h3><div class="videos-tt">${videos.map((v) => `<figure class="video-tt">
           <video controls playsinline preload="metadata" poster="${v.portada ? ruta(p.id, v.portada, v.v) : ""}" src="${ruta(p.id, v.video, v.v)}"></video>
           <figcaption><span><b>${v.gancho ? `Gancho ${esc(v.gancho)}` : "Video"}</b> · ${esc(v.segundos)} s</span> <span class="id">${esc(p.guion.id)}${v.gancho ? `-${esc(v.gancho)}` : ""}</span>
@@ -885,12 +900,91 @@
       ${p.costo ? `<p class="pista">💰 Este guion costó ${dinero(p.costo)}</p>` : ""}
     </div>`;
     caja.scrollTop = scroll;
+    pintarLocales();
+  }
+
+  // Clips que están en la carpeta "Sala de edicion" de tus compus (solo se ven sus miniaturas)
+  let localesTT = null, localesDe = null;
+  const carpetaNombre = (p) => `${p.nombre.replace(/[<>:"/\\|?*]+/g, " ").trim().replace(/[ .]+$/, "").slice(0, 60) || "producto"} [${p.id.slice(-4)}]`;
+  async function cargarLocales() {
+    if (!guionAbierto) return;
+    const pid = guionAbierto.id;
+    try { localesTT = await (await fetch(`/sala/api/locales/${encodeURIComponent(pid)}`)).json(); localesDe = pid; }
+    catch { localesTT = { compus: [] }; localesDe = pid; }
+    pintarLocales();
+  }
+  function pintarLocales() {
+    const cont = $("#locales-tt");
+    if (!cont || !guionAbierto) return;
+    if (localesDe !== guionAbierto.id) { localesDe = guionAbierto.id; localesTT = null; cargarLocales(); return; }
+    if (!localesTT) return;
+    if (cont.contains(document.activeElement) && document.activeElement.tagName === "SELECT") return; // no estorbar mientras eliges
+    const p = guionAbierto, asig = p.local?.asignacion || {};
+    const compus = localesTT.compus || [];
+    if (!compus.length) {
+      cont.innerHTML = `<p class="pista">Instala la Sala de edición en tu compu (pestaña <b>Sala</b>) y podrás editar sin subir nada al servidor.</p>`;
+      return;
+    }
+    const tomas = p.tomas?.tomas || [];
+    const opciones = (sel) => `<option value="">— no usar —</option>`
+      + tomas.map((t, k) => `<option value="${t.n}" ${sel === String(t.n) ? "selected" : ""}>Toma ${k + 1}: ${esc(t.que_grabar.slice(0, 38))} (${esc(t.para)})</option>`).join("")
+      + `<option value="completo" ${sel === "completo" ? "selected" : ""}>🎞️ Video completo</option>`;
+    cont.innerHTML = compus.map((c) => {
+      const sep = (c.ruta || "").includes("\\") ? "\\" : "/";
+      const ruta = c.ruta ? `${c.ruta}${sep}${carpetaNombre(p)}` : carpetaNombre(p);
+      const mia = !p.local?.compu || p.local.compu === c.id;
+      return `<div class="compu-clips ${c.viva ? "" : "apagada"}">
+        <div class="compu-clips-cabeza"><b>🖥️ ${esc(c.nombre)}</b> <span class="chip ${c.viva ? "chip-estado-publicado" : ""}">${c.viva ? "Prendida" : "Apagada"}</span>
+          <span class="ruta" title="Pasa aquí tus clips">📁 ${esc(ruta)}</span>
+          <button type="button" class="btn btn-mini" data-copiar-ruta="${esc(ruta)}">Copiar ruta</button></div>
+        ${c.clips.length ? `<div class="clips-grid">${c.clips.map((x) => `<figure class="clip-local ${mia && asig[x.nombre] ? "usado" : ""}">
+            <img loading="lazy" src="/sala/api/miniatura/${encodeURIComponent(c.id)}/${encodeURIComponent(p.id)}/${encodeURIComponent(x.nombre)}" alt="">
+            <figcaption title="${esc(x.nombre)}"><span class="nombre-clip">${esc(x.nombre)}</span>
+              <small>${esc(x.segundos)} s · ${esc(x.mb)} MB${x.tiene_audio ? "" : " · sin audio"}</small>
+              <select data-asignar="${esc(x.nombre)}" data-compu="${esc(c.id)}" aria-label="¿Qué es este clip?">${opciones(mia ? asig[x.nombre] || "" : "")}</select></figcaption>
+          </figure>`).join("")}</div>
+          <button type="button" class="btn btn-mini" data-auto-asignar="${esc(c.id)}">🪄 Asignar en orden de grabación</button>`
+        : `<p class="pista">${c.carpeta ? "La carpeta está vacía: pasa ahí tus clips del cel." : c.viva ? "Tu compu está creando la carpeta…" : "Prende tu compu para ver la carpeta."}</p>`}
+      </div>`;
+    }).join("");
+  }
+  async function guardarLocales(compu, asignacion) {
+    guionAbierto.local = { compu, asignacion };
+    try { await apiTT(`/api/local/${encodeURIComponent(guionAbierto.id)}`, { compu, asignacion }); }
+    catch (err) { alert(err.message); }
+    refrescarGuionTT();
   }
   $("#modal-cuerpo").addEventListener("change", (e) => {
+    const sel = e.target.closest("[data-asignar]");
+    if (sel && guionAbierto) {
+      const compu = sel.dataset.compu;
+      const base = guionAbierto.local?.compu === compu ? { ...(guionAbierto.local.asignacion || {}) } : {};
+      if (sel.value === "completo") for (const k of Object.keys(base)) if (base[k] === "completo") base[k] = "";
+      base[sel.dataset.asignar] = sel.value;
+      for (const k of Object.keys(base)) if (!base[k]) delete base[k];
+      sel.blur();
+      return guardarLocales(compu, base);
+    }
     const input = e.target.closest("[data-subir-clip]");
     if (input?.files?.[0] && guionAbierto) subirClip(guionAbierto.id, input.dataset.subirClip, input.files[0]);
   });
   $("#modal-cuerpo").addEventListener("click", (e) => {
+    const auto = e.target.closest("[data-auto-asignar]");
+    if (auto && guionAbierto && localesTT) { // el cel nombra los clips por hora: en orden = en el orden de Diego
+      const c = localesTT.compus.find((x) => x.id === auto.dataset.autoAsignar);
+      const elegido = guionAbierto.gancho || "todos", letras = elegido === "todos" ? ["A", "B", "C"] : [elegido];
+      const tomas = (guionAbierto.tomas?.tomas || []).filter((x) => !letraDeToma(x) || letras.includes(letraDeToma(x)));
+      const clips = [...c.clips].sort((a, b) => a.nombre.localeCompare(b.nombre, undefined, { numeric: true }));
+      if (clips.length !== tomas.length && !confirm(`Tienes ${clips.length} clips y ${tomas.length} tomas. ¿Los asigno en orden de todos modos?`)) return;
+      const asignacion = {};
+      clips.slice(0, tomas.length).forEach((x, k) => { asignacion[x.nombre] = String(tomas[k].n); });
+      return guardarLocales(c.id, asignacion);
+    }
+    const copiarRuta = e.target.closest("[data-copiar-ruta]");
+    if (copiarRuta) {
+      navigator.clipboard?.writeText(copiarRuta.dataset.copiarRuta).then(() => { copiarRuta.textContent = "¡Copiada!"; setTimeout(() => (copiarRuta.textContent = "Copiar ruta"), 1500); });
+      return;
+    }
     const quitar = e.target.closest("[data-quitar-clip]");
     if (quitar && guionAbierto) {
       if (!confirm("¿Quitar este clip?")) return;
@@ -946,27 +1040,49 @@
     if (!cont) return;
     if (!estadoSala) { cont.innerHTML = `<p class="vacio">La sala de edición está apagada en el servidor. Mientras, Cris edita en el servidor como siempre.</p>`; return; }
     const compus = estadoSala.compus;
-    cont.innerHTML = `
-      <p class="pista">🎬 Tus compus editan en lugar del servidor (más rápido, con tu tarjeta de video y mejores subtítulos). Si están apagadas, edita el servidor: nada se detiene.</p>
-      ${compus.length ? compus.map((c) => `<article class="tarjeta compu">
-          <div class="cabeza"><h4>🖥️ ${esc(c.nombre)}</h4>
-            <span class="chip ${c.trabajo ? "chip-estado-revision" : c.viva ? "chip-estado-publicado" : ""}">${c.trabajo ? "Editando" : c.viva ? "Lista" : "Apagada"}</span></div>
-          ${c.trabajo ? `<p class="ahora-pc">⚙️ ${esc(c.trabajo.etiqueta)} · ${esc(c.trabajo.paso || "")} · <b>${Math.round((c.trabajo.avance || 0) * 100)} %</b></p>` : ""}
-          <p class="datos">${esc(c.gpu || "—")} · NVENC ${c.nvenc ? "sí" : "no"} · oído ${esc(c.oido || "—")} · ${c.editados || 0} videos editados${c.viva ? "" : ` · visto ${haceRato(c.ultimo)}`}</p>
-          <div><button class="btn btn-mini" data-quitar-compu="${esc(c.id)}">Quitar</button></div>
-        </article>`).join("") : `<p class="vacio">Todavía no hay compus en la sala.</p>`}
-      <article class="tarjeta">
-        <h4>➕ Agregar una compu (Windows)</h4>
+    const productos = Object.fromEntries((estadoTT?.productos || []).map((p) => [p.id, p]));
+    const monitor = (c) => {
+      const t = c.trabajo, av = t ? Math.round((t.avance || 0) * 100) : 0;
+      const loc = estadoSala.locales?.[c.id] || { carpetas: {}, muestra: {} };
+      const carpetas = Object.entries(loc.carpetas || {}).filter(([pid]) => productos[pid]);
+      return `<article class="pc-monitor ${t ? "editando" : c.viva ? "lista" : "apagada"}">
+        <div class="pantalla">
+          ${t ? `<div class="pantalla-titulo">✂️ ${esc(t.etiqueta)}</div>
+              <div class="pantalla-paso">${esc(t.paso || "Editando")}</div>
+              <div class="pantalla-num">${av}<small>%</small></div>
+              <div class="linea-tiempo"><b style="width:${av}%"></b>${[0, 1, 2, 3, 4, 5].map((k) => `<i style="left:${k * 17 + 2}%"></i>`).join("")}</div>`
+            : c.viva ? `<div class="pantalla-num chico">💤</div><div class="pantalla-paso">Lista para editar</div>`
+            : `<div class="pantalla-num chico">⏻</div><div class="pantalla-paso">Apagada · visto ${haceRato(c.ultimo)}</div>`}
+        </div>
+        <div class="pc-base">
+          <b>🖥️ ${esc(c.nombre)}</b>
+          <span class="pc-chips"><span class="chip">${esc(c.gpu || "—")}</span>${c.nvenc ? `<span class="chip chip-estado-publicado">NVENC</span>` : ""}
+            <span class="chip">👂 ${esc((c.oido || "—").replace(" (GPU)", " GPU").replace(" (CPU)", " CPU"))}</span>
+            <span class="chip">🎬 ${c.editados || 0}</span></span>
+        </div>
+        ${carpetas.length ? `<div class="pc-carpetas"><small>📁 ${esc(loc.ruta || "Sala de edicion")}</small>
+          ${carpetas.map(([pid, n]) => `<button type="button" class="pc-carpeta" data-abrir-producto="${esc(pid)}">
+              <span class="tiras">${(loc.muestra?.[pid] || []).slice(0, 4).map((nombre) => `<img loading="lazy" alt="" src="/sala/api/miniatura/${encodeURIComponent(c.id)}/${encodeURIComponent(pid)}/${encodeURIComponent(nombre)}">`).join("") || "<i>vacía</i>"}</span>
+              <span class="pc-carpeta-txt"><b>${esc(productos[pid].nombre)}</b><small>${n} clip${n === 1 ? "" : "s"}${productos[pid].videos ? " · 🎬 video listo" : ""}</small></span>
+            </button>`).join("")}</div>` : ""}
+        <div class="pc-acciones"><button class="btn btn-mini" data-quitar-compu="${esc(c.id)}">Quitar de la sala</button></div>
+      </article>`;
+    };
+    const agregar = `
         <ol class="pasos-alta">
           <li>En esa compu, abre tu oficina en el navegador y baja el instalador:<br>
             <a class="btn btn-mini btn-primario" href="/sala/descargar/INSTALAR_SALA.bat" download>⬇️ INSTALAR_SALA.bat</a></li>
-          <li>Ábrelo con doble clic. Si Windows dice "Windows protegió su PC": <b>Más información → Ejecutar de todas formas</b>. Instala lo que falte (tarda unos minutos la primera vez).</li>
+          <li>Ábrelo con doble clic. Si Windows dice "Windows protegió su PC": <b>Más información → Ejecutar de todas formas</b>.</li>
           <li>Cuando te pida el código, genéralo aquí (sirve 15 min y una sola vez):<br>
             ${codigoSala && codigoSala.vence * 1000 > Date.now() ? `<span class="codigo-sala">${esc(codigoSala.codigo.slice(0, 3))} ${esc(codigoSala.codigo.slice(3))}</span>
               <br><small>Dirección: <b>${esc(location.origin)}</b></small>` : `<button class="btn btn-mini" data-codigo-sala>🔑 Generar código</button>`}</li>
-          <li>Listo: en unos segundos aparece arriba y en la sala del edificio. Arranca sola cada que prendes la compu.</li>
-        </ol>
-      </article>
+          <li>Listo: aparece aquí y en la sala del edificio, y arranca sola al prender la compu. Tus clips van en <b>Videos → Sala de edicion</b>.</li>
+        </ol>`;
+    cont.innerHTML = `
+      <p class="pista">🎬 Tus compus editan con su tarjeta de video. Pasa tus clips a su carpeta <b>Videos → Sala de edicion</b> (una por producto): no se suben al servidor.</p>
+      <div class="pc-lista">${compus.map(monitor).join("") || `<p class="vacio">Todavía no hay compus en la sala.</p>`}</div>
+      ${compus.length ? `<details class="tarjeta"><summary>➕ Agregar otra compu (Windows)</summary>${agregar}</details>`
+        : `<article class="tarjeta"><h4>➕ Agregar una compu (Windows)</h4>${agregar}</article>`}
       ${estadoSala.trabajos.length ? `<h4 class="seccion-mini">Últimos trabajos</h4><ul class="trabajos-sala">${estadoSala.trabajos.map((t) => `<li>
           <b>${esc(t.etiqueta)}</b> · ${esc(ESTADO_TRABAJO[t.estado] || t.estado)}${t.inicio && t.fin ? ` · ${duracion(t.fin - t.inicio)}` : ""} · ${haceRato(t.creado)}
           ${t.error ? `<br><small>${esc(t.error)}</small>` : ""}</li>`).join("")}</ul>` : ""}`;
@@ -975,6 +1091,7 @@
   $("#sala-panel").addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b) return;
+    if (b.dataset.abrirProducto) return abrirGuionTT(b.dataset.abrirProducto);
     try {
       if (b.dataset.codigoSala !== undefined) {
         const r = await fetch("/sala/api/codigo", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -996,4 +1113,5 @@
   setInterval(consultarTT, 2000);
   consultarSala();
   setInterval(consultarSala, 3000);
+  setInterval(() => { if (!$("#modal").hidden && $("#locales-tt")) cargarLocales(); }, 5000);
 })();

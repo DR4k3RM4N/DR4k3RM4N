@@ -11,7 +11,10 @@ Lo instala solo INSTALAR_SALA.bat (Windows) y arranca al prender la compu.
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
+import re
 import os
 import platform
 import shutil
@@ -30,6 +33,9 @@ CARPETA = (Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SalaEdicion" if 
 CONFIG = CARPETA / "config.json"
 TRABAJOS = CARPETA / "trabajos"
 LOG = CARPETA / "compu.log"
+# Tu carpeta de clips: aquí pasas lo que grabaste. Los clips NO se suben al servidor; solo el video terminado.
+CLIPS = Path(os.environ.get("SALA_CLIPS") or (Path(os.environ.get("USERPROFILE", Path.home())) / "Videos" / "Sala de edicion"))
+EXT_VIDEO = {".mp4", ".mov", ".m4v", ".webm", ".3gp", ".mkv"}
 
 
 def log(texto: str) -> None:
@@ -155,6 +161,87 @@ class Oficina:
             raise RuntimeError(f"No pude subir {archivo.name}: {r.text[:120]}")
 
 
+# ---------- carpetas de clips en esta compu ----------
+def _limpio(nombre: str) -> str:
+    return re.sub(r'[<>:"/\\|?*]+', " ", nombre).strip(" .")[:60] or "producto"
+
+
+def carpeta_de(pid: str) -> Path | None:
+    """La carpeta de un producto: «Nombre [abcd]» (abcd = final del id)."""
+    marca = f"[{pid[-4:]}]"
+    for d in CLIPS.iterdir() if CLIPS.exists() else []:
+        if d.is_dir() and d.name.endswith(marca):
+            return d
+    return None
+
+
+def preparar_carpetas(pedidas: list[dict]) -> None:
+    CLIPS.mkdir(parents=True, exist_ok=True)
+    leeme = CLIPS / "LEEME.txt"
+    if not leeme.exists():
+        leeme.write_text("Sala de edición\r\n\r\nPasa aquí los clips que grabaste, en la carpeta del producto.\r\n"
+                         "En tu oficina (pestaña Shop → el producto) le dices a cada clip qué toma es, y Cris lo edita en\r\n"
+                         "esta compu. Los clips NO se suben al servidor: solo el video terminado.\r\n", encoding="utf-8")
+    for p in pedidas:
+        if not carpeta_de(p["id"]):
+            (CLIPS / f"{_limpio(p['nombre'])} [{p['id'][-4:]}]").mkdir(exist_ok=True)
+
+
+def _miniatura(clip: Path) -> tuple[str, float, bool]:
+    """(jpg en base64, segundos, tiene audio). Se guarda para no repetirla."""
+    firma = hashlib.sha1(f"{clip.resolve()}|{clip.stat().st_mtime}|{clip.stat().st_size}".encode()).hexdigest()[:16]
+    guardada = CARPETA / "miniaturas" / f"{firma}.json"
+    if guardada.exists():
+        d = json.loads(guardada.read_text(encoding="utf-8"))
+        return d["jpg"], d["segundos"], d["audio"]
+    guardada.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        segundos = cris.duracion(clip)
+    except cris.ErrorEdicion:
+        return "", 0.0, False
+    jpg = guardada.with_suffix(".jpg")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{min(1.0, segundos / 3):.2f}", "-i", str(clip),
+                    "-frames:v", "1", "-vf", "scale=-2:200", "-q:v", "7", str(jpg)], capture_output=True, timeout=60)
+    datos = base64.b64encode(jpg.read_bytes()).decode() if jpg.exists() else ""
+    jpg.unlink(missing_ok=True)
+    d = {"jpg": datos, "segundos": round(segundos, 1), "audio": cris.tiene_audio(clip)}
+    guardada.write_text(json.dumps(d), encoding="utf-8")
+    return d["jpg"], d["segundos"], d["audio"]
+
+
+_ultimo_reporte = {"firma": "", "t": 0.0, "con_miniatura": set()}
+
+
+def reportar_carpetas(of: "Oficina", pedidas: list[dict]) -> None:
+    """Le dice a la oficina qué clips hay en cada carpeta (nombre, duración y miniatura chiquita, nunca el video)."""
+    preparar_carpetas(pedidas)
+    carpetas, firmas = {}, []
+    for p in pedidas:
+        d = carpeta_de(p["id"])
+        if not d:
+            continue
+        clips = []
+        for f in sorted(d.iterdir()):
+            if f.is_file() and f.suffix.lower() in EXT_VIDEO and not f.name.startswith("."):
+                firma = f"{f.stat().st_size}-{int(f.stat().st_mtime)}"
+                firmas.append(f"{p['id']}/{f.name}/{firma}")
+                clips.append((f, firma))
+        carpetas[p["id"]] = clips
+    resumen = "|".join(firmas)
+    if resumen == _ultimo_reporte["firma"] and time.time() - _ultimo_reporte["t"] < 120:
+        return  # nada cambió (y se repite cada 2 min por si la sala se reinició)
+    envio = {}
+    for pid, clips in carpetas.items():
+        envio[pid] = []
+        for f, firma in clips:
+            jpg, segundos, audio = _miniatura(f)
+            ya = f"{pid}/{f.name}/{firma}" in _ultimo_reporte["con_miniatura"]
+            envio[pid].append({"nombre": f.name, "mb": round(f.stat().st_size / 1024 / 1024, 1), "segundos": segundos,
+                               "tiene_audio": audio, "firma": firma, "miniatura": "" if ya else jpg})
+    r = of.post("carpetas", {"carpetas": envio, "ruta": str(CLIPS)}, timeout=60)
+    _ultimo_reporte.update(firma=resumen, t=time.time(), con_miniatura=set(r.get("con_miniatura") or []))
+
+
 def hacer(of: Oficina, t: dict) -> None:
     tid = t["id"]
     carpeta = TRABAJOS / tid
@@ -178,16 +265,26 @@ def hacer(of: Oficina, t: dict) -> None:
         return r["partes"]
 
     try:
-        total = len(t["entradas"])
-        for e in t["entradas"]:
-            avance(f"Bajando clip {e['n'] + 1} de {total}", 0.02 * e["n"] / max(1, total))
-            of.bajar(tid, e["n"], carpeta / "clips" / e["nombre"])
         if t["tipo"] != "cris":
             raise RuntimeError(f"Esta versión no sabe hacer trabajos de tipo {t['tipo']}.")
+        if t.get("local"):  # tus clips ya están en esta compu: no se baja nada
+            clips = carpeta_de(t["local"]["producto"])
+            if not clips:
+                raise RuntimeError("No encontré la carpeta del producto en esta compu.")
+            faltan = [n for n in [*(t["parametros"]["archivos"].get("tomas") or {}).values(), t["parametros"]["archivos"].get("completo")]
+                      if n and not (clips / n).exists()]
+            if faltan:
+                raise RuntimeError(f"Ya no están en la carpeta: {', '.join(faltan[:3])}")
+        else:
+            clips = carpeta / "clips"
+            total = len(t["entradas"])
+            for e in t["entradas"]:
+                avance(f"Bajando clip {e['n'] + 1} de {total}", 0.02 * e["n"] / max(1, total))
+                of.bajar(tid, e["n"], clips / e["nombre"])
         cris.clasificar = clasificar
         salida = carpeta / "salida"
         inicio = time.time()
-        videos = cris.editar_todo(carpeta / "clips", t["parametros"], salida, avance)
+        videos = cris.editar_todo(clips, t["parametros"], salida, avance)
         avance("Subiendo tus videos", 0.97)
         for v in videos:
             of.subir(tid, salida / v["video"])
@@ -208,6 +305,24 @@ def hacer(of: Oficina, t: dict) -> None:
         shutil.rmtree(carpeta, ignore_errors=True)
 
 
+def actualizarme() -> None:
+    """Cada rato revisa si hay versión nueva en GitHub; si la hay (y no está editando), se actualiza y se reinicia."""
+    try:
+        rama = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True,
+                              timeout=20).stdout.strip()
+        if not rama or rama == "HEAD":
+            return
+        subprocess.run(["git", "-C", str(REPO), "fetch", "-q", "--depth", "1", "origin", rama], capture_output=True, timeout=120)
+        actual = subprocess.run(["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=20).stdout.strip()
+        nueva = subprocess.run(["git", "-C", str(REPO), "rev-parse", "FETCH_HEAD"], capture_output=True, text=True, timeout=20).stdout.strip()
+        if nueva and actual and nueva != actual:
+            subprocess.run(["git", "-C", str(REPO), "reset", "-q", "--hard", "FETCH_HEAD"], capture_output=True, timeout=60)
+            log("Hay versión nueva del programa de la sala: me actualizo y me reinicio.")
+            os.execv(sys.executable, [sys.executable, *sys.argv])
+    except (OSError, subprocess.SubprocessError) as exc:
+        log(f"No pude buscar actualizaciones ({exc}); sigo con esta versión.")
+
+
 def trabajar() -> None:
     if not CONFIG.exists():
         raise SystemExit("Esta compu no está dada de alta. Corre INSTALAR_SALA.bat (o compu.py --vincular CODIGO).")
@@ -217,15 +332,25 @@ def trabajar() -> None:
     con_nvenc = bool(tarjeta) and nvenc()
     configurar_editor(con_nvenc)
     oido = preparar_oido(bool(tarjeta))
+    cris.CACHE = CARPETA / "oido"
+    cris.CACHE.mkdir(parents=True, exist_ok=True)
     datos = {"gpu": tarjeta or platform.processor()[:60], "nvenc": con_nvenc, "oido": oido, "version": version(),
-             "tipos": ["cris"]}
+             "tipos": ["cris"], "con_carpetas": True}
     log(f"Sala de edición: {cfg.get('nombre')} · {datos['gpu'] or 'sin tarjeta NVIDIA'} · NVENC {'sí' if con_nvenc else 'no'}"
-        f" · oído {oido}")
-    espera = 5
+        f" · oído {oido} · tus clips en {CLIPS}")
+    espera, revisado = 5, time.time()
     while True:
+        if time.time() - revisado > 1800:  # cada 30 min, entre trabajos
+            revisado = time.time()
+            actualizarme()
         try:
             r = of.post("latido", {**datos, "libre": True}, timeout=20)
             espera = 5
+            if "carpetas" in r:
+                try:
+                    reportar_carpetas(of, r["carpetas"])
+                except Exception as exc:  # noqa: BLE001 — las carpetas nunca deben frenar la edición
+                    log(f"No pude revisar las carpetas de clips: {exc}")
             if r.get("trabajo"):
                 hacer(of, r["trabajo"])
                 espera = 1

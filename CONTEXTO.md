@@ -168,3 +168,16 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
 - Título propio (nov 2026): en Revisar video hay 4ª opción "✍️ Mi título" (tal cual o "✨ Mejorar con IA" → 3 versiones
   de SU idea con Haiku, accion `mejorar_titulo`). Al publicar se agrega a guion.json `titulos` y se guarda en preferencias.
   "Pedir cambios" rehace guion y video: para el título NO usarlo (a Miguel le molestó que rediseñara todo).
+
+### 6.4 Clips en tu compu + sala visual + menús por ala (nov 2026)
+- Los clips ya NO tienen que subirse al servidor (poco espacio): cada compu tiene `Videos\Sala de edicion\<Producto [abcd]>`
+  (abcd = final del id; compu.py crea la carpeta de cada producto con tomas listas, lo pide en el latido con
+  `con_carpetas`). La compu reporta nombre/duración/miniatura JPG chiquita (`/maquina/carpetas`); la oficina las muestra
+  en el producto (sección "🖥️ Tus clips en tu compu") y Miguel asigna cada clip a toma/video completo (o "🪄 Asignar en
+  orden de grabación"). `tienda.asignar_local` guarda `p.local`; editar modo "local" manda trabajo `fija`=esa compu,
+  `local.producto`; la compu edita con sus archivos y solo sube el video y el cuadro. Sin servidor de respaldo en ese modo
+  (espera hasta 10 min a que se prenda la compu). Caché de Whisper en %LOCALAPPDATA%\SalaEdicion\oido.
+- compu.py se actualiza solo (git fetch cada 30 min y se reinicia).
+- Pestaña Sala rediseñada como monitores (avance, chips GPU/NVENC/oído, carpetas con miniaturas que abren el producto).
+- A la derecha solo los menús del ala: YouTube (Bandeja, Proyectos, Estilo, Equipo, Chat), TikTok (Shop, Equipo, Chat),
+  Edición (Sala, Equipo); Todo = todos.

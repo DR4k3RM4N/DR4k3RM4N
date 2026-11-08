@@ -120,7 +120,8 @@ class Tienda:
                                  | {"formato": (p.get("guion") or {}).get("formato"),
                                     "guion_id": (p.get("guion") or {}).get("id"),
                                     "videos": len(p.get("videos") or []),
-                                    "clips": len((p.get("clips") or {}).get("tomas", {})) + bool((p.get("clips") or {}).get("completo"))})
+                                    "clips": len((p.get("clips") or {}).get("tomas", {})) + bool((p.get("clips") or {}).get("completo"))
+                                             + sum(1 for q in ((p.get("local") or {}).get("asignacion") or {}).values() if q)})
             return {"version": self.version, "demo": self.demo, "ahora": time.time(),
                     "agentes": list(self.agentes.values()), "productos": productos,
                     "tareas": [t for t in self.tareas[-120:] if t["estado"] in ACTIVAS]
@@ -214,12 +215,15 @@ class Tienda:
         if accion == "editar" or (accion == "rehacer" and desde == "video"):
             if p["estado"] == "trabajando":
                 return {"error": "Ya están trabajando en él."}
-            modo = desde if desde in ("tomas", "completo") else p.get("modo_edicion", "tomas")
+            modo = desde if desde in ("tomas", "completo", "local") else p.get("modo_edicion", "tomas")
             clips = p.get("clips") or {}
             if modo == "completo" and not clips.get("completo"):
                 return {"error": "Primero sube tu video completo."}
             if modo == "tomas" and not clips.get("tomas"):
                 return {"error": "Primero sube al menos un clip de las tomas."}
+            local = p.get("local") or {}
+            if modo == "local" and not (local.get("compu") and any(local.get("asignacion", {}).values())):
+                return {"error": "Primero dile a qué toma va cada clip de tu compu."}
             with self.lock:
                 p["estado"], p["error"], p["modo_edicion"] = "trabajando", None, modo
                 p["etapas"].update(video="pendiente", portada="pendiente")
@@ -242,6 +246,24 @@ class Tienda:
             threading.Thread(target=self._producir, args=(pid, desde), daemon=True).start()
             return {"ok": True}
         return {"error": "Acción inválida."}
+
+    def asignar_local(self, pid: str, d: dict) -> dict:
+        """Qué es cada clip de la carpeta de tu compu: toma N, video completo o nada (no se sube ningún video)."""
+        p = self.productos.get(pid)
+        if not p:
+            return {"error": "No encontré ese producto."}
+        compu = str(d.get("compu") or "")[:20]
+        asignacion = {}
+        for nombre, que in (d.get("asignacion") or {}).items():
+            que = str(que or "")
+            if que == "completo" or que.isdigit():
+                asignacion[Path(str(nombre)).name[:120]] = que
+        if list(asignacion.values()).count("completo") > 1:
+            return {"error": "Solo un clip puede ser el video completo."}
+        with self.lock:
+            p["local"] = {"compu": compu, "asignacion": asignacion}
+            self._tocar()
+        return {"ok": True}
 
     def subir(self, pid: str, toma: str, nombre: str, entrada, largo: int) -> dict:
         """Guarda un clip que mandaste desde el cel (va directo al disco, sin llenar la memoria)."""
@@ -330,9 +352,23 @@ class Tienda:
         trabajo = {"guion": g, "tomas": (p.get("tomas") or {}).get("tomas", []), "letras": letras, "modo": modo,
                    "pista": pista, "archivos": {"tomas": {n: c["archivo"] for n, c in clips.get("tomas", {}).items()},
                                                 "completo": (clips.get("completo") or {}).get("archivo")}}
+        local = p.get("local") or {}
+        if modo == "local":  # los clips están en tu compu: solo esa compu puede editarlo
+            asig = local.get("asignacion", {})
+            completo = next((n for n, q in asig.items() if q == "completo"), None)
+            trabajo.update(modo="completo" if completo else "tomas",
+                           archivos={"tomas": {q: n for n, q in asig.items() if q.isdigit()}, "completo": completo})
+        carpeta.mkdir(parents=True, exist_ok=True)
         for viejo in [*carpeta.glob("video_*"), *carpeta.glob("portada_*")]:  # que no queden videos de la edición anterior
             viejo.unlink(missing_ok=True)
-        videos = self._editar_en_compu(p, t, trabajo, carpeta, avance)  # primero tus compus; si no, el servidor
+        if modo == "local":
+            videos = self._editar_en_compu(p, t, trabajo, carpeta, avance, fija=local["compu"])
+            if not videos:
+                ia.contexto.tarea = None
+                return fallo(t, "video", "tt_editor", RuntimeError(
+                    "Tu compu no pudo editarlo (¿está prendida y con la Sala de edición abierta?). Revisa y dale Reintentar."))
+        else:
+            videos = self._editar_en_compu(p, t, trabajo, carpeta, avance)  # primero tus compus; si no, el servidor
         try:
             if not videos:
                 from agentes import cola_video
@@ -378,26 +414,31 @@ class Tienda:
         self.decir("tt_disenadora", f"¡Listo, jefe! Tus {len(videos)} videos de {p['nombre']} ya se pueden subir 🎬"
                    if len(videos) > 1 else f"¡Listo, jefe! Tu video de {p['nombre']} ya se puede subir 🎬")
 
-    def _editar_en_compu(self, p: dict, t: dict, trabajo: dict, carpeta: Path, avance) -> list | None:
+    def _editar_en_compu(self, p: dict, t: dict, trabajo: dict, carpeta: Path, avance, fija: str | None = None) -> list | None:
         """Si una de tus compus de la sala de edición está prendida, edita ahí (más rápido, con tu tarjeta de video).
-        Si no hay compu, o falla, regresa None y edita el servidor: nada se detiene."""
-        try:
-            if not requests.get(f"{SALA_URL}/interno/disponible", params={"tipo": "cris"}, timeout=3).json().get("compus"):
+        Si no hay compu, o falla, regresa None y edita el servidor: nada se detiene.
+        Con `fija` (clips que están en tu compu) solo esa compu puede hacerlo: se le espera más y no hay servidor de respaldo."""
+        if not fija:
+            try:
+                if not requests.get(f"{SALA_URL}/interno/disponible", params={"tipo": "cris"}, timeout=3).json().get("compus"):
+                    return None
+            except (requests.RequestException, ValueError):
                 return None
-        except (requests.RequestException, ValueError):
-            return None
         archivos = trabajo["archivos"]
-        nombres = [archivos["completo"]] if trabajo["modo"] == "completo" else list(archivos["tomas"].values())
+        nombres = [] if fija else [archivos["completo"]] if trabajo["modo"] == "completo" else list(archivos["tomas"].values())
         try:
-            tid = requests.post(f"{SALA_URL}/interno/trabajo", timeout=10, json={
+            r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=10, json={
                 "tipo": "cris", "origen": "tiktok", "etiqueta": p["nombre"], "parametros": trabajo,
                 "entradas": [str(carpeta / "clips" / n) for n in nombres if n], "salida": str(carpeta),
-                "clasificar": f"http://127.0.0.1:{PUERTO}/interno/clasificar/{p['id']}"}).json().get("id")
+                "compu": fija, "local": {"producto": p["id"]} if fija else None,
+                "clasificar": f"http://127.0.0.1:{PUERTO}/interno/clasificar/{p['id']}"}).json()
+            tid = r.get("id")
         except (requests.RequestException, ValueError):
             return None
         if not tid:
             return None
-        self.decir("tt_editor", "Le paso tus clips a la sala de edición: tu compu lo hace más rápido 🚀")
+        self.decir("tt_editor", "Tus clips ya están en tu compu: le digo que edite ahí 🚀" if fija
+                   else "Le paso tus clips a la sala de edición: tu compu lo hace más rápido 🚀")
 
         def cancelar(motivo: str):
             try:
@@ -405,7 +446,7 @@ class Tienda:
             except requests.RequestException:
                 pass
             self.poner("tt_editor", ubicacion="casa")
-            self.decir("tt_editor", f"{motivo} Lo edito aquí en el servidor.")
+            self.decir("tt_editor", f"{motivo} Revisa tu compu." if fija else f"{motivo} Lo edito aquí en el servidor.")
 
         en_cola_desde, fallas, sala_vista = time.time(), 0, None
         while True:
@@ -430,9 +471,9 @@ class Tienda:
             if estado in ("error", "cancelado"):
                 return cancelar(f"La compu no pudo ({(e.get('error') or '')[:90]}).")
             if estado == "en_cola":
-                if time.time() - en_cola_desde > 90:
-                    return cancelar("Ninguna compu lo agarró.")
-                avance("Esperando a tu compu…", 0.0)
+                if time.time() - en_cola_desde > (600 if fija else 90):
+                    return cancelar("Tu compu no lo agarró en 10 minutos (¿está prendida?)." if fija else "Ninguna compu lo agarró.")
+                avance("Esperando a que prendas tu compu…" if fija else "Esperando a tu compu…", 0.0)
                 continue
             en_cola_desde = time.time()
             if e.get("slot") and e["slot"] != sala_vista:
@@ -645,6 +686,9 @@ def crear_servidor(tienda: Tienda, puerto: int) -> ThreadingHTTPServer:
             except json.JSONDecodeError:
                 return self._json({"error": "JSON inválido"}, 400)
             ruta = unquote(urlparse(self.path).path)
+            if ruta.startswith("/api/local/"):
+                r = tienda.asignar_local(ruta.rsplit("/", 1)[-1], datos)
+                return self._json(r, 400 if "error" in r else 200)
             if ruta.startswith("/interno/clasificar/"):  # solo desde la sala (no pasa por internet)
                 r = tienda.clasificar(ruta.rsplit("/", 1)[-1], datos)
                 return self._json(r, 400 if "error" in r else 200)
