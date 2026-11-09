@@ -249,3 +249,20 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
 - Nov 2026 (8): "🎵 Subir música o audio" en la ventana del proyecto (también con el video ya hecho): `/api/subir` acepta
   audio (mp3/m4a/wav/aac/ogg/flac) → `salida/<id>/musica`; el editor avisa en el chat; `musica(p)` junta lo subido + la
   carpeta Musica de la compu; al editar, la canción subida viaja como entrada a la carpeta Musica de la compu.
+- Nov 2026 (9): "la sala sigue mala, quiero que Claude edite localmente y motion graphics" → **Editor IA**: Claude Code
+  edita con las manos libres en la carpeta del proyecto en su compu. Modos: desde la oficina (chat del proyecto) y
+  directo en la compu («Abrir editor IA.bat» en la carpeta del proyecto); comparten memoria (`--continue` en
+  `<proyecto>/_editor` + `_editor/notas.md`). Motion: títulos/textos animados, producto (precio, etiquetas, flecha,
+  círculo, link, contador, emoji) y subtítulos con estilo (pop/karaoke/caja).
+  - `salaedicion/motion/`: proyecto Remotion 4.0.537 (composición "Video" por props.json, video base con
+    OffthreadVideo + capas). La compu lo instala sola (`compu.preparar_motion`: `npm ci`, marca con firma del lock);
+    necesita Node.js (el instalador lo pone con winget OpenJS.NodeJS.LTS). Remotion es gratis para personas/equipos ≤3.
+  - `salaedicion/herramientas.py` (lo usa Claude Code con Bash): ficha, cuadros, transcribir, armar (motor
+    editor_libre), motion, revisar, codificar. Trabaja en `SALA_EDITOR_DIR` (= _editor).
+  - `salaedicion/editor_ia.py`: genera `_editor/CLAUDE.md` (guía + herramientas + motion + MANUAL), el .bat, y
+    `correr()` (claude -p --continue, stream-json → progreso al monitor, Bash/Read/Write/Edit/Glob/Grep, 60 min).
+  - Trabajo "claude_libre" (compu `editar_libre`): baja clips/música subidos, corre Claude Code, lee
+    `_editor/resultado.json` {respuesta, video, cambios}, sube vN.mp4. Sala: `_compu_editor_ia` (compu del proyecto
+    con claude_libre en tipos) → `_editar_con_ia`; `_termino_editor_ia` pone la respuesta y la versión en el chat.
+    Si la compu no tiene Claude Code, sigue el flujo anterior (plan + editor_libre).
+  - Probado aquí con Claude Code real: v1 de TikTok Shop con título, precio tachado y link en ~4.5 min.

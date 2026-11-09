@@ -609,10 +609,8 @@ def revisar(video: Path, plan: dict, info: dict, par: dict, clips: Path, tempora
     return {"problemas": problemas, "plan": nuevo, "revisado": True}
 
 
-def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
-    """Un proyecto de la sala: los clips están en su carpeta de esta compu (lo que subiste al servidor se baja ahí)."""
-    import editor_libre
-    editor_libre.analizar = analizar  # para saltarse partes movidas/borrosas
+def carpeta_del_proyecto(of: "Oficina", t: dict, avance) -> Path:
+    """La carpeta de clips del proyecto en esta compu; baja ahí (y a Musica) lo que subiste desde la oficina."""
     par, tid = t["parametros"], t["id"]
     if par.get("ruta"):  # tu propia carpeta (fuera de la sala)
         clips = Path(str(par["ruta"]).strip().strip('"').strip())
@@ -628,6 +626,89 @@ def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
         if not destino.exists() or destino.stat().st_size != e.get("bytes"):
             avance(f"Bajando {e['nombre']}", 0.01)
             of.bajar(tid, e["n"], destino)
+    return clips
+
+
+MOTION = AQUI / "motion"
+ESTADO_MOTION = {"texto": ""}
+
+
+def preparar_motion() -> str:
+    """Instala Remotion (motion graphics) la primera vez o cuando cambia; necesita Node.js."""
+    npm = shutil.which("npm") or shutil.which("npm.cmd")
+    if not npm:
+        return "sin_node"
+    lock = MOTION / "package-lock.json"
+    firma = hashlib.sha1(lock.read_bytes()).hexdigest()[:12] if lock.exists() else "x"
+    marca = MOTION / "node_modules" / ".firma_sala"
+    if marca.exists() and marca.read_text() == firma:
+        return "listo"
+    log("Instalando Remotion para los motion graphics (la primera vez tarda unos minutos)…")
+    r = subprocess.run([npm, "ci", "--no-audit", "--no-fund"], cwd=MOTION, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=1800, shell=WINDOWS)
+    if r.returncode:
+        log(f"No pude instalar Remotion: {(r.stderr or r.stdout)[-300:]}")
+        return "error"
+    marca.write_text(firma)
+    return "listo"
+
+
+def editar_libre(of: "Oficina", t: dict, temporal: Path, avance) -> None:
+    """Editor IA: Claude Code edita con las manos libres en la carpeta del proyecto y entrega la versión."""
+    import editor_ia
+    par, tid = t["parametros"], t["id"]
+    claude = claude_code()
+    if not claude or estado_claude() != "listo":
+        raise RuntimeError("Claude Code no está listo en esta compu (instálalo o inicia sesión con INSTALAR_SALA.bat).")
+    clips = carpeta_del_proyecto(of, t, avance)
+    nombre = _limpio(par.get("nombre") or par["carpeta"])
+    mesa = editor_ia.preparar(clips, nombre, par.get("formato") or "", MUSICA, claude, ESTADO_MOTION["texto"] == "listo")
+    (mesa / "resultado.json").unlink(missing_ok=True)
+    n = par["version"]
+    historial = "\n".join(par.get("historial") or [])
+    prompt = (f"Mensaje de Miguel desde la oficina: «{par['mensaje']}»\n"
+              + (f"(Plática reciente en la oficina:\n{historial})\n" if historial else "")
+              + f"Si editas, esta entrega es la versión {n}: guárdala como ../Ediciones/{nombre} v{n}.mp4. "
+              "Sigue CLAUDE.md y al final escribe resultado.json.")
+    avance("Leyendo lo que pediste", 0.03)
+    inicio = time.time()
+    editor_ia.correr(mesa, claude, prompt, avance)
+    try:
+        res = json.loads((mesa / "resultado.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        res = {}
+    respuesta = str(res.get("respuesta") or "Listo.")[:2000]
+    video_rel = str(res.get("video") or "")
+    video = (clips / video_rel) if video_rel else None
+    if video is None or not video.is_file():  # por si no lo apuntó: la entrega con el número de esta versión
+        candidato = clips / "Ediciones" / f"{nombre} v{n}.mp4"
+        video = candidato if candidato.is_file() and candidato.stat().st_mtime > inicio else None
+    resultado = {"respuesta": respuesta, "cambios": [str(c)[:200] for c in (res.get("cambios") or [])][:8],
+                 "segundos_trabajo": round(time.time() - inicio)}
+    if video:
+        avance("Subiendo tu video", 0.97)
+        salida = temporal / "salida"
+        salida.mkdir(parents=True, exist_ok=True)
+        copia = salida / f"v{n}.mp4"
+        shutil.copyfile(video, copia)
+        cuadro = salida / f"v{n}.cuadro.jpg"
+        dur = cris.duracion(copia)
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{dur * 0.4:.2f}", "-i", str(copia), "-frames:v", "1",
+                        "-q:v", "3", str(cuadro)], capture_output=True, timeout=60)
+        of.subir(tid, copia)
+        if cuadro.exists():
+            of.subir(tid, cuadro)
+        resultado.update(video=copia.name, cuadro=cuadro.name if cuadro.exists() else None, segundos=round(dur, 1))
+    of.post(f"terminar/{tid}", {"ok": True, "resultado": resultado})
+    log(f"Editor IA «{nombre}»: {'v' + str(n) if video else 'sin video'} en {round(time.time() - inicio)} s.")
+
+
+def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
+    """Un proyecto de la sala: los clips están en su carpeta de esta compu (lo que subiste al servidor se baja ahí)."""
+    import editor_libre
+    editor_libre.analizar = analizar  # para saltarse partes movidas/borrosas
+    par, tid = t["parametros"], t["id"]
+    clips = carpeta_del_proyecto(of, t, avance)
     n = par["version"]
     video = temporal / "salida" / f"v{n}.mp4"
     video.parent.mkdir(parents=True, exist_ok=True)
@@ -684,6 +765,8 @@ def hacer(of: Oficina, t: dict) -> None:
             return hacer_proyecto(of, t, carpeta, avance)
         if t["tipo"] == "pensar":
             return pensar(of, t, carpeta, avance)
+        if t["tipo"] == "claude_libre":
+            return editar_libre(of, t, carpeta, avance)
         if t["tipo"] != "cris":
             raise RuntimeError(f"Esta versión no sabe hacer trabajos de tipo {t['tipo']}.")
         if t.get("local"):  # tus clips ya están en esta compu: no se baja nada
@@ -759,7 +842,8 @@ def trabajar() -> None:
 
     def cerebro():  # ¿Claude Code instalado y con sesión? Entonces esta compu también piensa
         datos["claude_code"] = estado_claude()
-        datos["tipos"] = ["cris", "libre", *(["pensar"] if datos["claude_code"] == "listo" else [])]
+        datos["tipos"] = ["cris", "libre", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else [])]
+        datos["motion"] = ESTADO_MOTION["texto"]
     cerebro()
     listo = threading.Event()
 
@@ -800,7 +884,16 @@ def trabajar() -> None:
                 log(f"No pude revisar las carpetas de clips: {exc}")
                 ESTADO_COMPU["texto"] = "Lista"
 
-    for f in (pulso, preparar, carpetas):
+    def motion():  # Remotion para los motion graphics del editor IA (aparte: la primera vez tarda)
+        ESTADO_MOTION["texto"] = "instalando"
+        try:
+            ESTADO_MOTION["texto"] = preparar_motion()
+        except Exception as exc:  # noqa: BLE001
+            log(f"No pude preparar los motion graphics: {exc}")
+            ESTADO_MOTION["texto"] = "error"
+        cerebro()
+
+    for f in (pulso, preparar, carpetas, motion):
         threading.Thread(target=f, daemon=True).start()
     espera, revisado = 5, time.time()
     while True:

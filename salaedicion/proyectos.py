@@ -371,6 +371,9 @@ class Proyectos:
             p.setdefault("pendientes", []).append(texto)
             return self._decir(p, quien, "Estoy terminando la versión anterior; en cuanto acabe aplico esto. 👌")
         historial = [f"{'Miguel' if m['quien'] == 'jefe' else 'Tú'}: {m['texto']}" for m in p["mensajes"][-14:]]
+        cid = self._compu_editor_ia(p)
+        if cid:  # Claude Code edita con las manos libres en tu compu
+            return self._editar_con_ia(p, texto, cid, historial[-8:-1], quien)
         fichas, imagenes = [], []
         clave = self.clave(p)
         for i, x in enumerate(clips, 1):
@@ -451,6 +454,36 @@ class Proyectos:
                 return self._decir(p, quien, "No encontré clips para usar. Pásalos a la carpeta o súbelos y me dices.")
             plan["formato"] = plan.get("formato") or p.get("formato") or "vertical"
             self.lanzar_edicion(p, plan, extra_musica, contexto)
+
+    def _compu_editor_ia(self, p: dict) -> str | None:
+        """La compu del proyecto si tiene el Editor IA (Claude Code). Si la compu está apagada, se espera a que prenda."""
+        cid = p.get("compu") or p.get("encargado")
+        c = self.compus.get(cid or "")
+        return cid if c and "claude_libre" in (c.get("tipos") or []) else None
+
+    def _editar_con_ia(self, p: dict, texto: str, cid: str, historial: list, quien: str) -> None:
+        n = len(p["versiones"]) + 1
+        servidor = SALIDA / p["id"] / "clips"
+        clips = [str(f) for f in sorted(servidor.iterdir()) if f.is_file()] if servidor.exists() else []
+        musica = [str(SALIDA / p["id"] / "musica" / m) for m in self.musica_subida(p)]
+        (SALIDA / p["id"]).mkdir(parents=True, exist_ok=True)
+        r = self.crear({"tipo": "claude_libre", "origen": "sala", "etiqueta": f"{p['nombre']} · Editor IA",
+                        "entradas": clips + musica, "salida": str(SALIDA / p["id"]), "compu": cid,
+                        "local": {"carpeta": p["carpeta"]},
+                        "parametros": {"mensaje": texto, "historial": historial if not p["versiones"] else [], "version": n,
+                                       "proyecto": p["id"], "nombre": p["nombre"], "carpeta": p["carpeta"],
+                                       "ruta": p.get("ruta", ""), "formato": p.get("formato") or "",
+                                       "musica_entradas": [Path(m).name for m in musica]}})
+        if "error" in r:
+            return self._decir(p, quien, r["error"])
+        with self.lock:
+            p.update(estado="editando", trabajo=r["id"], error=None, encargado=cid)
+            self.trabajos[r["id"]]["proyecto"] = p["id"]
+            self._tocar()
+        apagada = not self.viva(self.compus.get(cid, {}))
+        self._decir(p, quien, "🖥️ Mi compu está apagada: en cuanto la prendas me pongo." if apagada else
+                    "👀 Va, ya lo estoy viendo en mi compu con Claude Code. Si hay que editar tardo unos 10-30 min "
+                    "(lo ves en el monitor); te aviso aquí.")
 
     def _compu_que_piensa(self, p: dict) -> str | None:
         """La compu del proyecto si tiene Claude Code listo; si no, cualquier otra prendida que lo tenga."""
@@ -581,6 +614,8 @@ class Proyectos:
         if not p:
             return
         quien = self.editor_id(t.get("compu") or p.get("encargado") or "")
+        if t.get("tipo") == "claude_libre":
+            return self._termino_editor_ia(p, t, quien)
         if t["estado"] == "listo":
             v = {"n": t["parametros"]["version"], "video": (t.get("resultado") or {}).get("video"),
                  "cuadro": (t.get("resultado") or {}).get("cuadro"), "segundos": (t.get("resultado") or {}).get("segundos"),
@@ -611,6 +646,36 @@ class Proyectos:
                 self._tocar()
             self._decir(p, quien, f"No pude terminar la versión: {(t.get('error') or 'falló en la compu')[:200]}. "
                                   "Revisa y escríbeme «otra vez» para reintentar.")
+
+    def _termino_editor_ia(self, p: dict, t: dict, quien: str) -> None:
+        res = t.get("resultado") or {}
+        if t["estado"] != "listo":
+            with self.lock:
+                p.update(estado="error" if p["versiones"] else "esperando", trabajo=None, error=t.get("error"))
+                self._tocar()
+            self._decir(p, quien, f"No pude terminar: {(t.get('error') or 'falló en la compu')[:220]}. "
+                                  "Escríbeme «otra vez» para reintentar.")
+        else:
+            texto = res.get("respuesta") or "Listo."
+            if res.get("cambios"):
+                texto += "\n" + "\n".join(f"• {c}" for c in res["cambios"][:8])
+            extra = {}
+            with self.lock:
+                if res.get("video"):
+                    v = {"n": t["parametros"]["version"], "video": res["video"], "cuadro": res.get("cuadro"),
+                         "segundos": res.get("segundos"), "t": time.time(), "plan": None, "editor_ia": True}
+                    p["versiones"].append(v)
+                    extra = {"version": v["n"]}
+                    texto += (f"\n🎬 Versión {v['n']} ({v['segundos']} s) — también está en tu compu, en Ediciones."
+                              f" (🧠 Claude Code, {round((res.get('segundos_trabajo') or 0) / 60)} min, 0 ¢)")
+                p.update(estado="listo" if p["versiones"] else "esperando", trabajo=None)
+                self._tocar()
+            if p.get("compu") and res.get("video"):
+                shutil.rmtree(SALIDA / p["id"] / "clips", ignore_errors=True)
+            self._decir(p, quien, texto, **extra)
+        pendientes = p.pop("pendientes", [])
+        if pendientes:
+            threading.Thread(target=self._atender_proyecto, args=(p, " / ".join(pendientes)), daemon=True).start()
 
     # ---------- modo demo (sin Claude) ----------
     def _router_demo(self, texto: str, lista: list, compus: list) -> dict:

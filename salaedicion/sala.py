@@ -93,14 +93,14 @@ class Sala(Proyectos):
             for c in sorted(self.compus.values(), key=lambda c: c["slot"]):
                 t = self.trabajos.get(c.get("trabajo") or "")
                 compus.append({k: c.get(k) for k in ("id", "nombre", "slot", "gpu", "sistema", "version", "ultimo",
-                                                     "nvenc", "oido", "editados", "estado_texto", "claude_code")}
+                                                     "nvenc", "oido", "editados", "estado_texto", "claude_code", "motion")}
                               | {"viva": self.viva(c),
                                  "trabajo": {k: t.get(k) for k in ("id", "etiqueta", "origen", "paso", "avance")} if t else None})
             trabajos = [{k: t.get(k) for k in ("id", "tipo", "origen", "etiqueta", "estado", "compu", "creado", "inicio",
                                                 "fin", "error", "paso", "avance")}
                         for t in sorted(self.trabajos.values(), key=lambda t: -t["creado"])[:15]]
             tareas = [{"id": t["id"], "agente": self.editor_id(t["compu"]), "etapa": "edicion",
-                       "accion": "Pensar" if t["tipo"] == "pensar" else "Editar",
+                       "accion": {"pensar": "Pensar", "claude_libre": "Editor IA"}.get(t["tipo"], "Editar"),
                        "titulo": t["etiqueta"], "estado": {"listo": "hecha", "error": "fallo", "cancelado": "cancelada"}.get(t["estado"], "trabajando"),
                        "inicio": t.get("inicio"), "fin": t.get("fin"), "error": t.get("error"), "paso": t.get("paso"),
                        "avance": t.get("avance")} for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])[-40:] if t.get("compu")]
@@ -237,7 +237,7 @@ class Sala(Proyectos):
             c.update(ultimo=time.time(), gpu=str(d.get("gpu") or c.get("gpu") or "")[:60],
                      version=str(d.get("version") or "")[:12], nvenc=bool(d.get("nvenc")), oido=str(d.get("oido") or "")[:40],
                      tipos=[x for x in (d.get("tipos") or ["cris"]) if isinstance(x, str)][:5],
-                     claude_code=str(d.get("claude_code") or "")[:20])
+                     claude_code=str(d.get("claude_code") or "")[:20], motion=str(d.get("motion") or "")[:20])
             extra = {}
             if not d.get("pulso"):  # «📂 Elegir carpeta…»: se entrega en el latido normal (no en el pulso)
                 pedir = next((pid for pid, x in self.pedidos_carpeta.items() if x["compu"] == c["id"] and x["estado"] == "nuevo"), None)
@@ -251,7 +251,7 @@ class Sala(Proyectos):
             libre = d.get("libre", True)
             pendiente = next((t for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])
                               if t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])
-                              and (d.get("oido_listo", True) or t["tipo"] == "pensar")),
+                              and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre"))),
                              None) if libre else None
             if pendiente:
                 pendiente.update(estado="asignado", compu=c["id"], slot=c["slot"], inicio=time.time(), paso="Bajando tus clips")
@@ -382,6 +382,7 @@ class Sala(Proyectos):
             return {"error": "Archivo demasiado grande."}
         destino = Path(t["salida"]) / nombre
         temporal = destino.with_name(destino.name + ".subiendo")
+        destino.parent.mkdir(parents=True, exist_ok=True)
         restante = largo
         with open(temporal, "wb") as f:
             while restante > 0:

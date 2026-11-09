@@ -1108,6 +1108,8 @@
         ${(estadoSala?.compus || []).length ? `<button type="button" class="btn btn-mini btn-primario" data-usar-carpeta>📂 Usar una carpeta de mi compu</button>` : ""}
         <label class="btn btn-mini subir" title="Manda una copia de los videos al servidor">☁️ Subir clips al servidor<input type="file" accept="video/*" multiple hidden data-subir-sala></label>
       </div>
+      ${(estadoSala?.compus || []).some((c) => c.id === (p.compu || p.encargado) && c.claude_code === "listo")
+        ? `<p class="pista">🧠 Edita Claude Code en tu compu. También puedes platicar con él directo ahí: doble clic en <b>«Abrir editor IA»</b> dentro de la carpeta del proyecto (comparten la memoria).</p>` : ""}
       <small class="pista" id="pv-carpeta-ayuda">${p.compu ? "Tus clips se quedan en tu compu: no se suben." : "«Usar una carpeta de mi compu» abre la ventana de Windows en tu compu para escogerla (sin subir nada)."}</small>
       <span id="pv-subiendo" class="pista"></span>
       <h3>🎵 Música y audio</h3>
@@ -1372,7 +1374,10 @@
           <span class="pc-chips"><span class="chip">${esc(c.gpu || "—")}</span>${c.nvenc ? `<span class="chip chip-estado-publicado">NVENC</span>` : ""}
             <span class="chip">👂 ${esc((c.oido || "—").replace(" (GPU)", " GPU").replace(" (CPU)", " CPU"))}</span>
             <span class="chip">🎬 ${c.editados || 0}</span>
-            ${c.claude_code === "listo" ? `<span class="chip chip-estado-publicado" title="Piensa y revisa con Claude Code (tu plan, 0 ¢)">🧠 Claude Code</span>`
+            ${c.claude_code === "listo" && c.motion === "listo" ? `<span class="chip chip-estado-publicado" title="Remotion listo para motion graphics">🎨 Motion</span>`
+              : c.claude_code === "listo" && c.motion === "sin_node" ? `<span class="chip" title="Corre otra vez INSTALAR_SALA.bat para instalar Node.js">🎨 falta Node.js</span>`
+              : c.claude_code === "listo" && c.motion === "instalando" ? `<span class="chip">🎨 instalando…</span>` : ""}
+            ${c.claude_code === "listo" ? `<span class="chip chip-estado-publicado" title="Editor IA: Claude Code edita con las manos libres en esta compu (tu plan, 0 ¢)">🧠 Editor IA</span>`
               : c.claude_code === "sin_sesion" ? `<span class="chip" title="Abre Claude Code en esa compu e inicia sesión">🧠 sin sesión</span>` : ""}</span>
         </div>
         ${carpetas.length ? `<div class="pc-carpetas"><small>📁 ${esc(loc.ruta || "Sala de edicion")}</small>

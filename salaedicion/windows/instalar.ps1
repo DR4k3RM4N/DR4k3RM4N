@@ -34,6 +34,7 @@ $py = $null
 try { $py = (& py -3.12 -c "import sys; print(sys.executable)" 2>$null) } catch {}
 if (-not $py) { Instalar "Python.Python.3.12" "Python 3.12"; $py = (& py -3.12 -c "import sys; print(sys.executable)") } else { Bien "Python 3.12 ya está" }
 if (-not (Tiene "ffmpeg")) { Instalar "Gyan.FFmpeg" "ffmpeg (el motor de video)" } else { Bien "ffmpeg ya está" }
+if (-not (Tiene "node")) { Instalar "OpenJS.NodeJS.LTS" "Node.js (para los motion graphics)" } else { Bien "Node.js ya está" }
 Recargar-Path
 if (-not (Tiene "ffmpeg")) {
   $link = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links"
