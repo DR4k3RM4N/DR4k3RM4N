@@ -483,6 +483,132 @@ def elegir_carpeta(pedido: str) -> None:
         log(f"No pude avisar qué carpeta elegiste: {exc}")
 
 
+# ---------- el cerebro: Claude Code en esta compu (con tu plan de Claude, sin gastar de la API) ----------
+def claude_code() -> str:
+    """Ruta de Claude Code si está instalado; vacío si no."""
+    candidatos = [shutil.which("claude"), Path.home() / ".local" / "bin" / ("claude.exe" if WINDOWS else "claude")]
+    if WINDOWS:
+        candidatos.append(Path(os.environ.get("APPDATA", "")) / "npm" / "claude.cmd")
+    for c in candidatos:
+        if c and Path(c).is_file():
+            return str(c)
+    return ""
+
+
+def estado_claude() -> str:
+    """'listo' (instalado y con sesión), 'sin_sesion' o '' (no instalado)."""
+    if not claude_code():
+        return ""
+    cuenta = Path.home() / ".claude.json"
+    try:
+        con_cuenta = cuenta.exists() and '"oauthAccount"' in cuenta.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        con_cuenta = False
+    sesion = (Path.home() / ".claude" / ".credentials.json").exists() or con_cuenta or bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
+    return "listo" if sesion or platform.system() == "Darwin" else "sin_sesion"
+
+
+INSTRUCCION = ("Lee el archivo instrucciones.md de esta carpeta y haz exactamente lo que pide. Mira con Read cada imagen "
+               "que mencione. Tu respuesta final va SOLO en el archivo {salida} (JSON válido). No hagas nada más.")
+
+
+def preguntar_a_claude(carpeta: Path, salida: str = "respuesta.json", minutos: int = 8) -> dict:
+    """Corre Claude Code (sin ventana) en `carpeta`, que ya tiene instrucciones.md, y regresa el JSON que escribió."""
+    ruta = claude_code()
+    if not ruta:
+        raise RuntimeError("Claude Code no está instalado en esta compu.")
+    (carpeta / salida).unlink(missing_ok=True)
+    cmd = [ruta, "-p", INSTRUCCION.format(salida=salida), "--output-format", "json", "--max-turns", "40",
+           "--permission-mode", "acceptEdits", "--allowedTools", "Read,Write,Edit,Glob"]
+    if os.environ.get("SALA_MODELO_CLAUDE"):  # p. ej. "opus" o "sonnet"; si no, el que tenga tu plan por defecto
+        cmd += ["--model", os.environ["SALA_MODELO_CLAUDE"]]
+    try:
+        r = subprocess.run(cmd, cwd=carpeta, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=minutos * 60)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"Claude Code tardó más de {minutos} min.") from None
+    try:
+        info = json.loads(r.stdout.strip().splitlines()[-1]) if r.stdout.strip() else {}
+    except ValueError:
+        info = {}
+    texto = str(info.get("result") or "")
+    if info.get("is_error") or (r.returncode and not (carpeta / salida).exists()):
+        motivo = texto or r.stderr.strip()[-200:] or f"salió con código {r.returncode}"
+        if "login" in motivo.lower() or "api key" in motivo.lower():
+            motivo = "no tiene la sesión abierta (abre «Claude Code» del escritorio una vez e inicia sesión)"
+        elif "limit" in motivo.lower():
+            motivo = "llegaste al límite de tu plan por ahora"
+        raise RuntimeError(f"Claude Code: {motivo}"[:240])
+    archivo = carpeta / salida
+    crudo = archivo.read_text(encoding="utf-8", errors="replace") if archivo.exists() else texto
+    m = re.search(r"\{.*\}", crudo, re.S)
+    if not m:
+        raise RuntimeError("Claude Code no dejó una respuesta que se pueda leer.")
+    try:
+        return json.loads(m.group(0))
+    except ValueError as exc:
+        raise RuntimeError(f"Claude Code dejó un JSON chueco ({exc})"[:200]) from None
+
+
+def pensar(of: "Oficina", t: dict, temporal: Path, avance) -> None:
+    """La sala te manda lo que pidió Miguel + los cuadros de los clips; Claude Code arma la respuesta y el plan."""
+    tid, par = t["id"], t["parametros"]
+    temporal.mkdir(parents=True, exist_ok=True)
+    for e in t["entradas"]:  # las hojas de cuadros de cada clip
+        of.bajar(tid, e["n"], temporal / e["nombre"])
+    (temporal / "instrucciones.md").write_text(par["instrucciones"], encoding="utf-8")
+    (temporal / "formato.json").write_text(json.dumps(par["schema"], ensure_ascii=False, indent=1), encoding="utf-8")
+    avance("Pensando con Claude Code", 0.3)
+    inicio = time.time()
+    respuesta = preguntar_a_claude(temporal, minutos=int(par.get("minutos") or 8))
+    of.post(f"terminar/{tid}", {"ok": True, "resultado": {"json": respuesta, "segundos": round(time.time() - inicio)}})
+    log(f"Pensé «{t.get('etiqueta')}» con Claude Code en {round(time.time() - inicio)} s.")
+
+
+def revisar(video: Path, plan: dict, info: dict, par: dict, clips: Path, temporal: Path) -> dict:
+    """Mira el borrador terminado (cuadros + lo que se oye) y, si algo está mal, regresa un plan corregido."""
+    import editor_libre
+    from manual_edicion import MANUAL
+    carpeta = temporal / "revision"
+    shutil.rmtree(carpeta, ignore_errors=True)
+    carpeta.mkdir(parents=True)
+    total = max(1.0, float(info.get("segundos") or 1))
+    tiempos = sorted({round(x, 1) for x in [0.3, 1.2, 2.5] + [3 + (total - 3.5) * i / 8 for i in range(9)] if x < total - 0.1})
+    cuadros = []
+    for x in tiempos:
+        nombre = f"cuadro_{x:05.1f}s.jpg"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{x}", "-i", str(video), "-frames:v", "1",
+                        "-vf", "scale=360:-2", "-q:v", "4", str(carpeta / nombre)], capture_output=True, timeout=60)
+        if (carpeta / nombre).exists():
+            cuadros.append(nombre)
+    dicho = " ".join(f"[{w['t']:.1f}] {w['w']}" if i % 8 == 0 else w["w"]
+                     for i, w in enumerate(info.get("palabras") or []) if w.get("w"))
+    pedazos = "\n".join(f"- {p['desde']}-{p['hasta']} s: {p['clip']} (desde su segundo {p['del_segundo']})"
+                        + (f", viéndose {p['apoyo']}" if p.get("apoyo") else "") for p in info.get("pedazos") or [])
+    (carpeta / "plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8")
+    (carpeta / "formato_plan.json").write_text(json.dumps(editor_libre.PLAN_SCHEMA, ensure_ascii=False, indent=1), encoding="utf-8")
+    (carpeta / "instrucciones.md").write_text(
+        f"# Revisa tu borrador antes de mandárselo a Miguel\n\nEres el editor. Ya hiciste un borrador de "
+        f"{total:.1f} s con el plan de plan.json. Revísalo como lo haría un editor exigente, con este manual:\n\n{MANUAL}\n\n"
+        f"## Lo que pidió Miguel y lo que sabes de los clips\n{par.get('contexto') or '(sin más contexto)'}\n\n"
+        f"## Cómo quedó\nCuadros del video final (míralos TODOS con Read): {', '.join(cuadros)} — el nombre dice el segundo.\n"
+        f"Pedazos en orden:\n{pedazos}\n\nLo que se oye (con segundos): {dicho[:6000] or '(no se habla)'}\n\n"
+        "## Qué hacer\nRevisa la lista 'ANTES DE ENTREGAR' del manual. Solo cuenta lo que de verdad se ve mal o se oye mal "
+        "(gancho flojo o que arranca con saludo, partes repetidas, tomas movidas/oscuras/borrosas, texto que tapa caras o "
+        "con faltas, final que se alarga, silencio o palabra cortada, algo que Miguel pidió y no está). No cambies gustos "
+        "por cambiar, y respeta lo que Miguel pidió.\n\nEscribe revision.json con: {\"ok\": true/false, \"problemas\": "
+        "[frases cortas en español de lo que corregiste], \"plan\": el plan completo corregido (mismo formato que plan.json "
+        "y formato_plan.json; solo clips que existen)}. Si está bien, ok=true, problemas=[] y plan = el mismo de plan.json.",
+        encoding="utf-8")
+    r = preguntar_a_claude(carpeta, "revision.json", minutos=6)
+    nombres = {f.name for f in clips.iterdir() if f.is_file()}
+    nuevo = editor_libre.normalizar_plan(r.get("plan") or {}, nombres)
+    problemas = [str(x)[:160] for x in (r.get("problemas") or []) if str(x).strip()][:6]
+    if r.get("ok") or not problemas or not nuevo.get("clips"):
+        return {"problemas": [], "plan": None, "revisado": True}
+    return {"problemas": problemas, "plan": nuevo, "revisado": True}
+
+
 def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     """Un proyecto de la sala: los clips están en su carpeta de esta compu (lo que subiste al servidor se baja ahí)."""
     import editor_libre
@@ -506,7 +632,18 @@ def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     video = temporal / "salida" / f"v{n}.mp4"
     video.parent.mkdir(parents=True, exist_ok=True)
     inicio = time.time()
-    segundos = editor_libre.render(par["plan"], clips, video, MUSICA, "", avance)
+    info, revision = {}, {"problemas": [], "plan": None}
+    segundos = editor_libre.render(par["plan"], clips, video, MUSICA, "", avance, info=info)
+    if par.get("revisar") and estado_claude() == "listo":  # lo ve antes de mandártelo y, si algo está mal, lo corrige
+        try:
+            avance("Revisando mi borrador", 0.9)
+            revision = revisar(video, par["plan"], info, par, clips, temporal)
+            if revision["plan"]:
+                avance("Corrigiendo lo que vi", 0.92)
+                segundos = editor_libre.render(revision["plan"], clips, video, MUSICA, "", avance)
+        except Exception as exc:  # noqa: BLE001 — si la revisión falla, se manda el borrador como está
+            log(f"No pude revisar el borrador: {exc}")
+            revision = {"problemas": [], "plan": None, "error": str(exc)[:160]}
     avance("Subiendo tu video", 0.97)
     of.subir(tid, video)
     cuadro = video.with_name(f"v{n}.cuadro.jpg")
@@ -516,7 +653,7 @@ def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     copia.parent.mkdir(exist_ok=True)
     shutil.copyfile(video, copia)
     of.post(f"terminar/{tid}", {"ok": True, "resultado": {"video": video.name, "cuadro": cuadro.name if cuadro.exists() else None,
-                                                         "segundos": segundos}})
+                                                         "segundos": segundos, "revision": revision}})
     log(f"Proyecto «{par['carpeta']}» v{n} listo en {round(time.time() - inicio)} s ({segundos} s de video).")
 
 
@@ -545,6 +682,8 @@ def hacer(of: Oficina, t: dict) -> None:
     try:
         if t["tipo"] == "libre":
             return hacer_proyecto(of, t, carpeta, avance)
+        if t["tipo"] == "pensar":
+            return pensar(of, t, carpeta, avance)
         if t["tipo"] != "cris":
             raise RuntimeError(f"Esta versión no sabe hacer trabajos de tipo {t['tipo']}.")
         if t.get("local"):  # tus clips ya están en esta compu: no se baja nada
@@ -617,11 +756,20 @@ def trabajar() -> None:
     cris.CACHE.mkdir(parents=True, exist_ok=True)
     datos = {"gpu": tarjeta or platform.processor()[:60], "nvenc": con_nvenc, "oido": "preparando…", "version": version(),
              "tipos": ["cris", "libre"], "con_carpetas": True}
+
+    def cerebro():  # ¿Claude Code instalado y con sesión? Entonces esta compu también piensa
+        datos["claude_code"] = estado_claude()
+        datos["tipos"] = ["cris", "libre", *(["pensar"] if datos["claude_code"] == "listo" else [])]
+    cerebro()
     listo = threading.Event()
 
     def pulso():  # "sigo prendida" cada 10 s, aunque esté ocupada analizando o editando
         of2 = Oficina(cfg["servidor"], cfg["token"])
+        vueltas = 0
         while True:
+            vueltas += 1
+            if vueltas % 30 == 0:  # cada 5 min: por si ya instalaste o iniciaste sesión en Claude Code
+                cerebro()
             try:
                 of2.post("latido", {**datos, "libre": False, "pulso": True, "estado": ESTADO_COMPU["texto"]}, timeout=20)
             except (requests.RequestException, ValueError):
@@ -660,7 +808,7 @@ def trabajar() -> None:
             revisado = time.time()
             actualizarme()
         try:
-            r = of.post("latido", {**datos, "libre": listo.is_set(), "estado": ESTADO_COMPU["texto"]}, timeout=20)
+            r = of.post("latido", {**datos, "libre": True, "oido_listo": listo.is_set(), "estado": ESTADO_COMPU["texto"]}, timeout=20)
             espera = 5
             if r.get("pedir_carpeta"):  # «📂 Elegir carpeta…» desde la oficina
                 threading.Thread(target=elegir_carpeta, args=(r["pedir_carpeta"]["id"],), daemon=True).start()

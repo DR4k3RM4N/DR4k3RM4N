@@ -20,7 +20,8 @@ analizar = None  # lo pone compu.py: analizar(clip) → {"frases", "calidad"} (p
 
 PLAN_SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["formato", "clips", "quitar_silencios", "quitar_repetidas", "cortes_dinamicos", "saltar_malas", "estabilizar",
+    "required": ["formato", "clips", "quitar_silencios", "quitar_repetidas", "quitar_muletillas", "cortes_dinamicos",
+                 "zoom_suave", "efectos_sonido", "al_ritmo", "saltar_malas", "estabilizar",
                  "audio_original", "reducir_ruido", "subtitulos", "textos", "color", "musica", "duracion_objetivo"],
     "properties": {
         "formato": {"type": "string", "enum": ["vertical", "horizontal"]},
@@ -41,6 +42,10 @@ PLAN_SCHEMA = {
         "quitar_silencios": {"type": "boolean"},
         "quitar_repetidas": {"type": "boolean", "description": "si dijo lo mismo dos veces, deja la última"},
         "cortes_dinamicos": {"type": "boolean", "description": "acercamientos cada ~2 s en tomas largas"},
+        "quitar_muletillas": {"type": "boolean", "description": "cortar 'eh', 'mmm', 'este…' palabra por palabra"},
+        "zoom_suave": {"type": "boolean", "description": "zoom lento que entra/sale en cada toma (se ve más profesional que los brincos)"},
+        "efectos_sonido": {"type": "boolean", "description": "whoosh en los fundidos y pop cuando aparece un texto"},
+        "al_ritmo": {"type": "boolean", "description": "en las tomas sin voz, cortar al ritmo de la música"},
         "saltar_malas": {"type": "boolean", "description": "saltarse solo las partes movidas, borrosas u oscuras"},
         "estabilizar": {"type": "boolean", "description": "estabilizar tomas con la cámara temblando"},
         "audio_original": {"type": "string", "enum": ["normal", "solo_voz", "silenciar"],
@@ -68,6 +73,43 @@ PLAN_SCHEMA = {
 }
 
 
+BASE_PLAN = {"formato": "vertical", "clips": [], "quitar_silencios": True, "quitar_repetidas": True, "quitar_muletillas": True,
+             "cortes_dinamicos": False, "zoom_suave": True, "efectos_sonido": False, "al_ritmo": False, "saltar_malas": True,
+             "estabilizar": False, "audio_original": "normal", "reducir_ruido": False,
+             "subtitulos": {"activar": True, "tamano": "grande", "posicion": "abajo", "mayusculas": True, "color_resaltado": "#FFD23F"},
+             "textos": [], "color": {"brillo": 0, "contraste": 1, "saturacion": 1}, "musica": {"archivo": "", "volumen": 0.15},
+             "duracion_objetivo": 0}
+
+
+def normalizar_plan(plan: dict, nombres: set[str] | None = None) -> dict:
+    """Un plan que no viene de la API (Claude Code en tu compu) puede venir chueco: se rellena y se limpia aquí."""
+    if not isinstance(plan, dict):
+        return {}
+    limpio = {k: plan.get(k, v) for k, v in BASE_PLAN.items()}
+    for k in ("subtitulos", "color", "musica"):
+        limpio[k] = {**BASE_PLAN[k], **(plan.get(k) if isinstance(plan.get(k), dict) else {})}
+    if limpio["formato"] not in RESOLUCION:
+        limpio["formato"] = "vertical"
+    if limpio["audio_original"] not in ("normal", "solo_voz", "silenciar"):
+        limpio["audio_original"] = "normal"
+    clips = []
+    for c in plan.get("clips") if isinstance(plan.get("clips"), list) else []:
+        if not isinstance(c, dict) or (nombres is not None and Path(str(c.get("archivo", ""))).name not in nombres):
+            continue
+        encima = c.get("encima") if isinstance(c.get("encima"), dict) else {}
+        num = lambda v, d: v if isinstance(v, (int, float)) else d  # noqa: E731
+        clips.append({"archivo": Path(str(c.get("archivo", ""))).name, "desde": num(c.get("desde"), 0),
+                      "hasta": num(c.get("hasta"), 0), "velocidad": num(c.get("velocidad"), 1), "texto": str(c.get("texto") or "")[:80],
+                      "posicion_texto": c.get("posicion_texto") if c.get("posicion_texto") in ("arriba", "centro", "abajo") else "arriba",
+                      "encima": {"archivo": Path(str(encima.get("archivo") or "")).name if encima.get("archivo") else "",
+                                 "desde": num(encima.get("desde"), 0)},
+                      "transicion": "fundido" if c.get("transicion") == "fundido" else "corte"})
+    limpio["clips"] = clips
+    limpio["textos"] = [t for t in (plan.get("textos") if isinstance(plan.get("textos"), list) else [])
+                        if isinstance(t, dict) and t.get("texto")][:20]
+    return limpio
+
+
 def _rango(v: float, a: float, b: float, defecto: float) -> float:
     try:
         v = float(v)
@@ -90,6 +132,22 @@ def _trozos_con_voz(pals: list[dict], ini: float, fin: float, gap: float = 0.6) 
     return [(max(ini, g[0]["t"] - 0.12), min(fin, g[-1]["t"] + g[-1]["d"] + 0.25), " ".join(x["w"] for x in g)) for g in grupos]
 
 
+MULETILLAS = {"eh", "ehh", "eeh", "em", "emm", "mm", "mmm", "hmm", "ah", "ahh", "eem", "ehm", "mmh"}
+
+
+def _sin_muletillas(pals: list[dict]) -> list[dict]:
+    """Quita 'eh', 'mmm'… y el 'este' que se usa para pensar (seguido de pausa o repetido)."""
+    limpio = []
+    for i, p in enumerate(pals):
+        w = cris._norm(p["w"])
+        sig = pals[i + 1] if i + 1 < len(pals) else None
+        pausa = sig is None or sig["t"] - (p["t"] + p["d"]) > 0.35
+        if w in MULETILLAS or (w in ("este", "osea", "o sea") and (pausa or (sig and cris._norm(sig["w"]) == w))):
+            continue
+        limpio.append(p)
+    return limpio
+
+
 def piezas_del_plan(plan: dict, carpeta: Path, pista: str = "") -> list[dict]:
     piezas = []
     for idx, c in enumerate(plan.get("clips") or []):
@@ -103,7 +161,9 @@ def piezas_del_plan(plan: dict, carpeta: Path, pista: str = "") -> list[dict]:
             ini, fin = 0, dur
         vel = _rango(c.get("velocidad"), 0.5, 2.0, 1.0)
         tramos = [(ini, fin, "")]
-        if plan.get("quitar_silencios") and cris.tiene_audio(src):
+        if plan.get("quitar_muletillas") and cris.tiene_audio(src):  # corta en cada muletilla (y en pausas)
+            tramos = _trozos_con_voz(_sin_muletillas(cris.transcribir(src, pista)), ini, fin, gap=0.3) or tramos
+        elif plan.get("quitar_silencios") and cris.tiene_audio(src):
             tramos = _trozos_con_voz(cris.transcribir(src, pista), ini, fin) or tramos
         if plan.get("saltar_malas") and analizar:
             malas = [(x[0], x[1]) for x in (analizar(src).get("calidad") or []) if x[2] != "bien"]
@@ -154,6 +214,32 @@ def piezas_del_plan(plan: dict, carpeta: Path, pista: str = "") -> list[dict]:
     return piezas
 
 
+def _pulso(musica: Path) -> float:
+    """Segundos entre golpes de la música (para cortar al ritmo). 0 si no se puede medir."""
+    try:
+        import numpy as np
+        crudo = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-t", "60", "-i", str(musica), "-ac", "1",
+                                "-ar", "11025", "-f", "f32le", "-"], capture_output=True, timeout=60).stdout
+        x = np.frombuffer(crudo, dtype=np.float32)
+        salto = 512
+        if len(x) < salto * 200:
+            return 0.0
+        energia = np.array([float((x[i:i + 1024] ** 2).sum()) for i in range(0, len(x) - 1024, salto)])
+        golpes = np.maximum(0, np.diff(energia))
+        golpes -= golpes.mean()
+        auto = np.correlate(golpes, golpes, mode="full")[len(golpes) - 1:]
+        por_seg = 11025 / salto
+        lo, hi = int(por_seg * 60 / 180), int(por_seg * 60 / 70)  # entre 70 y 180 BPM
+        lag = lo + int(np.argmax(auto[lo:hi]))
+        return round(lag / por_seg, 3)
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+SFX = {"pop": "aevalsrc='0.6*sin(2*PI*(520+900*t)*t)*exp(-28*t)':d=0.18",
+       "whoosh": "anoisesrc=d=0.5:c=pink:a=0.5,bandpass=f=1400:w=1200,afade=t=in:d=0.25,afade=t=out:st=0.25:d=0.25"}
+
+
 def _ass(destino: Path, w: int, h: int, palabras: list[dict], plan: dict, total: float) -> None:
     sub = plan.get("subtitulos") or {}
     vertical = h > w
@@ -199,8 +285,9 @@ def _ass(destino: Path, w: int, h: int, palabras: list[dict], plan: dict, total:
 
 
 def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = None, pista: str = "",
-           al_avanzar=None) -> float:
-    """Hace el video del plan. Deja `destino` y un cuadro limpio (destino.cuadro.jpg). Regresa los segundos."""
+           al_avanzar=None, info: dict | None = None) -> float:
+    """Hace el video del plan. Deja `destino` y un cuadro limpio (destino.cuadro.jpg). Regresa los segundos.
+    Si pasas `info`, ahí deja lo que se dice en el video final y dónde quedó cada pedazo (para revisarlo después)."""
     avance = al_avanzar or (lambda paso, f: None)
     w, h = RESOLUCION.get(plan.get("formato"), RESOLUCION["vertical"])
     avance("Escuchando tus clips", 0.03)
@@ -214,7 +301,16 @@ def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = N
     shutil.rmtree(trabajo, ignore_errors=True)
     trabajo.mkdir(parents=True)
     objetivo = _rango(plan.get("duracion_objetivo"), 0, 3600, 0)
-    partes, palabras, t0, tramos_txt = [], [], 0.0, []
+    musica = plan.get("musica") or {}
+    pista_musica = (musica_dir / Path(str(musica.get("archivo") or "")).name) if musica_dir and musica.get("archivo") else None
+    pista_musica = pista_musica if pista_musica and pista_musica.exists() else None
+    if pista_musica and plan.get("al_ritmo"):  # tomas sin voz: duran golpes enteros de la música
+        golpe = _pulso(pista_musica)
+        if golpe:
+            for p in piezas:
+                if not p.get("voz") and p["dur"] > golpe:
+                    p["dur"] = max(golpe, int(p["dur"] / golpe) * golpe)
+    partes, palabras, t0, tramos_txt, sonidos, dichas, pedazos = [], [], 0.0, [], [], [], []
     for k, p in enumerate(piezas):
         if objetivo and t0 >= objetivo:
             break  # ya se llegó a la duración que pediste
@@ -223,10 +319,17 @@ def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = N
         sw, sh = int(w * z) // 2 * 2, int(h * z) // 2 * 2
         estab = "deshake=rx=48:ry=48:edge=mirror," if plan.get("estabilizar") else ""
         fundido = ",fade=t=in:st=0:d=0.3" if p.get("fundido") else ""
-        vf = (f"scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={w}:{h},{estab}setsar=1,{eq},"
+        dur = p["dur"] if not objetivo else min(p["dur"], (objetivo - t0) * vel)
+        zoom = ""
+        if plan.get("zoom_suave") and z == 1.0:  # zoom lento, alternando entrar/salir
+            n = max(2, int(dur * cris.FPS))
+            expr = f"1+0.07*on/{n}" if k % 2 == 0 else f"1.07-0.07*on/{n}"
+            zoom = (f"fps={cris.FPS},zoompan=z='{expr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps={cris.FPS},")
+        vf = (f"scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={w}:{h},{estab}{zoom}setsar=1,{eq},"
               f"setpts=PTS/{vel:.3f},fps={cris.FPS},format=yuv420p{fundido}")
         salida = trabajo / f"p{k:03d}.mp4"
-        dur = p["dur"] if not objetivo else min(p["dur"], (objetivo - t0) * vel)
+        if plan.get("efectos_sonido") and p.get("fundido") and t0 > 0:
+            sonidos.append(("whoosh", max(0, t0 - 0.2)))
         modo_audio = plan.get("audio_original") or "normal"
         con_audio = cris.tiene_audio(p["src"]) and modo_audio != "silenciar" and not (modo_audio == "solo_voz" and not p.get("voz"))
         limpieza = "highpass=f=90,lowpass=f=11000,afftdn=nf=-28," if plan.get("reducir_ruido") else ""
@@ -245,9 +348,13 @@ def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = N
                      "anullsrc=r=44100:cl=stereo", "-vf", vf, "-map", "0:v", "-map", "1:a", "-shortest",
                      *cris.RAPIDO, *cris.AUDIO, str(salida))
         real = cris.duracion(salida)
-        for x in cris.transcribir(p["src"], pista) if (plan.get("subtitulos") or {}).get("activar") else []:
+        con_subs = (plan.get("subtitulos") or {}).get("activar")
+        for x in cris.transcribir(p["src"], pista) if (con_subs or info is not None) and cris.tiene_audio(p["src"]) else []:
             if p["ini"] <= x["t"] < p["ini"] + dur:
-                palabras.append({**x, "t": t0 + (x["t"] - p["ini"]) / vel, "d": x["d"] / vel})
+                (palabras if con_subs else dichas).append({**x, "t": t0 + (x["t"] - p["ini"]) / vel, "d": x["d"] / vel})
+        pedazos.append({"desde": round(t0, 2), "hasta": round(t0 + real, 2), "clip": p["src"].name,
+                        "del_segundo": round(p["ini"], 2), "plan_clip": p.get("idx", -1) + 1,
+                        "apoyo": Path(p["apoyo"]).name if p.get("apoyo") else ""})
         partes.append(salida)
         tramos_txt.append((p.get("idx", -1), t0, t0 + real, p.get("rotulo", ""), p.get("pos_rotulo", "arriba")))
         t0 += real
@@ -265,22 +372,43 @@ def render(plan: dict, carpeta: Path, destino: Path, musica_dir: Path | None = N
         else:
             rotulos.append({"idx": idx, "texto": texto, "desde": a, "hasta": b, "posicion": pos})
     _ass(trabajo / "textos.ass", w, h, palabras, {**plan, "textos": [*(plan.get("textos") or []), *rotulos]}, t0)
-    musica = plan.get("musica") or {}
-    pista_musica = (musica_dir / Path(str(musica.get("archivo") or "")).name) if musica_dir and musica.get("archivo") else None
-    entrada_musica = ["-stream_loop", "-1", "-i", str(pista_musica)] if pista_musica and pista_musica.exists() else []
-    if entrada_musica:
+    if plan.get("efectos_sonido"):  # "pop" cuando aparece un texto
+        sonidos += [("pop", r["desde"]) for r in rotulos]
+    sonidos = sorted(sonidos, key=lambda x: x[1])[:25]
+    entradas, filtros, mezcla = ["-i", "base.mp4"], ["[0:v]ass=textos.ass[v]"], "[0:a]"
+    if pista_musica:
         vol = _rango(musica.get("volumen"), 0.02, 0.6, 0.15)
+        entradas += ["-stream_loop", "-1", "-i", str(Path(pista_musica).resolve())]
         # la música baja sola cuando hablas (sidechain) y sube en las partes sin voz
-        filtro = (f"[0:v]ass=textos.ass[v];[0:a]asplit=2[voz][guia];"
-                  f"[1:a]volume={vol * 2.2:.3f},afade=t=out:st={max(0, t0 - 1.5):.2f}:d=1.5[m];"
-                  f"[m][guia]sidechaincompress=threshold=0.02:ratio=12:attack=15:release=400[mbaja];"
-                  f"[voz][mbaja]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
-        args = ["-i", "base.mp4", *entrada_musica, "-filter_complex", filtro, "-map", "[v]", "-map", "[a]"]
-    else:
-        args = ["-i", "base.mp4", "-vf", "ass=textos.ass", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
+        filtros += ["[0:a]asplit=2[voz][guia]",
+                    f"[1:a]volume={vol * 2.2:.3f},afade=t=out:st={max(0, t0 - 1.5):.2f}:d=1.5[m]",
+                    "[m][guia]sidechaincompress=threshold=0.02:ratio=12:attack=15:release=400[mbaja]",
+                    "[voz][mbaja]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[conmusica]"]
+        mezcla = "[conmusica]"
+    if sonidos:
+        tipos = sorted({n for n, _ in sonidos})
+        for n in tipos:
+            cris._ff("-f", "lavfi", "-i", SFX[n], "-ar", "44100", "-ac", "2", str(trabajo / f"{n}.wav"))
+        base_sfx = entradas.count("-i")
+        for n in tipos:
+            entradas += ["-i", f"{n}.wav"]
+            veces = sum(1 for m, _ in sonidos if m == n)
+            filtros.append(f"[{base_sfx + tipos.index(n)}:a]volume=0.55,asplit={veces}" + "".join(f"[{n}{k}]" for k in range(veces)))
+        etiquetas, usados = [], {}
+        for j, (n, t) in enumerate(sonidos):
+            ms, k = int(t * 1000), usados.get(n, 0)
+            usados[n] = k + 1
+            filtros.append(f"[{n}{k}]adelay={ms}|{ms}[s{j}]")
+            etiquetas.append(f"[s{j}]")
+        filtros.append(f"{mezcla}{''.join(etiquetas)}amix=inputs={len(etiquetas) + 1}:duration=first:dropout_transition=0:normalize=0[consfx]")
+        mezcla = "[consfx]"
+    filtros.append(f"{mezcla}loudnorm=I=-14:TP=-1.5:LRA=11[a]")
+    args = [*entradas, "-filter_complex", ";".join(filtros), "-map", "[v]", "-map", "[a]"]
     r = subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *args, *cris.FINAL, *cris.AUDIO,
                         "-t", f"{t0:.3f}", str(destino.resolve())], cwd=trabajo, capture_output=True, text=True)
     if r.returncode:
         raise cris.ErrorEdicion("ffmpeg falló al terminar el video: " + (r.stderr.strip().splitlines() or [""])[-1][:200])
     shutil.rmtree(trabajo, ignore_errors=True)
+    if info is not None:
+        info.update(palabras=palabras or dichas, pedazos=pedazos, segundos=round(t0, 2))
     return round(t0, 1)

@@ -226,3 +226,23 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   transiciones); campo `estructura` antes del plan (se le muestra "Cómo lo armé" en la v1). Plan por pedazo: `texto` +
   `posicion_texto` (se pinta donde quedó ese pedazo tras quitar silencios), `encima` (b-roll: se ve otro clip y se oye
   el del pedazo) y `transicion` corte/fundido.
+- Nov 2026 (7): "siguen mediocres" → Miguel eligió: Claude Code en su compu (plan Pro) como cerebro + manual completo +
+  herramientas con oficio + que revise antes de mandar (NO "aprenda mi estilo").
+  - `salaedicion/manual_edicion.py`: MANUAL largo (estructura, recetas por tipo de video, tomas, ritmo con números,
+    textos, audio, movimiento, correcciones, checklist "antes de entregar") y AYUDA. Lo usan servidor y compus.
+  - Herramientas nuevas en el plan (`editor_libre`): quitar_muletillas (corta "eh/mmm/este…" palabra por palabra),
+    zoom_suave (zoompan lento que entra/sale), efectos_sonido (whoosh en fundidos, pop al salir un texto; generados con
+    lavfi, sin archivos), al_ritmo (tomas sin voz duran golpes enteros de la música; `_pulso` detecta el BPM).
+    `normalizar_plan` limpia planes que no vienen de la API. `render(..., info={})` deja lo que se oye y los pedazos.
+  - Cerebro: la compu detecta Claude Code (`claude_code()`, sesión por ~/.claude/.credentials.json u oauthAccount en
+    ~/.claude.json) y reporta `claude_code` ("listo"/"sin_sesion") + tipo "pensar". `proyectos._pensar` crea un trabajo
+    "pensar" (hojas de cuadros como entradas, instrucciones.md + schema) → `compu.pensar` corre
+    `claude -p … --output-format json --permission-mode acceptEdits --allowedTools Read,Write,Edit,Glob` en una carpeta
+    temporal y devuelve respuesta.json. Si no hay compu con Claude Code, está ocupada >90 s o falla (sin sesión, límite
+    del plan) → API (Sonnet) con nota en el chat. SALA_MODELO_CLAUDE (variable de entorno en la compu) elige modelo.
+  - Revisión: tras renderizar, si la compu tiene Claude Code, `compu.revisar` saca ~12 cuadros del borrador + lo que se
+    oye + contexto del chat, Claude Code revisa con el checklist y, si hay problemas, re-renderiza una vez con el plan
+    corregido; el chat dice "🔍 Antes de mandártelo lo revisé y corregí: …". Sin Claude Code no se revisa (sería con costo).
+  - Instalador: instala Claude Code (`irm https://claude.ai/install.ps1 | iex`) y abre la ventana para iniciar sesión una
+    vez. En la oficina, la tarjeta de la compu muestra "🧠 Claude Code" o "🧠 sin sesión".
+  - Probado aquí con Claude Code real: pensar (45 s) y revisar (≈50 s) funcionan y corrigen cosas reales.

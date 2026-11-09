@@ -96,6 +96,32 @@ $ver.Arguments = "`"$(Join-Path $Dir 'compu.log')`""
 $ver.Save()
 Bien "Arranca sola al prender la compu"
 
+Paso "Claude Code: el cerebro de los editores (usa tu plan de Claude, sin gastar de la API)…"
+$claude = Join-Path $env:USERPROFILE ".local\bin\claude.exe"
+if (-not (Test-Path $claude)) {
+  if (Tiene "claude") { $claude = (Get-Command claude).Source }
+  else {
+    try { Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression | Out-Host } catch { Write-Host "    No pude instalar Claude Code: $_" -ForegroundColor Red }
+    Recargar-Path
+  }
+}
+$cuenta = Join-Path $env:USERPROFILE ".claude.json"
+$conSesion = (Test-Path (Join-Path $env:USERPROFILE ".claude\.credentials.json")) -or
+  ((Test-Path $cuenta) -and (Select-String -Path $cuenta -Pattern '"oauthAccount"' -Quiet))
+if (-not (Test-Path $claude)) {
+  Write-Host "    Claude Code no quedó instalado: tus editores usarán la IA del servidor (con costo). Puedes volver a correr esto después." -ForegroundColor Red
+} elseif ($conSesion) {
+  Bien "Claude Code listo y con tu sesión"
+} else {
+  Write-Host ""
+  Write-Host "  Falta iniciar sesión en Claude Code (una sola vez):" -ForegroundColor Cyan
+  Write-Host "   1. Se abre una ventana negra. Si pregunta el tema/colores, dale Enter." -ForegroundColor Cyan
+  Write-Host "   2. Elige 'Claude account with subscription' (tu plan Pro) y entra en el navegador que se abre." -ForegroundColor Cyan
+  Write-Host "   3. Cuando ya veas el cuadro para escribir, escribe /exit y Enter (se cierra)." -ForegroundColor Cyan
+  Start-Process -FilePath $claude -WorkingDirectory $Dir -Wait
+  Bien "Si iniciaste sesión, la oficina lo detecta sola en unos minutos"
+}
+
 Paso "Arrancando…"
 Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" | Where-Object { $_.CommandLine -like "*salaedicion*compu.py*" } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }

@@ -1361,7 +1361,9 @@
           <b>🖥️ ${esc(c.nombre)}</b>
           <span class="pc-chips"><span class="chip">${esc(c.gpu || "—")}</span>${c.nvenc ? `<span class="chip chip-estado-publicado">NVENC</span>` : ""}
             <span class="chip">👂 ${esc((c.oido || "—").replace(" (GPU)", " GPU").replace(" (CPU)", " CPU"))}</span>
-            <span class="chip">🎬 ${c.editados || 0}</span></span>
+            <span class="chip">🎬 ${c.editados || 0}</span>
+            ${c.claude_code === "listo" ? `<span class="chip chip-estado-publicado" title="Piensa y revisa con Claude Code (tu plan, 0 ¢)">🧠 Claude Code</span>`
+              : c.claude_code === "sin_sesion" ? `<span class="chip" title="Abre Claude Code en esa compu e inicia sesión">🧠 sin sesión</span>` : ""}</span>
         </div>
         ${carpetas.length ? `<div class="pc-carpetas"><small>📁 ${esc(loc.ruta || "Sala de edicion")}</small>
           ${carpetas.map(([pid, n]) => `<button type="button" class="pc-carpeta" data-abrir-producto="${esc(pid)}">

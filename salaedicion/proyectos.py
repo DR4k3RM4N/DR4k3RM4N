@@ -22,38 +22,30 @@ EXT_VIDEO = {".mp4", ".mov", ".m4v", ".webm", ".3gp", ".mkv"}
 COLORES = ["#a78bfa", "#22d3ee", "#f472b6", "#facc15"]
 PEINADOS = ["gorra", "audifonos", "rizos", "lentes"]
 
-AYUDA = ("Sé cortar y ordenar clips, quitar silencios y tomas repetidas, saltarme las partes movidas/borrosas/oscuras, "
-         "estabilizar tomas temblorosas, cambiar velocidad, hacer acercamientos cada ~2 s, ajustar brillo/contraste/"
-         "saturación, poner textos en pantalla, subtítulos karaoke con tu voz, quitar ruido de fondo, dejar solo tu voz o "
-         "silenciar el audio de los clips, música de tu carpeta Musica (baja sola cuando hablas), vertical u horizontal y "
-         "ajustar la duración. No hago efectos tipo After Effects, recortar personas, seguir objetos ni generar imágenes.")
+from manual_edicion import AYUDA, MANUAL  # noqa: E402 — el manual completo vive en su propio archivo
 
 
 def limpio(nombre: str) -> str:
     return re.sub(r'[<>:"/\\|?*\[\]]+', " ", nombre or "").strip(" .")[:60] or "Proyecto"
 
 
-MANUAL = """CÓMO EDITA UN BUEN EDITOR (síguelo siempre):
-1. Antes de cortar, entiende el material: mira los cuadros de cada clip, lee lo que se dice y decide QUÉ HISTORIA cuenta
-   el video. Arma una estructura: GANCHO (0-3 s: lo más llamativo, una frase fuerte o el resultado; nunca "hola" ni
-   arranques lentos) → DESARROLLO (en orden lógico: qué es / qué pasó / cómo) → CIERRE (remate, resultado o llamado a
-   la acción). El orden del video NO tiene que ser el orden de grabación.
-2. Escoge lo mejor: de cada idea, solo la mejor toma (la última que salió bien, la más clara y estable). Recorta con
-   desde/hasta usando los tiempos de lo que dice: entra justo antes de la primera palabra útil y sal justo después de
-   la última; quita titubeos, "eh", errores, "¿ya está grabando?" y repeticiones.
-3. Ritmo: en vertical (TikTok/Reels/Shorts) cambia de imagen cada 1.5-3 s y deja el video corto (15-45 s salvo que
-   pida otra cosa); en horizontal (YouTube) el ritmo puede ser más calmado. Sin tiempos muertos.
-4. Cuando alguien habla mucho rato, tapa los cortes con TOMAS DE APOYO: usa 'encima' para que se vea otro clip
-   (el lugar, el producto, la acción) mientras se sigue oyendo la voz. Así el video se ve profesional y no brinca.
-5. Textos: cortos (2-5 palabras), en el pedazo donde aplican (campo 'texto' del pedazo), para reforzar la idea clave
-   o el gancho; no repitas lo que dicen los subtítulos. Subtítulos karaoke casi siempre en vertical.
-6. Audio: la voz manda. Con música, bajita y que baje cuando hablan; quita ruido de fondo. Si un clip no tiene voz,
-   úsalo como apoyo o con música.
-7. Transiciones: corte seco casi siempre; 'fundido' solo para cambios de lugar o de tiempo. Acercamientos
-   (cortes_dinamicos) en tomas largas de alguien hablando a cámara.
-8. Evita lo movido, borroso u oscuro; si no hay de otra, estabiliza o úsalo muy corto.
-9. Correcciones: cambia SOLO lo que pidió, deja lo demás igual que la versión anterior, y di exactamente qué cambiaste.
-10. Si algo no se puede con tus herramientas, dilo y propone lo más cercano. No inventes clips ni archivos."""
+def armar_instrucciones(sistema: str, contenido: list, carpeta: Path) -> tuple[str, list[str]]:
+    """Lo que se le pediría a la API, pero en archivos para Claude Code: instrucciones.md + las imágenes aparte."""
+    import base64
+    partes, entradas = [], []
+    for b in contenido:
+        if b.get("type") == "image":
+            nombre = f"hoja_{len(entradas) + 1:02d}.jpg"
+            (carpeta / nombre).write_bytes(base64.b64decode(b["source"]["data"]))
+            entradas.append(str(carpeta / nombre))
+            partes.append(f"(Imagen: abre con Read el archivo {nombre})")
+        else:
+            partes.append(b.get("text", ""))
+    return (f"# Tu papel\n{sistema}\n\n# El material\n" + "\n".join(partes) +
+            "\n\n# Cómo responder\nAntes de decidir, mira con Read TODAS las imágenes hoja_*.jpg (4 cuadros de "
+            "principio a fin de cada clip). Luego escribe el archivo respuesta.json con UN objeto JSON que cumpla "
+            "exactamente el esquema de formato.json (todas las propiedades requeridas, sin propiedades extra, "
+            "nombres de clips exactos). No escribas ningún otro archivo."), entradas
 
 
 def respuesta_schema(con_plan: bool) -> dict:
@@ -377,17 +369,11 @@ class Proyectos:
                 imagenes += [{"type": "text", "text": f"Clip {i} («{x['nombre']}»), 4 cuadros de principio a fin:"},
                              {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                           "data": base64.b64encode(hoja).decode()}}]
-        if self.demo:
-            r = self._cerebro_demo(p, texto, clips)
-        else:
-            from agentes import claude as ia
-            r = ia.json_estructurado(
-                f"Eres {self._nombre_editor(p.get('encargado'))}, editor de video en la sala de edición de Miguel (creador "
+        sistema = (f"Eres {self._nombre_editor(p.get('encargado'))}, editor de video en la sala de edición de Miguel (creador "
                 f"mexicano). Hablas español de México, casual y breve, como compañero de trabajo. Eres un editor con mucho "
                 f"oficio: piensas como editor de TikTok y YouTube, no como alguien que solo pega clips.\n{MANUAL}\n"
-                f"Herramientas: {self.AYUDA}",
-                [*imagenes, {"type": "text", "text":
-                f"Proyecto: {p['nombre']}\nFormato: {p.get('formato') or 'no lo ha dicho'}\n"
+                f"Herramientas: {self.AYUDA}")
+        pedido = (f"Proyecto: {p['nombre']}\nFormato: {p.get('formato') or 'no lo ha dicho'}\n"
                 "Clips (usa exactamente estos nombres en el plan):\n" + "\n".join(fichas) + "\n"
                 f"Música en su carpeta Musica: {json.dumps(self.musica(p), ensure_ascii=False)}\n"
                 + (f"Música libre que ya le encontraste (úsala con archivo 'opcion:N'): "
@@ -405,8 +391,12 @@ class Proyectos:
                 "otra, llena buscar_musica (en inglés) y en el plan pon musica.archivo='opcion:1'. Con música pon "
                 "reducir_ruido=true; si el ruido de fondo molesta, audio_original='solo_voz' (o 'silenciar' si no habla). "
                 "En 'cambios' explica en frases cortas qué hiciste. Si accion no es 'editar', manda un plan cualquiera "
-                "válido (se ignora)."}],
-                respuesta_schema(True), tarea="sala", effort="medium", que="editor de la sala")
+                "válido (se ignora).")
+        if self.demo and not self._compu_que_piensa(p):  # en demo solo piensa de verdad si hay una compu con Claude Code
+            r = self._cerebro_demo(p, texto, clips)
+        else:
+            r = self._pensar(p, sistema, [*imagenes, {"type": "text", "text": pedido}], respuesta_schema(True))
+        contexto = "\n".join(historial[-6:]) + f"\nÚltimo mensaje de Miguel: «{texto}»\nClips:\n" + "\n".join(fichas)
         if r.get("formato") in ("vertical", "horizontal"):
             p["formato"] = r["formato"]
         texto_resp = r.get("respuesta") or "Va."
@@ -416,7 +406,10 @@ class Proyectos:
             texto_resp += "\n" + "\n".join(f"• {c}" for c in r["cambios"][:8])
         if r.get("no_puedo"):
             texto_resp += f"\n⚠️ Eso no lo puedo hacer: {r['no_puedo']}"
-        plan = r.get("plan") or {}
+        if r.get("_nota"):
+            texto_resp += f"\n{r['_nota']}"
+        from editor_libre import normalizar_plan
+        plan = normalizar_plan(r.get("plan") or {})
         if r.get("buscar_musica"):
             self._buscar_musica(p, r["buscar_musica"], quien)
         musica = (plan.get("musica") or {}).get("archivo") or ""
@@ -439,7 +432,62 @@ class Proyectos:
             if not plan["clips"]:
                 return self._decir(p, quien, "No encontré clips para usar. Pásalos a la carpeta o súbelos y me dices.")
             plan["formato"] = plan.get("formato") or p.get("formato") or "vertical"
-            self.lanzar_edicion(p, plan, extra_musica)
+            self.lanzar_edicion(p, plan, extra_musica, contexto)
+
+    def _compu_que_piensa(self, p: dict) -> str | None:
+        """La compu del proyecto si tiene Claude Code listo; si no, cualquier otra prendida que lo tenga."""
+        with self.lock:
+            buenas = [c for c in self.compus.values() if self.viva(c) and "pensar" in (c.get("tipos") or [])]
+        propia = next((c for c in buenas if c["id"] == (p.get("compu") or p.get("encargado"))), None)
+        return (propia or (buenas[0] if buenas else {})).get("id")
+
+    def _pensar(self, p: dict, sistema: str, contenido: list, schema: dict) -> dict:
+        """Primero Claude Code en tu compu (gratis con tu plan); si no se puede, la IA del servidor (Sonnet, con costo)."""
+        cid, nota = self._compu_que_piensa(p), ""
+        if cid:
+            try:
+                r = self._pensar_en_compu(p, cid, sistema, contenido, schema)
+                if isinstance(r, dict) and r.get("respuesta") is not None and r.get("accion") in ("preguntar", "editar", "nada"):
+                    r["_nota"] = f"🧠 Lo pensé con Claude Code en {self.compus.get(cid, {}).get('nombre', 'tu compu')} (0 ¢)."
+                    return r
+                nota = "Claude Code contestó algo raro"
+            except Exception as exc:  # noqa: BLE001
+                nota = str(exc)[:160]
+        if self.demo:
+            r = self._cerebro_demo(p, "", self.clips(p))
+        else:
+            from agentes import claude as ia
+            r = ia.json_estructurado(sistema, contenido, schema, tarea="sala", effort="medium", que="editor de la sala")
+        if nota:
+            r["_nota"] = f"(Claude Code de tu compu no pudo: {nota}. Usé la IA del servidor.)"
+        return r
+
+    def _pensar_en_compu(self, p: dict, cid: str, sistema: str, contenido: list, schema: dict) -> dict:
+        carpeta = SALIDA / p["id"] / "pensar"
+        shutil.rmtree(carpeta, ignore_errors=True)
+        carpeta.mkdir(parents=True)
+        instrucciones, entradas = armar_instrucciones(sistema, contenido, carpeta)
+        r = self.crear({"tipo": "pensar", "origen": "sala", "etiqueta": f"{p['nombre']} · pensar", "entradas": entradas,
+                        "salida": str(carpeta), "compu": cid,
+                        "parametros": {"instrucciones": instrucciones, "schema": schema, "minutos": 8}})
+        if "error" in r:
+            raise RuntimeError(r["error"])
+        tid, inicio = r["id"], time.time()
+        try:
+            while True:
+                time.sleep(1.5)
+                t = self.ver(tid)
+                if t["estado"] == "listo":
+                    return (self.trabajos.get(tid, {}).get("resultado") or {}).get("json") or {}
+                if t["estado"] in ("error", "cancelado"):
+                    raise RuntimeError(t.get("error") or "se canceló")
+                if t["estado"] == "en_cola" and time.time() - inicio > 90:
+                    raise RuntimeError("tu compu estaba ocupada")
+                if time.time() - inicio > 10 * 60:
+                    raise RuntimeError("tardó demasiado")
+        finally:
+            self.cancelar(tid)
+            shutil.rmtree(carpeta, ignore_errors=True)
 
     def _buscar_musica(self, p: dict, consulta: str, quien: str) -> None:
         """Busca música libre (Openverse) y te enseña 3 opciones en el chat para escucharlas."""
@@ -482,7 +530,7 @@ class Proyectos:
                     p["creditos"].append(o["credito"])
         return nombre, str(carpeta / nombre), o
 
-    def lanzar_edicion(self, p: dict, plan: dict, extra_musica: list | None = None) -> None:
+    def lanzar_edicion(self, p: dict, plan: dict, extra_musica: list | None = None, contexto: str = "") -> None:
         n = len(p["versiones"]) + 1
         servidor = SALIDA / p["id"] / "clips"
         entradas = [str(f) for f in sorted(servidor.iterdir())] if servidor.exists() else []
@@ -493,7 +541,8 @@ class Proyectos:
                         "salida": str(SALIDA / p["id"]), "compu": p.get("compu") or None,
                         "local": {"carpeta": p["carpeta"]},
                         "parametros": {"plan": plan, "version": n, "proyecto": p["id"], "carpeta": p["carpeta"],
-                                       "ruta": p.get("ruta", ""), "musica_entradas": [Path(m).name for m in extra_musica or []]}})
+                                       "ruta": p.get("ruta", ""), "musica_entradas": [Path(m).name for m in extra_musica or []],
+                                       "revisar": True, "contexto": contexto[:8000]}})
         if "error" in r:
             return self._decir(p, self.editor_id(p["encargado"]) if p.get("encargado") else "sala", r["error"])
         with self.lock:
@@ -513,14 +562,23 @@ class Proyectos:
             v = {"n": t["parametros"]["version"], "video": (t.get("resultado") or {}).get("video"),
                  "cuadro": (t.get("resultado") or {}).get("cuadro"), "segundos": (t.get("resultado") or {}).get("segundos"),
                  "t": time.time(), "plan": t["parametros"]["plan"]}
+            revision = (t.get("resultado") or {}).get("revision") or {}
+            if revision.get("plan"):  # lo revisó y lo corrigió: la versión es la corregida
+                v["plan"] = revision["plan"]
             with self.lock:
                 p["versiones"].append(v)
                 p.update(estado="listo", trabajo=None)
                 self._tocar()
             if p.get("compu"):  # lo que subiste al servidor ya quedó en la carpeta de tu compu: se libera espacio
                 shutil.rmtree(SALIDA / p["id"] / "clips", ignore_errors=True)
+            p["plan"] = v["plan"]
+            nota = ""
+            if revision.get("problemas"):
+                nota = "\n🔍 Antes de mandártelo lo revisé y corregí:\n" + "\n".join(f"• {x}" for x in revision["problemas"][:6])
+            elif "problemas" in revision and not revision.get("error") and t.get("parametros", {}).get("revisar"):
+                nota = "\n🔍 Lo revisé antes de mandártelo y quedó bien." if revision.get("revisado") else ""
             self._decir(p, quien, f"¡Listo la versión {v['n']}! ({v['segundos']} s). También quedó en tu compu, en la carpeta "
-                                  f"Ediciones del proyecto. ¿Le cambio algo?", version=v["n"])
+                                  f"Ediciones del proyecto. ¿Le cambio algo?{nota}", version=v["n"])
             pendientes = p.pop("pendientes", [])
             if pendientes:
                 threading.Thread(target=self._atender_proyecto, args=(p, " / ".join(pendientes)), daemon=True).start()
@@ -548,7 +606,8 @@ class Proyectos:
         base = {"formato": formato or "vertical", "clips": [{"archivo": x["nombre"], "desde": 0, "hasta": 0, "velocidad": 1,
                                                               "texto": "", "posicion_texto": "arriba", "encima": {"archivo": "", "desde": 0},
                                                               "transicion": "corte"} for x in clips],
-                "quitar_silencios": True, "quitar_repetidas": True, "cortes_dinamicos": True, "saltar_malas": True,
+                "quitar_silencios": True, "quitar_repetidas": True, "quitar_muletillas": True, "cortes_dinamicos": False,
+                "zoom_suave": True, "efectos_sonido": "sin efectos" not in t, "al_ritmo": True, "saltar_malas": True,
                 "estabilizar": "movid" in t, "audio_original": "solo_voz" if "música" in t or "musica" in t else "normal",
                 "reducir_ruido": "ruido" in t or "música" in t or "musica" in t,
                 "subtitulos": {"activar": "sin subt" not in t, "tamano": "grande" if "grande" in t else "normal", "posicion": "abajo",
