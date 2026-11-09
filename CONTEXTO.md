@@ -246,3 +246,6 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   - Instalador: instala Claude Code (`irm https://claude.ai/install.ps1 | iex`) y abre la ventana para iniciar sesión una
     vez. En la oficina, la tarjeta de la compu muestra "🧠 Claude Code" o "🧠 sin sesión".
   - Probado aquí con Claude Code real: pensar (45 s) y revisar (≈50 s) funcionan y corrigen cosas reales.
+- Nov 2026 (8): "🎵 Subir música o audio" en la ventana del proyecto (también con el video ya hecho): `/api/subir` acepta
+  audio (mp3/m4a/wav/aac/ogg/flac) → `salida/<id>/musica`; el editor avisa en el chat; `musica(p)` junta lo subido + la
+  carpeta Musica de la compu; al editar, la canción subida viaja como entrada a la carpeta Musica de la compu.

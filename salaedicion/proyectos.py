@@ -19,6 +19,7 @@ from pathlib import Path
 AQUI = Path(__file__).resolve().parent
 SALIDA = AQUI / "salida"
 EXT_VIDEO = {".mp4", ".mov", ".m4v", ".webm", ".3gp", ".mkv"}
+EXT_AUDIO = {".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac"}
 COLORES = ["#a78bfa", "#22d3ee", "#f472b6", "#facc15"]
 PEINADOS = ["gorra", "audifonos", "rizos", "lentes"]
 
@@ -195,9 +196,17 @@ class Proyectos:
                                   "segundos": (p.get("duraciones") or {}).get(f.name, 0), "tiene_audio": True, "donde": "servidor"})
         return lista
 
+    def musica_subida(self, p: dict) -> list[str]:
+        """Música o audio que subiste a este proyecto desde la oficina."""
+        carpeta = SALIDA / p["id"] / "musica"
+        if not carpeta.exists():
+            return []
+        return [f.name for f in sorted(carpeta.iterdir(), key=lambda f: f.stat().st_mtime) if f.suffix.lower() in EXT_AUDIO]
+
     def musica(self, p: dict) -> list[str]:
         cid = p.get("encargado") or p.get("compu")
-        return (self.locales.get(cid or "") or {}).get("musica", [])
+        de_compu = (self.locales.get(cid or "") or {}).get("musica", [])
+        return [*self.musica_subida(p), *[m for m in de_compu if m not in self.musica_subida(p)]]
 
     def resumen_proyectos(self) -> list[dict]:
         with self.lock:
@@ -256,13 +265,14 @@ class Proyectos:
         if not p:
             return {"error": "No encontré ese proyecto."}
         nombre = Path(nombre).name[:100]
-        if Path(nombre).suffix.lower() not in EXT_VIDEO:
-            return {"error": "Ese archivo no es un video."}
+        es_audio = Path(nombre).suffix.lower() in EXT_AUDIO
+        if Path(nombre).suffix.lower() not in EXT_VIDEO and not es_audio:
+            return {"error": "Ese archivo no es un video ni un audio (mp3, m4a, wav…)."}
         if largo <= 0 or largo > 1536 * 1024 ** 2:
             return {"error": "El clip debe pesar menos de 1.5 GB."}
         if shutil.disk_usage(AQUI).free < largo + 1024 ** 3:
             return {"error": "Ya casi no queda espacio en el servidor."}
-        carpeta = SALIDA / pid / "clips"
+        carpeta = SALIDA / pid / ("musica" if es_audio else "clips")
         carpeta.mkdir(parents=True, exist_ok=True)
         destino, restante = carpeta / nombre, largo
         with open(destino, "wb") as f:
@@ -280,6 +290,12 @@ class Proyectos:
             segundos = round(cris.duracion(destino), 1)
         except Exception:  # noqa: BLE001
             segundos = 0
+        if es_audio:  # queda en el proyecto; el editor lo usa cuando se lo pidas (aunque el video ya esté hecho)
+            quien = self.editor_id(p["encargado"]) if p.get("encargado") else "sala"
+            self._decir(p, quien, f"🎵 Ya tengo tu audio «{nombre}»" + (f" ({segundos:.0f} s)" if segundos else "") +
+                        (". Dime «ponle esta música» y te hago otra versión con ella." if p.get("versiones")
+                         else ". Lo uso cuando armemos el video."))
+            return {"ok": True, "segundos": segundos}
         with self.lock:
             p.setdefault("duraciones", {})[nombre] = segundos
             self._tocar()
@@ -375,7 +391,9 @@ class Proyectos:
                 f"Herramientas: {self.AYUDA}")
         pedido = (f"Proyecto: {p['nombre']}\nFormato: {p.get('formato') or 'no lo ha dicho'}\n"
                 "Clips (usa exactamente estos nombres en el plan):\n" + "\n".join(fichas) + "\n"
-                f"Música en su carpeta Musica: {json.dumps(self.musica(p), ensure_ascii=False)}\n"
+                f"Música disponible (usa el nombre exacto): {json.dumps(self.musica(p), ensure_ascii=False)}\n"
+                f"De esa, la que subió a este proyecto: {json.dumps(self.musica_subida(p), ensure_ascii=False)} (si dice «esta "
+                "música» o «la que subí», es la última de esta lista)\n"
                 + (f"Música libre que ya le encontraste (úsala con archivo 'opcion:N'): "
                    + "; ".join(f"opcion:{o['n']} «{o['titulo']}» de {o['autor']} ({o['segundos']} s)" for o in p.get("musica_opciones") or []) + "\n"
                    if p.get("musica_opciones") else "") +
@@ -536,6 +554,11 @@ class Proyectos:
         entradas = [str(f) for f in sorted(servidor.iterdir())] if servidor.exists() else []
         usados = {c["archivo"] for c in plan["clips"]}
         entradas = [e for e in entradas if Path(e).name in usados] + list(extra_musica or [])
+        cancion = Path(str((plan.get("musica") or {}).get("archivo") or "")).name
+        subida = SALIDA / p["id"] / "musica" / cancion
+        if cancion and subida.is_file() and str(subida) not in entradas:  # tu audio subido viaja a la carpeta Musica de la compu
+            entradas.append(str(subida))
+            extra_musica = [*(extra_musica or []), str(subida)]
         (SALIDA / p["id"]).mkdir(parents=True, exist_ok=True)
         r = self.crear({"tipo": "libre", "origen": "sala", "etiqueta": f"{p['nombre']} · v{n}", "entradas": entradas,
                         "salida": str(SALIDA / p["id"]), "compu": p.get("compu") or None,

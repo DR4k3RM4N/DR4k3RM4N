@@ -1110,7 +1110,11 @@
       </div>
       <small class="pista" id="pv-carpeta-ayuda">${p.compu ? "Tus clips se quedan en tu compu: no se suben." : "«Usar una carpeta de mi compu» abre la ventana de Windows en tu compu para escogerla (sin subir nada)."}</small>
       <span id="pv-subiendo" class="pista"></span>
-      ${(p.musica || []).length ? `<p class="pista">🎵 Música disponible: ${p.musica.map(esc).join(", ")}</p>` : `<p class="pista">🎵 Para música, pon tus canciones en la carpeta <b>Musica</b> de la sala en tu compu.</p>`}`;
+      <h3>🎵 Música y audio</h3>
+      ${(p.musica || []).length ? `<p class="pista">Disponible: ${p.musica.map(esc).join(", ")}</p>` : `<p class="pista">Todavía no hay. Súbela aquí o ponla en la carpeta <b>Musica</b> de la sala en tu compu.</p>`}
+      <div class="fila acciones-clips">
+        <label class="btn btn-mini subir" title="MP3, M4A, WAV… Se puede subir aunque el video ya esté hecho">🎵 Subir música o audio<input type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.flac" multiple hidden data-subir-sala="audio"></label>
+      </div>`;
     if ($("#pv-clips").dataset.html !== htmlClips) { $("#pv-clips").innerHTML = htmlClips; $("#pv-clips").dataset.html = htmlClips; }
     const log = $("#pv-chat"), abajo = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
     log.innerHTML = (p.mensajes || []).map(lineaChat).join("");
@@ -1152,18 +1156,24 @@
   $("#modal-cuerpo").addEventListener("change", async (e) => {
     const input = e.target.closest("[data-subir-sala]");
     if (!input || !proyectoSala) return;
-    const archivos = [...input.files].filter((f) => /\.(mp4|mov|m4v|webm|3gp|mkv)$/i.test(f.name));
-    if (!archivos.length) return alert("En esa carpeta no hay videos.");
+    const audio = input.dataset.subirSala === "audio";
+    const archivos = [...input.files].filter((f) => (audio ? /\.(mp3|m4a|wav|aac|ogg|flac)$/i : /\.(mp4|mov|m4v|webm|3gp|mkv)$/i).test(f.name));
+    input.value = "";
+    if (!archivos.length) return alert(audio ? "Eso no es un audio (MP3, M4A, WAV…)." : "Eso no es un video.");
     for (const [k, f] of archivos.entries()) {
       await new Promise((listo) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `/sala/api/subir?proyecto=${encodeURIComponent(proyectoSala.id)}&nombre=${encodeURIComponent(f.name)}`);
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
         xhr.upload.onprogress = (ev) => { if (ev.lengthComputable && $("#pv-subiendo")) $("#pv-subiendo").textContent = `Subiendo ${k + 1} de ${archivos.length}: ${Math.round(ev.loaded / ev.total * 100)} %`; };
-        xhr.onloadend = () => { if (xhr.status !== 200) alert(`No se pudo subir ${f.name}`); listo(); };
+        xhr.onloadend = () => {
+          if (xhr.status !== 200) { let m = ""; try { m = JSON.parse(xhr.responseText).error || ""; } catch { /* nada */ } alert(`No se pudo subir ${f.name}${m ? `: ${m}` : ""}`); }
+          listo();
+        };
         xhr.send(f);
       });
     }
+    if ($("#pv-subiendo")) $("#pv-subiendo").textContent = "";
     proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}`);
     pintarProyectoSala();
   });
