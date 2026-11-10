@@ -1,0 +1,45 @@
+# Compila RevoLabs MLT en máquinas Windows y Mac de GitHub.
+# En Mac se firma localmente (ad-hoc), necesario para que abra en Macs con chip Apple.
+# Los archivos quedan en la ejecución, sección "Artifacts".
+name: RevoLabs MLT - compilar
+
+on:
+  push:
+    branches: ['claude/amazing-mayer-ey6nfy']
+    paths: ['revolabs-mlt/**', '.github/workflows/revolabs-mlt.yml']
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: revolabs-mlt
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: revolabs-mlt/package-lock.json
+      - run: npm ci
+      - run: npx electron-builder --mac zip --arm64 --x64 --publish never
+      - name: Verificar firma
+        run: |
+          for app in dist/mac*/*.app; do codesign --verify --deep --strict --verbose=2 "$app"; done
+      - name: Renombrar
+        run: |
+          V=$(node -p "require('./package.json').version.replace('-', '.')")
+          mv dist/*-Mac-arm64.zip "RevoLabs-MLT-$V-Mac-AppleSilicon.zip"
+          mv dist/*-Mac-x64.zip "RevoLabs-MLT-$V-Mac-Intel.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RevoLabs-MLT-Mac-AppleSilicon
+          path: revolabs-mlt/RevoLabs-MLT-*-Mac-AppleSilicon.zip
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RevoLabs-MLT-Mac-Intel
+          path: revolabs-mlt/RevoLabs-MLT-*-Mac-Intel.zip
+          compression-level: 0
