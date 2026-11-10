@@ -9,6 +9,9 @@ on:
     paths: ['revolabs-mlt/**', '.github/workflows/revolabs-mlt.yml']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 defaults:
   run:
     working-directory: revolabs-mlt
@@ -43,3 +46,17 @@ jobs:
           name: RevoLabs-MLT-Mac-Intel
           path: revolabs-mlt/RevoLabs-MLT-*-Mac-Intel.zip
           compression-level: 0
+      # Copia los zips a la rama "revolabs-mlt-builds" para poder bajarlos sin entrar a Actions.
+      - name: Guardar en la rama de compilaciones
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OUT="$RUNNER_TEMP/out"
+          mkdir -p "$OUT"
+          cp RevoLabs-MLT-*-Mac-*.zip "$OUT/"
+          cd "$OUT"
+          git init -q
+          git checkout -q -b revolabs-mlt-builds
+          git add .
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -q -m "RevoLabs MLT Mac builds ($GITHUB_SHA)"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" revolabs-mlt-builds
