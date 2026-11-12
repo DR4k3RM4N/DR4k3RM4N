@@ -61,6 +61,9 @@ def respuesta_schema(con_plan: bool) -> dict:
         "cambios": {"type": "array", "items": {"type": "string"},
                     "description": "si accion=editar: lista corta de lo que hiciste/cambiaste en esta versión"},
         "no_puedo": {"type": "string", "description": "lo que pidió y NO se puede hacer (o vacío)"},
+        "aprendido": {"type": "array", "items": {"type": "string"},
+                      "description": "si su mensaje dice algo de su GUSTO en general (no solo de este video), reglas cortas y "
+                                     "concretas para tu cuaderno de estilo ('Títulos de máximo 4 palabras'); si no, vacío"},
         "buscar_musica": {"type": "string", "description": "si quiere música y no hay una buena en su carpeta (o pide "
                           "otra): 3 a 6 palabras EN INGLÉS para buscar música libre, ej. 'upbeat acoustic travel'; si no, vacío"},
     }
@@ -391,7 +394,7 @@ class Proyectos:
         sistema = (f"Eres {self._nombre_editor(p.get('encargado'))}, editor de video en la sala de edición de Miguel (creador "
                 f"mexicano). Hablas español de México, casual y breve, como compañero de trabajo. Eres un editor con mucho "
                 f"oficio: piensas como editor de TikTok y YouTube, no como alguien que solo pega clips.\n{MANUAL}\n"
-                f"Herramientas: {self.AYUDA}")
+                f"Herramientas: {self.AYUDA}\n\nESTILO DE MIGUEL (cuaderno compartido, síguelo):\n{self.estilo_texto(2500)}")
         pedido = (f"Proyecto: {p['nombre']}\nFormato: {p.get('formato') or 'no lo ha dicho'}\n"
                 "Clips (usa exactamente estos nombres en el plan):\n" + "\n".join(fichas) + "\n"
                 f"Música disponible (usa el nombre exacto): {json.dumps(self.musica(p), ensure_ascii=False)}\n"
@@ -429,6 +432,9 @@ class Proyectos:
             texto_resp += f"\n⚠️ Eso no lo puedo hacer: {r['no_puedo']}"
         if r.get("_nota"):
             texto_resp += f"\n{r['_nota']}"
+        nuevas = self.aprender(r.get("aprendido") or [], f"{p['nombre']} (chat)")
+        if nuevas:
+            texto_resp += "\n📒 Lo apunto en mi cuaderno de estilo:\n" + "\n".join(f"  · {x}" for x in nuevas[:5])
         from editor_libre import normalizar_plan
         plan = normalizar_plan(r.get("plan") or {})
         if r.get("buscar_musica"):
@@ -467,13 +473,19 @@ class Proyectos:
         clips = [str(f) for f in sorted(servidor.iterdir()) if f.is_file()] if servidor.exists() else []
         musica = [str(SALIDA / p["id"] / "musica" / m) for m in self.musica_subida(p)]
         (SALIDA / p["id"]).mkdir(parents=True, exist_ok=True)
+        aprender = self.por_aprender()
+        a_fondo = any(w in texto.lower() for w in ("a fondo", "desde cero", "rehaz", "otra versión distinta", "otra version distinta"))
+        modo = "correccion" if p["versiones"] and not a_fondo else "nuevo"
         r = self.crear({"tipo": "claude_libre", "origen": "sala", "etiqueta": f"{p['nombre']} · Editor IA",
                         "entradas": clips + musica, "salida": str(SALIDA / p["id"]), "compu": cid,
                         "local": {"carpeta": p["carpeta"]},
                         "parametros": {"mensaje": texto, "historial": historial if not p["versiones"] else [], "version": n,
                                        "proyecto": p["id"], "nombre": p["nombre"], "carpeta": p["carpeta"],
                                        "ruta": p.get("ruta", ""), "formato": p.get("formato") or "",
-                                       "musica_entradas": [Path(m).name for m in musica]}})
+                                       "musica_entradas": [Path(m).name for m in musica],
+                                       "modo": modo, "estilo": self.estilo_texto(), "recetas": self.recetas_para(),
+                                       "por_aprender": [{"id": c["id"], "texto": f"{'👍' if c['voto'] == 'bien' else '👎'} "
+                                                         f"«{c['nombre']}» v{c['version']}: {c['comentario']}"} for c in aprender]}})
         if "error" in r:
             return self._decir(p, quien, r["error"])
         with self.lock:
@@ -660,14 +672,24 @@ class Proyectos:
             if res.get("cambios"):
                 texto += "\n" + "\n".join(f"• {c}" for c in res["cambios"][:8])
             extra = {}
+            nuevas = self.aprender(res.get("aprendido") or [], f"{p['nombre']} v{t['parametros']['version']}")
+            self.aprendido_de([x["id"] for x in t["parametros"].get("por_aprender") or []])
+            if nuevas:
+                texto += "\n📒 Lo apunto en mi cuaderno de estilo:\n" + "\n".join(f"  · {x}" for x in nuevas[:5])
             with self.lock:
                 if res.get("video"):
                     v = {"n": t["parametros"]["version"], "video": res["video"], "cuadro": res.get("cuadro"),
-                         "segundos": res.get("segundos"), "t": time.time(), "plan": None, "editor_ia": True}
+                         "segundos": res.get("segundos"), "t": time.time(), "plan": None, "editor_ia": True,
+                         "receta": res.get("receta"), "tipo": str(res.get("tipo") or "")[:30],
+                         "descripcion": str(res.get("descripcion") or "")[:160]}
                     p["versiones"].append(v)
                     extra = {"version": v["n"]}
-                    texto += (f"\n🎬 Versión {v['n']} ({v['segundos']} s) — también está en tu compu, en Ediciones."
-                              f" (🧠 Claude Code, {round((res.get('segundos_trabajo') or 0) / 60)} min, 0 ¢)")
+                    texto += (f"\n🎬 Versión {v['n']} ({v['segundos']} s) — también está en tu compu, en Ediciones. "
+                              "Califícala con 👍/👎 abajo del video: así aprendo tu estilo.")
+                uso = res.get("uso") or {}
+                texto += (f"\n🧠 Claude Code {uso.get('modelo') or ''} · {round((res.get('segundos_trabajo') or 0) / 60)} min"
+                          + (f" · {uso['pasos']} pasos" if uso.get("pasos") else "")
+                          + (f" · equivale a {uso['usd'] * 100:.0f} ¢ de API (con tu plan: 0 ¢)" if uso.get("usd") else ""))
                 p.update(estado="listo" if p["versiones"] else "esperando", trabajo=None)
                 self._tocar()
             if p.get("compu") and res.get("video"):
@@ -689,6 +711,12 @@ class Proyectos:
         return {"proyecto": "", "crear": "", "donde": "", "respuesta": "¿Con qué proyecto te ayudo? (demo)"}
 
     def _cerebro_demo(self, p: dict, texto: str, clips: list) -> dict:
+        r = self._cerebro_demo_base(p, texto, clips)
+        if any(w in texto.lower() for w in ("siempre", "nunca", "no me gusta", "me gusta")):  # en demo: aprende frases así
+            r["aprendido"] = [texto[:120]]
+        return r
+
+    def _cerebro_demo_base(self, p: dict, texto: str, clips: list) -> dict:
         t = texto.lower()
         formato = "vertical" if "vertical" in t else "horizontal" if "horizontal" in t else p.get("formato") or ""
         base = {"formato": formato or "vertical", "clips": [{"archivo": x["nombre"], "desde": 0, "hasta": 0, "velocidad": 1,

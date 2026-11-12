@@ -662,17 +662,34 @@ def editar_libre(of: "Oficina", t: dict, temporal: Path, avance) -> None:
         raise RuntimeError("Claude Code no está listo en esta compu (instálalo o inicia sesión con INSTALAR_SALA.bat).")
     clips = carpeta_del_proyecto(of, t, avance)
     nombre = _limpio(par.get("nombre") or par["carpeta"])
-    mesa = editor_ia.preparar(clips, nombre, par.get("formato") or "", MUSICA, claude, ESTADO_MOTION["texto"] == "listo")
+    mesa = editor_ia.preparar(clips, nombre, par.get("formato") or "", MUSICA, claude, ESTADO_MOTION["texto"] == "listo",
+                              par.get("estilo") or "", par.get("recetas") or [])
     (mesa / "resultado.json").unlink(missing_ok=True)
     n = par["version"]
     historial = "\n".join(par.get("historial") or [])
+    pendientes = "\n".join(f"- {x['texto']}" for x in par.get("por_aprender") or [])
+    correccion = par.get("modo") == "correccion"
     prompt = (f"Mensaje de Miguel desde la oficina: «{par['mensaje']}»\n"
               + (f"(Plática reciente en la oficina:\n{historial})\n" if historial else "")
+              + ("Es una CORRECCIÓN sobre la versión anterior: sigue la sección «Ahorra el uso» al pie de la letra.\n"
+                 if correccion else "")
+              + (f"Calificaciones de Miguel por aprender (conviértelas en reglas en «aprendido» si dicen algo de su gusto):\n"
+                 f"{pendientes}\n" if pendientes else "")
               + f"Si editas, esta entrega es la versión {n}: guárdala como ../Ediciones/{nombre} v{n}.mp4. "
               "Sigue CLAUDE.md y al final escribe resultado.json.")
     avance("Leyendo lo que pediste", 0.03)
     inicio = time.time()
-    editor_ia.correr(mesa, claude, prompt, avance)
+    # el modelo: las correcciones con Haiku (gasta mucho menos de tu plan); lo nuevo con Sonnet. Si Haiku falla, Sonnet.
+    modelo = (os.environ.get("SALA_MODELO_CORRECCION", "haiku") if correccion
+              else os.environ.get("SALA_MODELO_CLAUDE", "sonnet"))
+    try:
+        final = editor_ia.correr(mesa, claude, prompt, avance, modelo=modelo)
+    except RuntimeError as exc:
+        if not correccion or "límite" in str(exc) or "sesión" in str(exc):
+            raise
+        log(f"La corrección con {modelo} falló ({exc}); la intento con el editor fuerte.")
+        modelo = os.environ.get("SALA_MODELO_CLAUDE", "sonnet")
+        final = editor_ia.correr(mesa, claude, prompt, avance, modelo=modelo)
     try:
         res = json.loads((mesa / "resultado.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -684,7 +701,22 @@ def editar_libre(of: "Oficina", t: dict, temporal: Path, avance) -> None:
         candidato = clips / "Ediciones" / f"{nombre} v{n}.mp4"
         video = candidato if candidato.is_file() and candidato.stat().st_mtime > inicio else None
     resultado = {"respuesta": respuesta, "cambios": [str(c)[:200] for c in (res.get("cambios") or [])][:8],
-                 "segundos_trabajo": round(time.time() - inicio)}
+                 "segundos_trabajo": round(time.time() - inicio),
+                 "aprendido": [str(x)[:200] for x in (res.get("aprendido") or []) if str(x).strip()][:6],
+                 "tipo": str(res.get("tipo") or "")[:30], "descripcion": str(res.get("descripcion") or "")[:160],
+                 "uso": {"modelo": modelo, "pasos": final.get("num_turns"), "usd": final.get("total_cost_usd")}}
+    receta = {}
+    for archivo in ("plan.json", "props.json"):  # lo que usó: si le das 👍, se vuelve receta para los videos parecidos
+        f = mesa / archivo
+        if f.exists() and f.stat().st_size < 120_000:
+            try:
+                receta[archivo[:-5]] = json.loads(f.read_text(encoding="utf-8"))
+            except ValueError:
+                pass
+    if receta:
+        if isinstance(receta.get("props"), dict) and isinstance(receta["props"].get("subtitulos"), dict):
+            receta["props"] = {**receta["props"], "subtitulos": {**receta["props"]["subtitulos"], "palabras": []}}
+        resultado["receta"] = receta
     if video:
         avance("Subiendo tu video", 0.97)
         salida = temporal / "salida"

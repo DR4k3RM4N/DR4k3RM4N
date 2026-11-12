@@ -494,3 +494,12 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .pista-musica audio { width: 100%; height: 32px; }
 .creditos summary { cursor: pointer; font-size: 13px; }
 #np-elegir[hidden] { display: none; }
+
+/* 📒 Estilo de los editores y calificar versiones */
+.estilo-ventana { display: grid; gap: 10px; max-width: 760px; }
+.estilo-ventana h3 { margin: 10px 0 0; }
+.estilo-ventana textarea, .estilo-ventana input { width: 100%; }
+.estilo-reglas { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.estilo-reglas li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px;
+  border-radius: 8px; background: rgba(255, 255, 255, .05); }
+.voto { flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }

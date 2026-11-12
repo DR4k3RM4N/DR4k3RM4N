@@ -31,6 +31,7 @@ sys.path[:0] = [str(REPO / "autocanal"), str(REPO / "tiktokshop"), str(AQUI)]
 
 import requests  # noqa: E402
 
+from aprendizaje import Aprendizaje  # noqa: E402
 from proyectos import Proyectos  # noqa: E402
 
 ESTADO = AQUI / "sala_estado.json"
@@ -47,7 +48,7 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-class Sala(Proyectos):
+class Sala(Aprendizaje, Proyectos):
     def __init__(self, demo: bool):
         self.demo = demo
         self.lock = threading.RLock()
@@ -58,6 +59,7 @@ class Sala(Proyectos):
         self.proyectos: dict = datos.get("proyectos", {})
         self.chat: list = datos.get("chat", [])
         self.gasto: dict = datos.get("gasto", {})
+        self.cargar_estilo(datos)  # el cuaderno de estilo que comparten los editores
         for pr in self.proyectos.values():
             if pr.get("estado") == "editando":
                 pr.update(estado="error", trabajo=None, error="La sala se reinició a medio trabajo. Escribe «otra vez».")
@@ -80,7 +82,8 @@ class Sala(Proyectos):
         for t in viejos:
             self.trabajos.pop(t["id"], None)
         ESTADO.write_text(json.dumps({"compus": self.compus, "trabajos": self.trabajos, "proyectos": self.proyectos,
-                                      "chat": self.chat[-200:], "gasto": dict(sorted(self.gasto.items())[-90:])},
+                                      "chat": self.chat[-200:], "gasto": dict(sorted(self.gasto.items())[-90:]),
+                                      "estilo": self.estilo},
                                      ensure_ascii=False, indent=1), encoding="utf-8")
 
     # ---------- lo que se ve en el edificio ----------
@@ -468,6 +471,8 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
         def do_GET(self):
             url = urlparse(self.path)
             ruta = unquote(url.path)
+            if ruta == "/api/estilo":
+                return self._json(sala.ver_estilo())
             if ruta == "/api/estado":
                 return self._json(sala.snapshot())
             if ruta.startswith("/descargar/"):
@@ -579,6 +584,15 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                 return self._json(r, 400 if "error" in r else 200)
             if ruta.startswith("/api/proyecto/") and ruta.endswith("/carpeta"):
                 r = sala.usar_carpeta(ruta.split("/")[3], str(d.get("compu", "")), str(d.get("ruta", ""))[:300])
+                return self._json(r, 400 if "error" in r else 200)
+            if ruta == "/api/estilo":
+                return self._json(sala.editar_estilo(d))
+            if ruta.startswith("/api/proyecto/") and ruta.endswith("/calificar"):
+                try:
+                    n = int(d.get("version") or 0)
+                except (TypeError, ValueError):
+                    n = 0
+                r = sala.calificar(ruta.split("/")[3], n, str(d.get("voto", "")), str(d.get("comentario", "")))
                 return self._json(r, 400 if "error" in r else 200)
             if ruta.startswith("/api/proyecto/") and ruta.endswith("/borrar"):
                 r = sala.borrar_proyecto(ruta.split("/")[3])

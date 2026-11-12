@@ -42,6 +42,7 @@ export type PropsVideo = {
   elementos?: Elemento[];
   subtitulos?: Subtitulos | null;
   acento?: string; // color de marca para todo
+  textos?: { borde?: number; sombra?: boolean; colorBorde?: string }; // borde: 0 = sin contorno, 1 normal, 1.5 grueso
 };
 
 export const ejemplo: PropsVideo = {
@@ -62,7 +63,9 @@ export const ejemplo: PropsVideo = {
 
 // ---------- ayudas ----------
 const sombra = "0 6px 0 rgba(0,0,0,.35), 0 10px 30px rgba(0,0,0,.45)";
-const borde = (px: number) => `${px}px #000`;
+const ESTILO = { borde: 1, sombra: true, colorBorde: "#000" }; // lo pone <Video> con props.textos
+const sombraTexto = () => (ESTILO.sombra ? sombra : "none");
+const borde = (px: number) => `${px * ESTILO.borde}px ${ESTILO.colorBorde}`;
 
 const useEntrada = (dur: number) => {
   const f = useCurrentFrame();
@@ -90,7 +93,7 @@ const Titulo: React.FC<{ e: Elemento; dur: number; acento: string }> = ({ e, dur
             <span key={i} style={{
               display: "inline-block", margin: "0 12px", fontFamily, fontWeight: 900, fontSize: 96, lineHeight: 1.05,
               color: marcada ? e.color || acento : "#fff", WebkitTextStroke: borde(6), paintOrder: "stroke fill",
-              textShadow: sombra, transform: `translateY(${(1 - s) * 60}px) rotate(${(1 - s) * -6}deg)`, opacity: s,
+              textShadow: sombraTexto(), transform: `translateY(${(1 - s) * 60}px) rotate(${(1 - s) * -6}deg)`, opacity: s,
             }}>{p}</span>
           );
         })}
@@ -126,7 +129,7 @@ const Precio: React.FC<{ e: Elemento; dur: number; acento: string }> = ({ e, dur
       <div style={{ textAlign: "center", opacity: sale, transform: `scale(${(0.3 + 0.7 * entra) * (e.tamano || 1)}) rotate(-4deg)` }}>
         {e.antes ? (
           <div style={{ position: "relative", display: "inline-block", fontFamily, fontWeight: 800, fontSize: 64, color: "#fff",
-            WebkitTextStroke: borde(4), paintOrder: "stroke fill", textShadow: sombra }}>
+            WebkitTextStroke: borde(4), paintOrder: "stroke fill", textShadow: sombraTexto() }}>
             {e.antes}
             <div style={{ position: "absolute", left: 0, top: "52%", height: 10, width: `${tacha}%`, background: "#ff2d55",
               borderRadius: 6, transform: "rotate(-8deg)" }} />
@@ -210,7 +213,7 @@ const Contador: React.FC<{ e: Elemento; dur: number; acento: string }> = ({ e, d
   return (
     <Posicion x={e.x} y={e.y ?? 0.3}>
       <div style={{ fontFamily, fontWeight: 900, fontSize: 160 * (e.tamano || 1), color: e.color || acento, WebkitTextStroke: borde(8),
-        paintOrder: "stroke fill", textShadow: sombra, opacity: sale, transform: `scale(${0.5 + 0.5 * entra})` }}>
+        paintOrder: "stroke fill", textShadow: sombraTexto(), opacity: sale, transform: `scale(${0.5 + 0.5 * entra})` }}>
         {(e.texto || "{n}").replace("{n}", n.toLocaleString("es-MX"))}
       </div>
     </Posicion>
@@ -255,7 +258,7 @@ const Subs: React.FC<{ s: Subtitulos; acento: string }> = ({ s, acento }) => {
                 display: "inline-block", fontFamily, fontWeight: 900, fontSize: 84,
                 color: estilo === "caja" ? (activa ? "#111" : "#fff") : activa || (estilo === "karaoke" && dicha) ? resaltado : s.color || "#fff",
                 background: estilo === "caja" && activa ? resaltado : "transparent", borderRadius: 14, padding: "0 12px",
-                WebkitTextStroke: estilo === "caja" && activa ? "0px" : borde(7), paintOrder: "stroke fill", textShadow: sombra,
+                WebkitTextStroke: estilo === "caja" && activa ? "0px" : borde(7), paintOrder: "stroke fill", textShadow: sombraTexto(),
                 transform: `scale(${estilo === "pop" && activa ? 1 + 0.18 * s2 : 1}) translateY(${dicha ? 0 : 6}px)`,
                 opacity: estilo === "pop" && !dicha ? 0.85 : 1,
               }}>{texto}</span>
@@ -271,6 +274,9 @@ const Subs: React.FC<{ s: Subtitulos; acento: string }> = ({ s, acento }) => {
 export const Video: React.FC<PropsVideo> = (props) => {
   const { fps } = useVideoConfig();
   const acento = props.acento || "#FFD23F";
+  ESTILO.borde = typeof props.textos?.borde === "number" ? Math.max(0, Math.min(2, props.textos.borde)) : 1;
+  ESTILO.sombra = props.textos?.sombra !== false;
+  ESTILO.colorBorde = props.textos?.colorBorde || "#000";
   const piezas: Record<string, React.FC<{ e: Elemento; dur: number; acento: string }>> = {
     titulo: Titulo, etiqueta: Etiqueta, precio: Precio, flecha: Flecha, circulo: Circulo, link: Link, contador: Contador,
     emoji: ({ e, dur }) => <Emoji e={e} dur={dur} />,

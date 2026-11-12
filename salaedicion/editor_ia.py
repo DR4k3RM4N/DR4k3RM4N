@@ -31,7 +31,8 @@ def _ruta(p: Path | str) -> str:
     return str(p).replace("\\", "/")
 
 
-def guia(carpeta: Path, nombre: str, formato: str, musica: Path, motion_listo: bool) -> str:
+def guia(carpeta: Path, nombre: str, formato: str, musica: Path, motion_listo: bool, estilo: str = "",
+         recetas: str = "") -> str:
     from manual_edicion import MANUAL
     py, h = _ruta(python_exe()), _ruta(AQUI / "herramientas.py")
     t = f'"{py}" "{h}"'
@@ -49,6 +50,27 @@ Tu trabajo es entregar videos que se vean hechos por un editor con mucho oficio,
 - Formato: {formato or "pregúntalo si no se deduce (vertical 1080x1920 para TikTok/Reels/Shorts; horizontal 1920x1080 para YouTube)"}.
 - Tu memoria del proyecto: `notas.md` (léela al empezar; al terminar apunta qué hiciste, qué le gustó y qué no).
 
+## El estilo de Miguel (lo más importante: es lo que has aprendido de él; síguelo antes que el manual)
+{estilo or "(Todavía no hay nada aprendido.)"}
+
+## Recetas: videos que le gustaron (👍)
+{recetas or "(Todavía no hay.)"}
+Si el video nuevo es del mismo tipo, abre esa receta (plan + props) y arranca de ahí ajustando a los clips nuevos:
+te ahorra vueltas y ya sabes que su estilo le gusta.
+
+## Ahorra el uso de Claude de Miguel (tiene plan Pro con límite)
+- Correcciones: NO vuelvas a correr `ficha` ni a mirar todas las hojas. Lee `notas.md`, cambia SOLO lo pedido y
+  vuelve a generar solo lo necesario (si solo cambian textos/motion: solo `motion`; si cambian cortes: `armar` y `motion`).
+  Revisa una sola vez con `revisar` (o `cuadros` del tramo que cambió).
+- Videos nuevos: mira cada hoja una vez; `cuadros` solo para tomas repetidas en duda. Máximo 2 vueltas de revisión.
+- No leas archivos grandes completos si no hace falta (usa head/grep). Escribe `notas.md` claro para no re-investigar.
+
+## Aprende (así te vuelves mejor cada video)
+Si Miguel corrige algo que es de su GUSTO en general (no solo de este video) — "los textos muy grandes", "no me gustan
+los fundidos", "más rápido al inicio" — conviértelo en una regla corta y concreta en `aprendido` de resultado.json.
+También las calificaciones 👍/👎 pendientes que te pase la oficina. No repitas reglas que ya están arriba (si la vuelve
+a pedir, repítela igual: así sube su peso). Lo específico de este video va solo en `notas.md`.
+
 ## Herramientas (córrelas con Bash, desde esta carpeta)
 - `{t} ficha` → qué dice cada clip con tiempos, calidad (movido/borroso/oscuro) y hoja de cuadros en `vistas/`.
   **Mira con Read TODAS las hojas** antes de decidir.
@@ -65,7 +87,7 @@ Tu trabajo es entregar videos que se vean hechos por un editor con mucho oficio,
 
 ## Motion graphics (props.json, junto a base.mp4)
 ```json
-{{"fondo": "base.mp4", "duracion": 0, "acento": "#FFD23F",
+{{"fondo": "base.mp4", "duracion": 0, "acento": "#FFD23F", "textos": {{"borde": 1, "sombra": true}},
  "elementos": [
   {{"tipo": "titulo",   "desde": 0,   "hasta": 2.5, "texto": "ESTO CAMBIÓ MI COCINA", "y": 0.18}},
   {{"tipo": "etiqueta", "desde": 3,   "hasta": 6,   "texto": "Se carga en 2 horas", "icono": "⚡", "x": 0.5, "y": 0.42}},
@@ -78,6 +100,8 @@ Tu trabajo es entregar videos que se vean hechos por un editor con mucho oficio,
  "subtitulos": {{"palabras": [...las de base.palabras.json...], "estilo": "pop", "y": 0.72,
                 "resaltado": "#FFD23F", "porGrupo": 3, "emojis": {{"dinero": "💰"}}}}}}
 ```
+- `textos`: contorno de las letras (`borde` 0 = sin contorno, 1 normal, 1.5 grueso), `sombra` true/false, `colorBorde`.
+  Cada elemento acepta `tamano` (1 = normal; 0.6 más chico) y `color`.
 - `duracion: 0` = la del video base. x/y van de 0 a 1. `angulo` de la flecha = de dónde viene (0 izquierda, 90 arriba).
 - Estilos de subtítulos: `pop` (la palabra salta), `karaoke` (se va pintando), `caja` (cajita de color).
 - Zonas seguras en vertical: nada importante a la derecha de x=0.85 (botones de TikTok) ni abajo de y=0.82 (texto
@@ -95,7 +119,10 @@ Tu trabajo es entregar videos que se vean hechos por un editor con mucho oficio,
    movidas, texto encimado o con faltas, palabras cortadas, silencios, final que se alarga.
 6. Copia a `../Ediciones/{nombre} vN.mp4`. Actualiza `notas.md`.
 7. Si te lo pidieron desde la oficina, escribe `resultado.json`:
-   `{{"respuesta": "lo que le dices a Miguel", "video": "Ediciones/{nombre} vN.mp4" (o "" si no editaste), "cambios": ["…"]}}`
+   `{{"respuesta": "lo que le dices a Miguel", "video": "Ediciones/{nombre} vN.mp4" (o "" si no editaste), "cambios": ["…"],
+     "aprendido": ["reglas de su gusto general, o vacío"], "tipo": "producto|resena|vlog|tutorial|hablando|montaje|otro",
+     "descripcion": "una línea de cómo es este video (para la receta)"}}`
+   Deja en `plan.json` y `props.json` lo que usaste para la versión final (si le da 👍, se vuelve receta).
 
 Correcciones: cambia SOLO lo que pidió, sobre la última versión (está en tus notas y archivos). Nada inventado: datos,
 precios y nombres solo si Miguel los dijo o vienen en los clips.
@@ -104,11 +131,24 @@ precios y nombres solo si Miguel los dijo o vienen en los clips.
 """
 
 
-def preparar(carpeta: Path, nombre: str, formato: str, musica: Path, claude: str, motion_listo: bool) -> Path:
-    """Crea/actualiza _editor con su CLAUDE.md y el acceso «Abrir editor IA» en la carpeta del proyecto."""
+def preparar(carpeta: Path, nombre: str, formato: str, musica: Path, claude: str, motion_listo: bool,
+             estilo: str = "", recetas: list | None = None) -> Path:
+    """Crea/actualiza _editor con su CLAUDE.md (con tu estilo y recetas) y el acceso «Abrir editor IA»."""
+    from aprendizaje import receta_json, resumen_recetas
     mesa = carpeta / "_editor"
     mesa.mkdir(parents=True, exist_ok=True)
-    (mesa / "CLAUDE.md").write_text(guia(carpeta, nombre, formato, musica, motion_listo), encoding="utf-8")
+    guardadas = mesa / "recetas"
+    shutil.rmtree(guardadas, ignore_errors=True)
+    if recetas:
+        guardadas.mkdir()
+        for r in recetas:
+            (guardadas / f"{r['id']}.json").write_text(receta_json(r), encoding="utf-8")
+    if estilo:  # para el modo directo: la última copia del cuaderno de estilo se queda aquí
+        (mesa / "estilo.md").write_text(estilo, encoding="utf-8")
+    elif (mesa / "estilo.md").exists():
+        estilo = (mesa / "estilo.md").read_text(encoding="utf-8")
+    (mesa / "CLAUDE.md").write_text(guia(carpeta, nombre, formato, musica, motion_listo, estilo, resumen_recetas(recetas or [])),
+                                    encoding="utf-8")
     if not (mesa / "notas.md").exists():
         (mesa / "notas.md").write_text(f"# Notas del proyecto «{nombre}»\n\n(Aún no hay versiones.)\n", encoding="utf-8")
     (carpeta / "Ediciones").mkdir(exist_ok=True)
@@ -141,13 +181,13 @@ def _paso(uso: dict) -> str:
     return f"{DESCRIPCION.get(nombre, nombre)} {archivo}".strip()[:60]
 
 
-def correr(mesa: Path, claude: str, prompt: str, avance, minutos: int = 60) -> dict:
+def correr(mesa: Path, claude: str, prompt: str, avance, minutos: int = 60, modelo: str = "") -> dict:
     """Corre Claude Code en la mesa del proyecto (continuando su plática) y regresa el evento final."""
     carpeta = mesa.parent
     base = [claude, "-p", prompt, "--output-format", "stream-json", "--verbose", "--add-dir", str(carpeta),
             "--permission-mode", "acceptEdits", "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep"]
-    if os.environ.get("SALA_MODELO_CLAUDE"):
-        base += ["--model", os.environ["SALA_MODELO_CLAUDE"]]
+    if modelo:
+        base += ["--model", modelo]
     entorno = {**os.environ, "SALA_EDITOR_DIR": str(mesa)}
     final: dict = {}
     for intento in (["--continue"], []):  # con memoria; si no hay plática anterior, una nueva

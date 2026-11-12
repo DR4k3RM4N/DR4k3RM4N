@@ -266,3 +266,17 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
     con claude_libre en tipos) → `_editar_con_ia`; `_termino_editor_ia` pone la respuesta y la versión en el chat.
     Si la compu no tiene Claude Code, sigue el flujo anterior (plan + editor_libre).
   - Probado aquí con Claude Code real: v1 de TikTok Shop con título, precio tachado y link en ~4.5 min.
+- Nov 2026 (10): "que los editores aprendan de mis correcciones y mi estilo, sin comerme mi uso de Claude". NO se
+  entrena el modelo (no se puede con Claude); aprenden con un **cuaderno de estilo** compartido
+  (`salaedicion/aprendizaje.py`, mixin de Sala, se guarda en sala_estado.json → "estilo"):
+  - reglas (las escriben los editores en `aprendido` cuando una corrección dice algo de su gusto general; si se
+    repite, sube ×N; >40 reglas → Haiku las resume, tarea "sala_aprender"), notas de Miguel (mandan), calificaciones
+    👍/👎 por versión con comentario (el siguiente Editor IA las convierte en reglas), recetas (plan.json+props.json
+    de versiones con 👍; el editor arranca de una receta del mismo tipo).
+  - Viaja con cada trabajo: Editor IA → `_editor/CLAUDE.md` (secciones estilo, recetas, "Ahorra el uso", "Aprende")
+    + `_editor/recetas/*.json` + `_editor/estilo.md`; editor anterior (API) → en el system prompt + campo `aprendido`.
+  - Ahorro: correcciones con `--model haiku` (SALA_MODELO_CORRECCION; si falla, reintenta con sonnet), lo nuevo con
+    sonnet (SALA_MODELO_CLAUDE); "a fondo"/"desde cero"/"rehaz" fuerza el modo completo. CLAUDE.md prohíbe repetir
+    ficha/hojas en correcciones. El chat muestra modelo, minutos, pasos y "equivale a X ¢ de API".
+  - Oficina: 👍/👎 debajo de cada versión (pide el porqué con prompt) y «📒 Estilo» en Proyectos (notas, reglas con
+    ✕, agregar regla, recetas, calificaciones). Rutas: GET/POST /api/estilo, POST /api/proyecto/<id>/calificar.

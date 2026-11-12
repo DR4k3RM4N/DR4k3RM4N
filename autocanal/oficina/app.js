@@ -1051,6 +1051,52 @@
   let proyectoSala = null, versionVista = null;
   const SUGERENCIAS = ["Hazlo vertical con subtítulos", "Horizontal para YouTube", "Que dure 30 segundos", "Subtítulos más grandes",
                        "Quita los silencios", "Búscame música alegre", "Quita el ruido de fondo", "Estabiliza las tomas movidas", "Otra vez"];
+  // ---------- 📒 Estilo: lo que los editores aprenden de ti ----------
+  async function abrirEstilo() {
+    let e;
+    try { e = await salaApi("/api/estilo"); } catch (err) { return alert(err.message); }
+    const fecha = (t) => new Date(t * 1000).toLocaleDateString("es-MX", { day: "numeric", month: "short" });
+    $("#modal-cuerpo").innerHTML = `<div id="estilo-ventana" class="estilo-ventana">
+      <h2>📒 Cuaderno de estilo de los editores</h2>
+      <p class="pista">Lo leen todos los editores antes de cada video. Se llena solo con tus correcciones y tus 👍/👎; aquí lo puedes ajustar.</p>
+      <h3>✍️ Tus notas (mandan sobre todo)</h3>
+      <textarea id="estilo-notas" rows="4" maxlength="3000" placeholder="Ej. Mi público es de México, 25-40 años. Me gustan los videos rápidos, con humor, textos amarillos y sin transiciones raras.">${esc(e.notas || "")}</textarea>
+      <div class="fila"><button type="button" class="btn btn-mini btn-primario" data-estilo-guardar>Guardar notas</button> <small id="estilo-ok" class="pista"></small></div>
+      <h3>🧠 Lo que han aprendido (${e.reglas.length})</h3>
+      ${e.reglas.length ? `<ul class="estilo-reglas">${e.reglas.map((r) => `<li><span>${esc(r.texto)}${r.veces > 1 ? ` <b title="veces que lo has pedido">×${r.veces}</b>` : ""}
+          <small class="pista">· ${esc(r.origen || "")} · ${fecha(r.t)}</small></span>
+          <button type="button" class="btn btn-mini" data-estilo-borrar="${esc(r.id)}" title="Olvidar esta regla">✕</button></li>`).join("")}</ul>`
+        : `<p class="pista">Todavía nada. Corrige y califica tus videos y aquí irá apareciendo.</p>`}
+      <div class="fila"><input id="estilo-nueva" maxlength="200" placeholder="Agregar una regla tú mismo, ej. «nunca uses fundidos»">
+        <button type="button" class="btn btn-mini" data-estilo-agregar>Agregar</button></div>
+      <h3>⭐ Recetas: videos que te gustaron (${e.recetas.length})</h3>
+      ${e.recetas.length ? `<ul class="estilo-reglas">${e.recetas.map((r) => `<li><span>«${esc(r.nombre)}» v${r.version}${r.tipo ? ` · ${esc(r.tipo)}` : ""}
+          ${r.descripcion ? `<small class="pista">— ${esc(r.descripcion)}</small>` : ""}</span>
+          <button type="button" class="btn btn-mini" data-estilo-borrar-receta="${esc(r.id)}" title="Ya no usar este como ejemplo">✕</button></li>`).join("")}</ul>`
+        : `<p class="pista">Dale 👍 a una versión del Editor IA y se vuelve receta: los videos parecidos arrancan de ahí (menos vueltas, menos uso de tu Claude).</p>`}
+      <h3>🗳️ Tus últimas calificaciones</h3>
+      ${e.calificaciones.length ? `<ul class="estilo-reglas">${e.calificaciones.map((c) => `<li><span>${c.voto === "bien" ? "👍" : "👎"} «${esc(c.nombre)}» v${c.version}${c.comentario ? `: ${esc(c.comentario)}` : ""}
+          <small class="pista">${c.procesada ? "· aprendido" : c.comentario ? "· lo aprende en la próxima edición" : ""}</small></span></li>`).join("")}</ul>`
+        : `<p class="pista">Todavía no calificas versiones.</p>`}
+    </div>`;
+    $("#modal").hidden = false;
+  }
+  $("#modal-cuerpo").addEventListener("click", async (ev) => {
+    const b = ev.target.closest("button");
+    if (!b || !$("#estilo-ventana")) return;
+    let cuerpo = null;
+    if (b.dataset.estiloGuardar !== undefined) cuerpo = { notas: $("#estilo-notas").value };
+    if (b.dataset.estiloAgregar !== undefined) { const t = $("#estilo-nueva").value.trim(); if (!t) return; cuerpo = { agregar: t }; }
+    if (b.dataset.estiloBorrar) cuerpo = { borrar: b.dataset.estiloBorrar };
+    if (b.dataset.estiloBorrarReceta) cuerpo = { borrar_receta: b.dataset.estiloBorrarReceta };
+    if (!cuerpo) return;
+    try {
+      await salaApi("/api/estilo", cuerpo);
+      if (cuerpo.notas !== undefined) { $("#estilo-ok").textContent = "✔ Guardado"; return; }
+      abrirEstilo();
+    } catch (err) { alert(err.message); }
+  });
+
   async function abrirProyectoSala(pid) {
     try { proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(pid)}`); } catch (err) { return alert(err.message); }
     versionVista = null;
@@ -1094,7 +1140,17 @@
       $("#pv-video").innerHTML = `<video controls playsinline preload="metadata" data-v="${v.n}" class="${p.formato === "horizontal" ? "horizontal" : ""}"
           ${v.cuadro ? `poster="${ruta(v.cuadro)}"` : ""} src="${ruta(v.video)}"></video>
         <div class="fila versiones">${vs.map((x) => `<button type="button" class="btn btn-mini ${x.n === v.n ? "btn-primario" : ""}" data-version="${x.n}">v${x.n}</button>`).join("")}
-          <a class="btn btn-mini" href="${ruta(v.video)}" download="${esc(p.nombre)} v${v.n}.mp4">⬇️ Bajar v${v.n}</a> <small>${esc(v.segundos)} s</small></div>`;
+          <a class="btn btn-mini" href="${ruta(v.video)}" download="${esc(p.nombre)} v${v.n}.mp4">⬇️ Bajar v${v.n}</a> <small>${esc(v.segundos)} s</small></div>
+        <div id="pv-voto" class="fila voto"></div>`;
+    }
+    if (v && $("#pv-voto")) {  // calificar la versión: así aprenden los editores tu estilo
+      const htmlVoto = v.voto
+        ? `<small>${v.voto === "bien" ? "👍 Te gustó" : "👎 No te gustó"} la v${v.n}${v.comentario ? `: «${esc(v.comentario)}»` : ""}</small>
+           <button type="button" class="btn btn-mini" data-calificar="${v.n}" data-voto="${v.voto === "bien" ? "mal" : "bien"}">Cambiar a ${v.voto === "bien" ? "👎" : "👍"}</button>`
+        : `<small>¿Qué tal la v${v.n}? Califícala y el editor aprende tu estilo:</small>
+           <button type="button" class="btn btn-mini" data-calificar="${v.n}" data-voto="bien">👍 Me gustó</button>
+           <button type="button" class="btn btn-mini" data-calificar="${v.n}" data-voto="mal">👎 No me gustó</button>`;
+      if ($("#pv-voto").dataset.html !== htmlVoto) { $("#pv-voto").innerHTML = htmlVoto; $("#pv-voto").dataset.html = htmlVoto; }
     }
     const sep = (estadoSala?.locales?.[p.compu]?.ruta || "").includes("\\") ? "\\" : "/";
     const rutaCarpeta = p.ruta || (p.compu ? `${estadoSala?.locales?.[p.compu]?.ruta || "Videos/Sala de edicion"}${sep}${p.carpeta}` : "");
@@ -1149,6 +1205,16 @@
       proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}`); pintarProyectoSala();
     }
     if (b.dataset.version) { versionVista = Number(b.dataset.version); $("#pv-video").innerHTML = ""; pintarProyectoSala(); }
+    if (b.dataset.calificar) {
+      const bien = b.dataset.voto === "bien";
+      const comentario = prompt(bien ? "¿Qué te gustó? (opcional — así aprende qué sí funciona)"
+        : "¿Qué no te gustó? Si es tu gusto en general dilo así, ej. «textos muy grandes», «muy lento al inicio»");
+      if (comentario === null) return;
+      try {
+        await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}/calificar`, { version: Number(b.dataset.calificar), voto: b.dataset.voto, comentario });
+        proyectoSala = await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}`); pintarProyectoSala();
+      } catch (err) { alert(err.message); }
+    }
     if (b.dataset.copiarRutaProy) navigator.clipboard?.writeText(b.dataset.copiarRutaProy).then(() => { b.textContent = "¡Copiada!"; });
     if (b.dataset.borrarProyecto !== undefined && confirm(`¿Borrar el proyecto «${proyectoSala.nombre}»? (Los clips de tu compu no se tocan)`)) {
       await salaApi(`/api/proyecto/${encodeURIComponent(proyectoSala.id)}/borrar`, {}).catch((err) => alert(err.message));
@@ -1212,7 +1278,8 @@
       </section>
       <section>
         <div class="seccion-cabeza"><h4 class="seccion-mini">📂 Proyectos</h4>
-          <button type="button" class="btn btn-mini" data-nuevo-proyecto>➕ Nuevo proyecto</button></div>
+          <span class="fila"><button type="button" class="btn btn-mini" data-estilo-sala title="Lo que los editores han aprendido de tu estilo">📒 Estilo</button>
+          <button type="button" class="btn btn-mini" data-nuevo-proyecto>➕ Nuevo proyecto</button></span></div>
         <form id="nuevo-proyecto" class="tarjeta nuevo-proyecto" hidden>
           <input id="np-nombre" maxlength="60" placeholder="Nombre (ej. Viaje Monterrey)">
           <select id="np-donde" aria-label="En qué compu"></select>
@@ -1439,6 +1506,7 @@
     if (!b) return;
     if (b.dataset.abrirSala) return abrirProyectoSala(b.dataset.abrirSala);
     if (b.id === "np-elegir") return elegirCarpetaEnCompu(b);
+    if (b.dataset.estiloSala !== undefined) return abrirEstilo();
     if (b.dataset.nuevoProyecto !== undefined) { $("#nuevo-proyecto").hidden = !$("#nuevo-proyecto").hidden; return $("#np-nombre").focus(); }
     if (b.dataset.abrirProducto) return abrirGuionTT(b.dataset.abrirProducto);
     try {
