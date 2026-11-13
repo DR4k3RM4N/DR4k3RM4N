@@ -101,6 +101,8 @@ systemctl daemon-reload
 systemctl enable --now oficina >/dev/null 2>&1
 systemctl restart oficina
 systemctl enable caddy >/dev/null 2>&1
+# Que se actualice solo cuando haya versión nueva en GitHub (sin entrar por SSH)
+bash "$(dirname "$0")/autoactualizar.sh" --activar
 
 sleep 3
 CLAVE="$(grep '^OFICINA_PASSWORD=' "$ENV" | cut -d= -f2-)"

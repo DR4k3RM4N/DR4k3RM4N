@@ -34,4 +34,8 @@ for servicio in oficina caddy; do
   fi
   systemctl is-active --quiet "$servicio" && echo "  ✔ $servicio funcionando" || echo "  ✖ $servicio NO arrancó: sudo journalctl -u $servicio -n 30"
 done
+# De aquí en adelante se actualiza solo (revisa GitHub cada 10 min); solo la primera vez hay que prenderlo.
+if [ -f "$APP/despliegue/autoactualizar.sh" ] && ! systemctl is-enabled --quiet autocanal-actualizar.timer 2>/dev/null; then
+  bash "$APP/despliegue/autoactualizar.sh" --activar
+fi
 echo "✔ Actualizado y reiniciado."

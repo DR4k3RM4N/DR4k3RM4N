@@ -280,3 +280,9 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
     ficha/hojas en correcciones. El chat muestra modelo, minutos, pasos y "equivale a X ¢ de API".
   - Oficina: 👍/👎 debajo de cada versión (pide el porqué con prompt) y «📒 Estilo» en Proyectos (notas, reglas con
     ✕, agregar regla, recetas, calificaciones). Rutas: GET/POST /api/estilo, POST /api/proyecto/<id>/calificar.
+- Nov 2026 (11): el servidor se actualiza solo. `autocanal/despliegue/autoactualizar.sh` (timer systemd
+  `autocanal-actualizar`, cada 10 min): git fetch; si hay commits nuevos en la rama y no hay video en curso
+  (flock de .cola_video.lock) ni trabajos asignado/trabajando en la sala (127.0.0.1:8767/api/estado), corre
+  actualizar.sh; si lleva >3 h esperando, actualiza igual. Log: /var/log/autocanal-actualizar.log; marca
+  /opt/canal/.ultima_actualizacion. Lo prende actualizar.sh la primera vez y instalar.sh en servidores nuevos.
+  Apagar: `sudo bash autoactualizar.sh --apagar`.
