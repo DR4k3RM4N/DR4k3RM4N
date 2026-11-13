@@ -50,6 +50,7 @@
     }
     pintarBandeja();
     pintarProyectos();
+    pintarIdeasAuto();
     pintarEquipo();
     pintarChat();
   }
@@ -172,6 +173,18 @@
     catch (err) { alert(err.message); }
     setTimeout(() => (boton.disabled = false), 4000);
   });
+
+  $("#ideas-auto").addEventListener("change", async (e) => {
+    try { await api("/api/ideas/auto", { activo: e.target.checked }); }
+    catch (err) { alert(err.message); e.target.checked = !e.target.checked; }
+  });
+  function pintarIdeasAuto() {
+    const c = estado.ideas_auto || {};
+    const caja = $("#ideas-auto");
+    if (document.activeElement !== caja) caja.checked = !!c.activo;
+    caja.disabled = !c.hora;
+    $("#ideas-auto-hora").textContent = c.hora ? `(a las ${c.hora})` : "(falta la hora IDEAS_HORA en el servidor)";
+  }
 
   // ---------- proyectos ----------
   function pintarProyectos() {

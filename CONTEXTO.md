@@ -286,3 +286,6 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   actualizar.sh; si lleva >3 h esperando, actualiza igual. Log: /var/log/autocanal-actualizar.log; marca
   /opt/canal/.ultima_actualizacion. Lo prende actualizar.sh la primera vez y instalar.sh en servidores nuevos.
   Apagar: `sudo bash autoactualizar.sh --apagar`.
+- Nov 2026 (12): Miguel pidió apagar las ideas/guiones automáticos de la mañana. `oficina.ideas_auto` (en
+  oficina_estado.json, apagado por defecto) manda sobre IDEAS_HORA; casilla «☀️ Que Paola busque ideas sola cada
+  mañana» bajo "Pídele ideas a Paola" (POST /api/ideas/auto {activo}). Sin IDEAS_HORA en .env la casilla sale gris.

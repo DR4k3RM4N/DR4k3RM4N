@@ -135,6 +135,7 @@ class Oficina:
             if t["estado"] in ACTIVAS:
                 t["estado"], t["error"] = "cancelada", "Se interrumpió al cerrar la oficina."
         self.ultima_busqueda = datos.get("ultima_busqueda", "")
+        self.ideas_auto = bool(datos.get("ideas_auto", False))  # ideas solas cada mañana: apagado salvo que lo prendas
         self.gasto = datos.get("gasto", {})  # USD por día (AAAA-MM-DD)
         ia.al_gastar = self._gasto
         self.wa = datos.get("whatsapp", {"ultimo_entrante": 0, "numero": "", "vistos": []})
@@ -159,7 +160,7 @@ class Oficina:
             ESTADO.write_text(json.dumps({
                 "propuestas": self.propuestas[-200:], "proyectos": self.proyectos,
                 "preferencias": self.preferencias[-30:], "log": self.log[-300:],
-                "ultima_busqueda": self.ultima_busqueda, "tareas": self.tareas[-300:],
+                "ultima_busqueda": self.ultima_busqueda, "ideas_auto": self.ideas_auto, "tareas": self.tareas[-300:],
                 "gasto": dict(sorted(self.gasto.items())[-120:]),
                 "whatsapp": {**self.wa, "vistos": self.wa.get("vistos", [])[-200:]},
             }, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -171,6 +172,7 @@ class Oficina:
                     "proyectos": sorted(self.proyectos.values(), key=lambda p: -p["creado"]),
                     "preferencias": self.preferencias[-10:], "log": self.log[-60:],
                     "etapas": ETAPAS_PROYECTO, "ahora": time.time(), "gasto": self._resumen_gasto(),
+                    "ideas_auto": {"activo": self.ideas_auto, "hora": IDEAS_HORA or ""},
                     "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
                               + [t for t in self.tareas[-250:] if t["estado"] not in ACTIVAS][-120:]}
 
@@ -437,7 +439,7 @@ class Oficina:
         while True:
             time.sleep(60)
             try:
-                if IDEAS_HORA:
+                if IDEAS_HORA and self.ideas_auto:
                     ahora = dt.datetime.now(ZoneInfo(IDEAS_ZONA))
                     hoy = ahora.date().isoformat()
                     hh, _, mm = IDEAS_HORA.partition(":")
@@ -1544,6 +1546,11 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             if ruta == "/api/estilo/borrar":
                 estilo.borrar(str(datos.get("tipo")), str(datos.get("nombre", "")))
                 return self._json({"ok": True})
+            if ruta == "/api/ideas/auto":  # ☀️ ideas solas cada mañana: prender / apagar
+                with oficina.lock:
+                    oficina.ideas_auto = bool(datos.get("activo"))
+                    oficina._tocar()
+                return self._json({"ok": True, "activo": oficina.ideas_auto})
             if ruta == "/api/ideas":
                 oficina.pedir_ideas(str(datos.get("guia", ""))[:500])
                 return self._json({"ok": True})
@@ -1618,7 +1625,8 @@ def main() -> None:
     servidor = crear_servidor(oficina, a.puerto, a.host)
     url = f"http://localhost:{a.puerto}"
     print(f"🏢 Oficina abierta en {url}" + ("  (modo demo)" if a.demo else "")
-          + (f"  · ideas diarias a las {IDEAS_HORA} ({IDEAS_ZONA})" if IDEAS_HORA else "")
+          + (f"  · ideas diarias a las {IDEAS_HORA} ({IDEAS_ZONA}) {'prendidas' if oficina.ideas_auto else 'apagadas'}"
+             if IDEAS_HORA else "")
           + ("  · Telegram" if tg.activo() else "") + ("  · WhatsApp" if wa.activo() else "")
           + (f" (avisos: {NIVEL_AVISOS})" if tg.activo() or wa.activo() else "")
           + "  — Ctrl+C para cerrar", flush=True)

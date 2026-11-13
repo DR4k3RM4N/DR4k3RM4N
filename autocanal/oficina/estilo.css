@@ -503,3 +503,7 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .estilo-reglas li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px;
   border-radius: 8px; background: rgba(255, 255, 255, .05); }
 .voto { flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.pedir label.ideas-auto { font-family: Inter, system-ui, sans-serif; font-size: 12.5px; display: flex; gap: 6px;
+  align-items: center; margin: 8px 0 0; cursor: pointer; }
+.pedir label.ideas-auto input { width: auto; flex: none; margin: 0; }
+.pedir label.ideas-auto span { white-space: nowrap; }
