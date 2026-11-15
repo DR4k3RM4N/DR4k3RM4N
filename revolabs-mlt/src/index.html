@@ -64,6 +64,9 @@
       </label>
       <button id="muteAll" title="Silenciar o activar el audio de todos (M)">🔊 <span class="lbl">Activar todo</span></button>
       <button id="reloadAll" title="Recargar todos (R)">⟳ <span class="lbl">Recargar todo</span></button>
+      <label title="Velocidad del auto-like (1 a 300 por minuto). Se activa con el botón ❤ de cada live. Necesita sesión iniciada en TikTok."><span class="lbl">❤ Likes/min</span><span class="sh">❤</span>
+        <input id="likeRate" type="number" min="1" max="300" step="1" class="like-rate">
+      </label>
       <label title="Qué pasa al minimizar la app"><span class="lbl">Al minimizar</span><span class="sh">⧉</span>
         <select id="autoPip">
           <option value="on">Ventana flotante</option>
@@ -142,6 +145,7 @@
         <button class="view" title="Cambiar vista">💬</button>
         <button class="guides" title="Guías de encuadre">📐</button>
         <button class="reload" title="Volver a este live y recargar">⟳</button>
+        <button class="like" title="Auto-like: da me gusta solo, a la velocidad elegida en ❤ Likes/min">❤</button>
         <button class="pip" title="Ventana flotante: siempre encima de todo">⧉</button>
         <button class="expand" title="Ampliar">⤢</button>
         <button class="open" title="Abrir en el navegador">↗</button>

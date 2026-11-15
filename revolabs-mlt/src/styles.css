@@ -129,6 +129,9 @@ button.icon:hover { background: #2f3441; }
 .status[data-kind="ok"] { background: #12483f; color: #6ff3d6; }
 .status[data-kind="bad"] { background: #5a1a28; color: #ff8fa6; }
 .spacer { flex: 1; }
+.like-rate { width: 64px; }
+.bar button.like.on { background: #fe2c55; border-color: #fe2c55; color: #fff; }
+.bar button.like { font-variant-numeric: tabular-nums; }
 .bar button.view, .bar button.guides { opacity: 0.55; }
 .bar button.view.on, .bar button.guides.on { opacity: 1; border-color: #25f4ee; }
 webview { flex: 1; min-height: 0; background: #000; }

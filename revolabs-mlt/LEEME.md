@@ -1,6 +1,14 @@
 # RevoLabs MLT · Monitor de Lives de TikTok
 
-Versión **0.5.3.1** · © 2026 Revo Labs · Uso interno.
+Versión **0.5.4** · © 2026 Revo Labs · Uso interno.
+
+## Novedades de la v0.5.4
+
+- **Auto-like:** el botón **❤** de cada live da "me gusta" solo. La velocidad se elige arriba en **❤ Likes/min**, de 1 a 300 por minuto (tope de 5 por segundo, lo que alcanza alguien tocando rápido). Mientras está activo, el botón se pone rojo y cuenta los likes dados; con otro clic se detiene.
+  - Necesita **sesión iniciada** en TikTok (botón Iniciar sesión); sin sesión, TikTok no cuenta los likes.
+  - Se detiene solo si el live termina o tiene un problema, y se pausa mientras escribes en la app.
+  - ⚠️ TikTok prohíbe la automatización en sus términos de uso; usarlo puede hacer que limiten la cuenta. Úsalo con números moderados.
+- **Mac:** ahora la versión para Mac se compila y firma en una Mac real, así que abre en Macs con chip Apple (M1–M4) sin comandos de Terminal.
 
 ## Novedades de la v0.5.3.1
 
@@ -51,10 +59,10 @@ Tu lista de lives, tus notas y tu sesión de las versiones anteriores se conserv
 
 ## Instalar
 
-- **Windows:** extrae `RevoLabs-MLT-0.5.3.1-Windows.zip` y abre `RevoLabs-MLT-0.5.3.1.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
-- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.3.1-Mac-arm64.zip`.
-- **Mac Intel:** `RevoLabs-MLT-0.5.3.1-Mac-x64.zip`.
-  La primera vez ve a Ajustes del Sistema → Privacidad y seguridad → "Abrir de todas formas". Si dice que la app "está dañada", abre Terminal y ejecuta `xattr -cr "/Applications/RevoLabs MLT.app"`.
+- **Windows:** extrae `RevoLabs-MLT-0.5.4-Windows.zip` y abre `RevoLabs-MLT-0.5.4.exe`. Si sale "Windows protegió su PC", pulsa "Más información" y luego "Ejecutar de todas formas".
+- **Mac Apple Silicon (M1–M4):** `RevoLabs-MLT-0.5.4-Mac-AppleSilicon.zip`.
+- **Mac Intel:** `RevoLabs-MLT-0.5.4-Mac-Intel.zip`.
+  La primera vez ve a Ajustes del Sistema → Privacidad y seguridad → "Abrir de todas formas".
 
 ## Para desarrolladores
 

@@ -14,7 +14,7 @@ const empty = $('empty');
 const tpl = $('tileTpl');
 const els = {
   form: $('addForm'), input: $('userInput'), cols: $('cols'), zoom: $('zoom'),
-  autoReload: $('autoReload'), alerts: $('alerts'), view: $('view'), guides: $('guides'), autoPip: $('autoPip'), muteAll: $('muteAll'),
+  autoReload: $('autoReload'), alerts: $('alerts'), view: $('view'), guides: $('guides'), autoPip: $('autoPip'), likeRate: $('likeRate'), muteAll: $('muteAll'),
   reloadAll: $('reloadAll'), login: $('login'),
   favToggle: $('favToggle'), favPanel: $('favPanel'), favList: $('favList'),
   favEmpty: $('favEmpty'), favCount: $('favCount'), alertsBox: $('alertsBox'), ghost: $('dragGhost'),
@@ -29,7 +29,7 @@ const tiles = new Map();   // usuario -> { el, webview, statusEl, armed, alerted
 
 // ---------- Datos guardados ----------
 function load() {
-  const base = { lives: [], favorites: [], notes: {}, cols: 'auto', zoom: 'auto', autoReload: '0', alerts: 'all', favOpen: true, view: 'chat', tileView: {}, guides: 'off', tileGuides: {}, autoPip: 'on', audioOut: '', v: 5 };
+  const base = { lives: [], favorites: [], notes: {}, cols: 'auto', zoom: 'auto', autoReload: '0', alerts: 'all', favOpen: true, view: 'chat', tileView: {}, guides: 'off', tileGuides: {}, autoPip: 'on', audioOut: '', likeRate: 60, v: 5 };
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (s && Array.isArray(s.lives)) {
@@ -132,6 +132,8 @@ function addLive(user) {
   el.querySelector('.expand').onclick = () => toggleExpand(user);
   el.querySelector('.view').onclick = () => toggleTileView(user);
   el.querySelector('.pip').onclick = () => togglePip(user);
+  el.querySelector('.like').onclick = () => toggleLikes(user);
+  if (user === LOGIN) el.querySelector('.like').style.display = 'none';
   el.querySelector('.guides').onclick = () => toggleTileGuides(user);
   el.querySelector('.open').onclick = () => window.open(liveUrl(user));
   el.querySelector('.remove').onclick = () => removeLive(user);
@@ -165,6 +167,7 @@ async function removeLive(user, confirmFirst = true) {
   state.lives = state.lives.filter((l) => l.user !== user);
   audible.delete(user);
   if (pipOpen.has(user) && window.app) window.app.pipClose(user);
+  stopLikes(user);
   if (expanded === user) expanded = null;
   dismissToast(user);
   save();
@@ -227,6 +230,7 @@ function setStatus(user, text, kind) {
     if (t.alerted) { t.alerted = false; t.el.classList.remove('alert'); recovered(user); }
     t.armed = true; // estaba transmitiendo bien: si se cae, sí hay que avisar
   } else if (kind === 'bad') {
+    if (t.liking) stopLikes(user, 'se detuvo porque el live tiene un problema');
     if (!t.badSince) t.badSince = Date.now();
   }
   renderFavs();
@@ -850,6 +854,13 @@ els.alerts.value = state.alerts;
 els.view.value = state.view;
 els.autoPip.value = state.autoPip;
 els.autoPip.onchange = () => { state.autoPip = els.autoPip.value; save(); };
+els.likeRate.value = state.likeRate;
+els.likeRate.onchange = () => {
+  state.likeRate = clampRate(els.likeRate.value);
+  els.likeRate.value = state.likeRate;
+  save();
+  tiles.forEach((t, u) => { if (t.liking) scheduleLikes(u); }); // aplica la nueva velocidad
+};
 els.guides.value = state.guides;
 els.view.onchange = () => {
   state.view = els.view.value;
@@ -908,6 +919,90 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'r' || e.key === 'R') els.reloadAll.click();
   else if (e.key === 'Escape' && expanded) { expanded = null; refresh(); }
 });
+
+// ---------- Auto-like ----------
+// Da "me gusta" en el live a la velocidad elegida, con un tope de MAX_LIKES_PER_MIN.
+// TikTok no publica un límite oficial; el tope equivale a alguien tocando rápido (5 por segundo).
+// Se usan clics reales sobre el botón de me gusta de TikTok; si no se encuentra, no hace nada.
+const MAX_LIKES_PER_MIN = 300;
+const clampRate = (v) => Math.min(MAX_LIKES_PER_MIN, Math.max(1, Math.round(Number(v) || 1)));
+const FIND_LIKE = `(() => {
+  const visible = (e) => { const r = e.getBoundingClientRect(); return r.width >= 16 && r.height >= 16 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth; };
+  const sels = ['[data-e2e*="like" i]', 'button[aria-label*="like" i]', '[role="button"][aria-label*="like" i]',
+    '[aria-label*="me gusta" i]', '[class*="LikeButton"]', '[class*="like-button" i]', '[class*="likeIcon" i]', '[class*="like-icon" i]'];
+  for (const s of sels) {
+    const el = [...document.querySelectorAll(s)].filter(visible).filter((e) => !/comment/i.test(e.getAttribute('data-e2e') || ''))[0];
+    if (el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+  }
+  return null;
+})()`;
+const needsLogin = `(() => !!document.querySelector('[data-e2e="top-login-button"], [data-e2e="nav-login-button"]'))()`;
+
+async function toggleLikes(user) {
+  const t = tiles.get(user);
+  if (!t) return;
+  if (t.liking) return stopLikes(user);
+  let pos = null;
+  try { pos = await t.webview.executeJavaScript(FIND_LIKE); } catch {}
+  if (!pos) {
+    let login = false;
+    try { login = await t.webview.executeJavaScript(needsLogin); } catch {}
+    toast('like-' + user, 'bad', '❤', `@${user}`, login
+      ? 'Para dar likes hay que iniciar sesión en TikTok (botón Iniciar sesión).'
+      : 'No encontré el botón de me gusta en este live.', 7000);
+    return;
+  }
+  t.liking = true;
+  t.likePos = pos;
+  t.likeCount = 0;
+  t.likeTick = 0;
+  scheduleLikes(user);
+  paintLike(user);
+}
+function scheduleLikes(user) {
+  const t = tiles.get(user);
+  if (!t) return;
+  clearInterval(t.likeTimer);
+  t.likeTimer = setInterval(() => likeOnce(user), Math.round(60000 / clampRate(state.likeRate)));
+}
+async function likeOnce(user) {
+  const t = tiles.get(user);
+  if (!t || !t.liking) return;
+  // Mientras escribes en la app (búsqueda o notas) se pausa, para no quitarte el teclado.
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT') && ae !== els.likeRate) return;
+  // Cada 20 likes se vuelve a ubicar el botón por si la página cambió de lugar.
+  if (++t.likeTick % 20 === 0) {
+    try { const p = await t.webview.executeJavaScript(FIND_LIKE); if (p) t.likePos = p; else return stopLikes(user, 'ya no encuentro el botón de me gusta'); } catch { return; }
+  }
+  const z = t.zoom || 1;
+  const x = Math.round(t.likePos.x * z), y = Math.round(t.likePos.y * z);
+  try {
+    t.webview.sendInputEvent({ type: 'mouseMove', x, y });
+    t.webview.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+    t.webview.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+    t.likeCount++;
+    paintLike(user);
+  } catch {}
+}
+function stopLikes(user, why) {
+  const t = tiles.get(user);
+  if (!t || !t.liking) return;
+  clearInterval(t.likeTimer);
+  t.liking = false;
+  paintLike(user);
+  if (why) toast('like-' + user, 'bad', '❤', `@${user}: auto-like detenido`, `${why} · ${t.likeCount} likes dados`, 7000);
+}
+function paintLike(user) {
+  const t = tiles.get(user);
+  if (!t) return;
+  const b = t.el.querySelector('.like');
+  b.classList.toggle('on', !!t.liking);
+  b.textContent = t.liking ? `❤ ${t.likeCount}` : '❤';
+  b.title = t.liking
+    ? `Auto-like activo: ${clampRate(state.likeRate)} por minuto · ${t.likeCount} dados. Clic para detener.`
+    : 'Auto-like: da me gusta solo, a la velocidad elegida en ❤ Likes/min (máximo 300). Necesita sesión iniciada.';
+}
 
 // ---------- Ventana flotante ----------
 const pipOpen = new Set();   // lives que están en ventana flotante
