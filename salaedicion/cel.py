@@ -14,6 +14,8 @@
   ./cel instalada com.app.id     ¿ya está instalada?
   ./cel anuncio "App anunciada" "lo que promete"   anota un anuncio que salió (con el segundo de la grabación)
   ./cel nota "lo que pasó"       anota algo importante (saldo, pago mínimo, retiro…)
+  ./cel guardar_deseo "Nombre" "lo que promete"   después de picarle a un anuncio de dinero: ve qué app abrió
+                                 (Play Store o página) y la guarda en la lista de deseos para probarla otro día
   ./cel terminar "resumen"       termina la prueba
 
 Corre en la carpeta de la prueba (notas.json, pantalla.png, elementos.json). Necesita `adb` y el cel con
@@ -146,6 +148,39 @@ def deslizar(direccion: str) -> None:
     print(f"Deslicé {direccion}.")
 
 
+def app_en_pantalla(probando: str = "") -> dict:
+    """¿Qué abrió el anuncio? El paquete si es Play Store, o la dirección si es una página.
+    `dumpsys` lista primero lo más reciente; se ignora la app que estamos probando (también estuvo en Play Store)."""
+    actividad = adb("shell", "dumpsys", "activity", "activities")
+    paquetes = [p for p in re.findall(r"details\?id=([A-Za-z][\w.]+)", actividad) if p != probando]
+    salida = {"paquete": paquetes[0] if paquetes else ""}
+    if not salida["paquete"]:
+        url = next((u for u in re.findall(r"dat=(https?://[^\s}]+)", actividad) if "google.com/store" not in u), "")
+        if url:
+            salida["url"] = url[:300]
+    foco = re.search(r"(?:mResumedActivity|topResumedActivity|ResumedActivity).*?\s([\w.]+)/", actividad)
+    salida["en_pantalla"] = foco.group(1) if foco else ""
+    return salida
+
+
+def guardar_deseo(nombre: str, promesa: str) -> None:
+    n = _notas()
+    info = app_en_pantalla(n.get("paquete", ""))
+    paquete = info.get("paquete", "")
+    deseo = {"segundo": _segundo(), "nombre": nombre[:80], "promesa": promesa[:200], "paquete": paquete,
+             "url": info.get("url", ""), "abrio": info.get("en_pantalla", "")}
+    n.setdefault("deseos", [])
+    if any((paquete and d.get("paquete") == paquete) or d.get("nombre", "").lower() == nombre.lower() for d in n["deseos"]):
+        print("Esa ya estaba en la lista de deseos. Regresa a la app (./cel atras).")
+        return
+    n["deseos"].append(deseo)
+    _guardar(n)
+    _progreso(f"⭐ A la lista de deseos: {nombre[:40]}")
+    print(f"⭐ Guardé «{nombre}» en la lista de deseos" + (f" (Play Store: {paquete})" if paquete else
+          f" (página: {info['url'][:60]})" if info.get("url") else " (sin paquete: la buscamos por nombre)")
+          + ". NO la instales: regresa a la app con ./cel atras (las veces que haga falta) o ./cel abrir PAQUETE.")
+
+
 def main() -> None:
     if not adb_ruta():
         print("No encontré adb en esta compu.")
@@ -203,6 +238,8 @@ def main() -> None:
         _guardar(n)
         _progreso(" ".join(args)[:80])
         print("Anotado.")
+    elif cmd == "guardar_deseo":
+        guardar_deseo(args[0] if args else "", " ".join(args[1:]))
     elif cmd == "terminar":
         n = _notas()
         n.update(resumen=" ".join(args)[:1500], terminado=True, fin=time.time())

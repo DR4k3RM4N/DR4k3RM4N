@@ -116,6 +116,12 @@ fondo para llenar 16:9. Se automatizó:
   Guía para preparar el cel: `salaedicion/GUIA_CELULAR.md`. Probado aquí con adb y Claude simulados; falta
   probar con el cel real de Miguel.
 
+- **⭐ Lista de deseos** (`oficina.deseos`): el robot le pica a los anuncios de apps de dinero y con
+  `./cel guardar_deseo` guarda la app que abrió (paquete de Play Store vía `dumpsys activity`, o la URL), sin
+  instalarla; Iván también agrega las apps de dinero que lee en las grabaciones. Bandeja → "⭐ Lista de deseos" con
+  "📱 Probar ahora"/"Quitar". 🔁 Con el piloto prendido y el cel disponible, `_ciclo_deseos` prueba la siguiente
+  (una a la vez, sin otros videos en producción, `DESEOS_POR_DIA`, 2 por defecto) → video → más anuncios → más deseos.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

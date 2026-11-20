@@ -34,7 +34,12 @@ de verdad paga.
    girar ruletas, encuestas sencillas), recoge recompensas y ve los anuncios cuando te los ofrezca: los anuncios son
    lo que más nos importa.
 3. CADA anuncio que salga: toma pantalla, lee de qué app o producto es y anótalo: `./cel anuncio "Nombre" "qué promete"`.
-   Luego ciérralo (busca la X o "Cerrar", a veces hay que esperar unos segundos) o `./cel atras`.
+   - Si el anuncio es de OTRA app que promete ganar dinero (pagos, PayPal, retiros, "gana jugando", encuestas
+     pagadas, recompensas en efectivo): **pícale** al anuncio o a su botón (Instalar / Descargar / Más
+     información) para ver qué app es. Cuando abra Play Store o una página, toma pantalla y guárdala con
+     `./cel guardar_deseo "Nombre" "lo que promete"`. NO la instales ni descargues nada: regresa con `./cel atras`
+     (las veces que haga falta) o `./cel abrir PAQUETE` y sigue probando la app de hoy.
+   - Si no es de dinero, solo ciérralo (busca la X o "Cerrar", a veces hay que esperar unos segundos) o `./cel atras`.
 4. Anota con `./cel nota "…"` lo importante: cuánto saldo llevas, cuánto promete pagar, cada cuánto sale un anuncio.
 5. Al final busca la sección de retiro/cobrar/canjear: anota el pago mínimo y qué te pide para retirar
    (`./cel nota "Retiro: mínimo 50 USD, pide…"`). NO completes un retiro.
@@ -45,8 +50,8 @@ de verdad paga.
   exige, anótalo (`./cel nota "Pide número de teléfono para seguir"`) y no sigas por ahí.
 - NUNCA pagues, compres ni aceptes suscripciones o pruebas gratis.
 - Permisos: niega contactos, SMS, llamadas, ubicación y archivos. Acepta solo notificaciones si no hay otra forma.
-- NUNCA instales nada fuera de Play Store (APKs, "descarga aquí"). Si un anuncio quiere instalar otra app, solo anota
-  el nombre y regresa.
+- NUNCA instales nada fuera de Play Store (APKs, "descarga aquí"), ni instales las apps de los anuncios: solo se
+  guardan en la lista de deseos con `./cel guardar_deseo` y se regresa.
 - Si pide iniciar sesión con Google o Facebook, busca "invitado"/"saltar"; si no hay, anótalo y termina.
 - Si aparece un captcha, verificación con tu cara o algo que no puedes hacer, anótalo y termina.
 - Mira cada `pantalla.png` con Read antes de tocar. No toques a ciegas.
@@ -206,6 +211,7 @@ def probar(of, t: dict, temporal: Path, avance, claude: str, log) -> None:
     of.subir(tid, video)
     of.subir(tid, temporal / "notas.json")
     of.post(f"terminar/{tid}", {"ok": True, "resultado": {
-        "video": video.name, "anuncios": len(notas.get("anuncios", [])), "resumen": notas.get("resumen", "")[:500],
+        "video": video.name, "anuncios": len(notas.get("anuncios", [])), "deseos": notas.get("deseos", [])[:20],
+        "resumen": notas.get("resumen", "")[:500],
         "uso": {"pasos": info.get("num_turns"), "usd": info.get("total_cost_usd")}}})
     log(f"Robot: probé «{nombre}» ({len(notas.get('anuncios', []))} anuncios) en {round((time.time() - inicio) / 60)} min.")

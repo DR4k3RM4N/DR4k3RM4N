@@ -118,6 +118,16 @@
           </div>
         </article>`;
     }
+    const deseos = estado.deseos || [];
+    if (deseos.length) {
+      html += `<details class="deseos" open><summary>⭐ Lista de deseos: ${deseos.length} app(s) de anuncios para probar y grabar</summary>
+        <p class="pista">Salieron anunciadas mientras probábamos otras apps. Con el 🚀 piloto prendido y tu cel conectado se
+          prueban solas (${esc(String(estado.deseos_por_dia ?? 2))} al día); cada prueba trae anuncios nuevos.</p>
+        <ul class="lista-deseos">${deseos.map((d) => `<li><b>${esc(d.nombre)}</b>${d.promesa ? ` — «${esc(d.promesa)}»` : ""}
+          <small>visto en ${esc(d.visto_en)}${d.paquete ? "" : " · sin paquete (se busca por nombre)"}</small>
+          <span class="fila"><button class="btn btn-mini btn-primario" data-deseo="${esc(d.id)}" data-deseo-accion="probar">📱 Probar ahora</button>
+          <button class="btn btn-mini" data-deseo="${esc(d.id)}" data-deseo-accion="quitar">Quitar</button></span></li>`).join("")}</ul></details>`;
+    }
     if (estado.preferencias?.length) {
       html += `<details class="gustos"><summary>Lo que Paola aprendió de ti (${estado.preferencias.length})</summary>
         <ul>${estado.preferencias.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></details>`;
@@ -132,6 +142,14 @@
   $("#bandeja").addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b) return;
+    if (b.dataset.deseo) {
+      b.disabled = true;
+      try {
+        await api(`/api/deseo/${encodeURIComponent(b.dataset.deseo)}`, { accion: b.dataset.deseoAccion });
+        if (b.dataset.deseoAccion === "probar") b.textContent = "Arrancando…";
+      } catch (err) { alert(err.message); b.disabled = false; }
+      return;
+    }
     if (b.id === "b-limpiar") {
       if (!confirm(`¿Descartar las ${estado.propuestas.length} ideas de la bandeja? Paola no lo tomará como que no te gustaron.`)) return;
       b.disabled = true;

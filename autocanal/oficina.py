@@ -139,6 +139,7 @@ class Oficina:
         self.ultima_busqueda = datos.get("ultima_busqueda", "")
         self.ideas_auto = bool(datos.get("ideas_auto", False))  # ideas solas cada mañana: apagado salvo que lo prendas
         self.piloto = bool(datos.get("piloto", False))  # 🚀 Paola arranca sola la mejor idea (tú solo revisas y publicas)
+        self.deseos = datos.get("deseos", [])  # ⭐ apps que salieron en anuncios, para probarlas y grabarlas después
         self.gasto = datos.get("gasto", {})  # USD por día (AAAA-MM-DD)
         ia.al_gastar = self._gasto
         self.wa = datos.get("whatsapp", {"ultimo_entrante": 0, "numero": "", "vistos": []})
@@ -151,6 +152,7 @@ class Oficina:
             threading.Thread(target=tg.escuchar, args=(self.recibir_telegram,), daemon=True).start()
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
+        threading.Thread(target=self._ciclo_deseos, daemon=True).start()
         if self.por_reanudar:
             threading.Thread(target=self._reanudar, daemon=True).start()
         ia.antes_de_llamar = self._revisar_tope
@@ -164,7 +166,7 @@ class Oficina:
                 "propuestas": self.propuestas[-200:], "proyectos": self.proyectos,
                 "preferencias": self.preferencias[-30:], "log": self.log[-300:],
                 "ultima_busqueda": self.ultima_busqueda, "ideas_auto": self.ideas_auto, "piloto": self.piloto,
-                "tareas": self.tareas[-300:],
+                "deseos": self.deseos[-300:], "tareas": self.tareas[-300:],
                 "gasto": dict(sorted(self.gasto.items())[-120:]),
                 "whatsapp": {**self.wa, "vistos": self.wa.get("vistos", [])[-200:]},
             }, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -177,6 +179,8 @@ class Oficina:
                     "preferencias": self.preferencias[-10:], "log": self.log[-60:],
                     "etapas": ETAPAS_PROYECTO, "ahora": time.time(), "gasto": self._resumen_gasto(),
                     "ideas_auto": {"activo": self.ideas_auto, "hora": IDEAS_HORA or ""}, "piloto": self.piloto,
+                    "deseos": [d for d in self.deseos if d["estado"] == "pendiente"][-60:],
+                    "deseos_por_dia": int(config.env("DESEOS_POR_DIA", "2") or 0),
                     "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
                               + [t for t in self.tareas[-250:] if t["estado"] not in ACTIVAS][-120:]}
 
@@ -612,40 +616,112 @@ class Oficina:
         self.avisar_jefe(f"¡Va! Arranqué el video de {app['titulo']} con tu grabación. Te aviso cuando esté.")
 
     def ideas_de_anuncios(self, app_id: str) -> None:
-        """Las apps de dinero que salieron en anuncios durante la prueba se vuelven ideas en tu bandeja."""
-        from agentes import buscador
+        """Las apps de dinero que salieron en anuncios durante la prueba van a tu ⭐ lista de deseos: las que el
+        robot abrió (con su paquete de Play Store) y las que Iván leyó en la grabación."""
         from agentes import prueba as prueba_mod
 
-        datos = json.loads((config.SALIDA / app_id / "prueba.json").read_text(encoding="utf-8")) \
-            if (config.SALIDA / app_id / "prueba.json").exists() else None
-        nombres = prueba_mod.apps_anunciadas(datos)
-        if not nombres:
-            return
+        carpeta = config.SALIDA / app_id
         titulo = self.proyectos.get(app_id, {}).get("titulo", app_id)
-        hechas = set(buscador.historial())
-        nuevas = []
-        for nombre in nombres:
+        nuevos = []
+        notas = carpeta / "prueba_robot" / "notas.json"
+        if notas.exists():
             try:
-                app = buscador.encontrar_app(nombre, hechas)
-            except Exception:  # noqa: BLE001 — una que no se encuentre no frena las demás
-                app = None
-            if not app:
-                continue
-            with self.lock:
-                if any(p["app_id"] == app["app_id"] and p["estado"] == "pendiente" for p in self.propuestas) \
-                        or app["app_id"] in self.proyectos:
+                for d in json.loads(notas.read_text(encoding="utf-8")).get("deseos", []):
+                    nuevos.append({"nombre": d.get("nombre", ""), "paquete": d.get("paquete", ""), "url": d.get("url", ""),
+                                   "promesa": d.get("promesa", "")})
+            except (OSError, json.JSONDecodeError):
+                pass
+        datos = json.loads((carpeta / "prueba.json").read_text(encoding="utf-8")) if (carpeta / "prueba.json").exists() else None
+        nuevos += [{"nombre": n, "paquete": "", "url": "", "promesa": ""} for n in prueba_mod.apps_anunciadas(datos)]
+        agregados = self.agregar_deseos(nuevos, titulo)
+        if agregados:
+            self.avisar_jefe(f"⭐ Mientras probábamos {titulo} salieron anuncios de: {', '.join(agregados)}. "
+                             "Las guardé en tu lista de deseos para probarlas y grabarlas después.")
+
+    def agregar_deseos(self, lista: list[dict], visto_en: str) -> list[str]:
+        from agentes import buscador
+
+        hechas = set(buscador.historial())
+        agregados = []
+        with self.lock:
+            for d in lista:
+                nombre, paquete = (d.get("nombre") or "").strip()[:80], (d.get("paquete") or "").strip()[:150]
+                if len(nombre) < 3 and not paquete:
                     continue
-                pendientes = [p.get("num", 0) for p in self.propuestas if p["estado"] == "pendiente"]
-                self.propuestas.append({
-                    "app_id": app["app_id"], "titulo": app["titulo"], "angulo": f"¿{app['titulo']} paga o es estafa?",
-                    "por_que": f"📢 Salió anunciada dentro de {titulo} mientras la probábamos (así llegan las estafas).",
-                    "potencial_vistas": "alto", "id": uuid.uuid4().hex[:8], "estado": "pendiente",
-                    "creado": time.time(), "comentarios": [], "num": max(pendientes, default=0) + 1})
+                ya = any((paquete and x.get("paquete") == paquete) or x["nombre"].lower() == nombre.lower() for x in self.deseos)
+                if ya or (paquete and (paquete in self.proyectos or paquete in hechas)):
+                    continue
+                self.deseos.append({"id": uuid.uuid4().hex[:8], "nombre": nombre or paquete, "paquete": paquete,
+                                    "url": d.get("url", ""), "promesa": (d.get("promesa") or "")[:200],
+                                    "visto_en": visto_en, "creado": time.time(), "estado": "pendiente"})
+                agregados.append(nombre or paquete)
+            if agregados:
                 self._tocar()
-            nuevas.append(app["titulo"])
-        if nuevas:
-            self.avisar_jefe(f"📢 Mientras probábamos {titulo} salieron anuncios de: {', '.join(nuevas)}. "
-                             "Te las dejé como ideas en la bandeja.")
+        return agregados
+
+    def accion_deseo(self, did: str, accion: str) -> dict:
+        with self.lock:
+            d = next((x for x in self.deseos if x["id"] == did), None)
+            if not d or d["estado"] != "pendiente":
+                return {"error": "Esa app ya no está pendiente en la lista."}
+            if accion == "quitar":
+                d["estado"] = "descartada"
+                self._tocar()
+                return {"ok": True}
+            d["estado"], d["iniciado"] = "en_video", time.time()
+            self._tocar()
+        threading.Thread(target=self._probar_deseo, args=(d,), daemon=True).start()
+        return {"ok": True}
+
+    def _probar_deseo(self, d: dict) -> None:
+        """⭐ → video: con su paquete se arma el proyecto directo; si solo hay nombre, Paola la busca."""
+        from agentes import buscador
+
+        app = {"app_id": d["paquete"], "titulo": d["nombre"]} if d.get("paquete") else None
+        if not app:
+            try:
+                app = buscador.encontrar_app(d["nombre"], set()) or buscador.fuera_de_play(d["nombre"])
+            except Exception as exc:  # noqa: BLE001
+                print(f"aviso: deseo {d['nombre']}: {exc}")
+        if not app:
+            with self.lock:
+                d["estado"] = "no_encontrada"
+                self._tocar()
+            self.decir("productora", f"No encontré «{d['nombre']}» de tu lista de deseos; la dejo marcada.")
+            return
+        self.iniciar_proyecto({"app_id": app["app_id"], "titulo": app["titulo"],
+                               "angulo": f"Probé {app['titulo']}: ¿paga o es estafa?",
+                               "fuera_de_play": bool(app.get("fuera_de_play")), "personalizada": True,
+                               "por_que": f"⭐ De tu lista de deseos: salió anunciada en {d['visto_en']}."},
+                              notas=f"La app salió anunciada dentro de {d['visto_en']}"
+                                    + (f" prometiendo: {d['promesa']}" if d.get("promesa") else "") + ".")
+        with self.lock:
+            d["proyecto"] = app["app_id"]
+            self._tocar()
+
+    def _ciclo_deseos(self) -> None:
+        """🔁 Con el piloto automático prendido y el cel conectado, se prueba la siguiente app de la lista de deseos
+        (una a la vez y con tope diario: DESEOS_POR_DIA, 2 por defecto). Cada prueba trae nuevos anuncios → más deseos."""
+        from agentes import prueba as prueba_mod
+
+        tope = int(config.env("DESEOS_POR_DIA", "2") or 0)
+        while True:
+            time.sleep(300)
+            try:
+                if not (self.piloto and tope):
+                    continue
+                with self.lock:
+                    ocupado = any(p["estado"] in ("produccion", "publicando") for p in self.proyectos.values())
+                    hoy = self._hoy()
+                    hechos_hoy = sum(1 for d in self.deseos if d.get("iniciado") and
+                                     dt.datetime.fromtimestamp(d["iniciado"], ZoneInfo(IDEAS_ZONA)).date().isoformat() == hoy)
+                    siguiente = next((d for d in self.deseos if d["estado"] == "pendiente"), None)
+                if ocupado or not siguiente or hechos_hoy >= tope or not prueba_mod.celular_disponible():
+                    continue
+                self.decir("productora", f"🔁 Piloto: le toca a «{siguiente['nombre']}» de la lista de deseos")
+                self.accion_deseo(siguiente["id"], "probar")
+            except Exception as exc:  # noqa: BLE001 — el ciclo nunca debe morir
+                print(f"aviso: ciclo de deseos: {exc}")
 
     def _arrancar_mejor(self, candidatas: list[dict]) -> bool:
         """Piloto automático: Paola escoge la mejor idea y la arranca sin esperar tu 👍 (las demás se quedan en la
@@ -1731,6 +1807,12 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             if ruta == "/api/estilo/borrar":
                 estilo.borrar(str(datos.get("tipo")), str(datos.get("nombre", "")))
                 return self._json({"ok": True})
+            if ruta.startswith("/api/deseo/"):  # ⭐ lista de deseos: probar ahora / quitar
+                accion = str(datos.get("accion"))
+                if accion not in ("probar", "quitar"):
+                    return self._json({"error": "¿qué hago?"}, 400)
+                r = oficina.accion_deseo(ruta.rsplit("/", 1)[-1], accion)
+                return self._json(r, 400 if "error" in r else 200)
             if ruta == "/api/piloto":  # 🚀 piloto automático: prender / apagar
                 with oficina.lock:
                     oficina.piloto = bool(datos.get("activo"))
