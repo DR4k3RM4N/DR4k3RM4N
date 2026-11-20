@@ -122,6 +122,17 @@ fondo para llenar 16:9. Se automatizó:
   "📱 Probar ahora"/"Quitar". 🔁 Con el piloto prendido y el cel disponible, `_ciclo_deseos` prueba la siguiente
   (una a la vez, sin otros videos en producción, `DESEOS_POR_DIA`, 2 por defecto) → video → más anuncios → más deseos.
 
+## 3e. Miniaturas ilustradas (nov 2026)
+Estilo de Miguel para "Apps que sí pagan" (sus referencias: caricatura 2D vibrante, personaje expresivo con el cel,
+billetes/monedas, titular enorme en pregunta a la izquierda, icono de la app en cuadro blanco arriba a la derecha,
+botón SUSCRÍBETE abajo a la izquierda). `agentes/ilustrador.py`: Claude (tarea "miniatura_ia") escribe 3 conceptos
+distintos (escena en inglés + titular en español + por qué sube el CTR, reglas de su prompt de Gemini); Gemini
+(`GEMINI_API_KEY`, `GEMINI_MODELO_IMAGEN`, por defecto gemini-2.5-flash-image; ~$0.04/imagen, `PRECIO_IMAGEN`) dibuja
+la escena SIN texto con el icono y capturas como referencia; Pillow pone titular (Luckiest Guy, Apache 2.0, en
+`assets/fuentes/`), icono y botón. Solo videos de apps (no `tema:`); ajuste `miniaturas_ia`; sin clave o si falla,
+las miniaturas de siempre. Prueba en el servidor: `oficina.py --probar-miniatura`. El formato exacto de la API de
+Gemini NO se pudo verificar desde aquí (ai.google.dev bloqueado): hay reintentos sin imageConfig y con otro modelo.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

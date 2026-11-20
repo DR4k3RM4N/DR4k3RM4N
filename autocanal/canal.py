@@ -152,7 +152,25 @@ class Produccion:
 
         from agentes import estilo, graficos
 
+        from agentes import ilustrador
+
         datos = estilo.cargar()
+        refs = estilo.referencias()
+        # 🎨 videos de apps: 3 miniaturas ilustradas (caricatura con IA + tu plantilla), si hay clave de Gemini
+        if not self.app_id.startswith("tema:") and ilustrador.disponible() and datos["ajustes"].get("miniaturas_ia", True):
+            try:
+                opciones = ilustrador.miniaturas(self.ficha, self.expediente, self.guion, self.imagenes, self.carpeta)
+            except Exception as exc:  # noqa: BLE001 — si falla, Dani hace las de siempre
+                print(f"  · las miniaturas ilustradas fallaron ({exc}); hago las de siempre", flush=True)
+                opciones = []
+            if opciones:
+                elegida, razon = 0, opciones[0]["por_que"]
+                if len(opciones) > 1:
+                    elegida, razon = elegir_miniatura([self.carpeta / o["archivo"] for o in opciones], refs)
+                shutil.copyfile(self.carpeta / opciones[elegida]["archivo"], self.carpeta / "miniatura.jpg")
+                _guardar(self.carpeta / "miniaturas.json", {"opciones": opciones, "elegida": elegida, "razon": razon})
+                self.mini = self.carpeta / "miniatura.jpg"
+                return
         spec, n = datos.get("miniaturas"), int(datos["ajustes"].get("opciones_miniatura", 3))
         caps = self.imagenes.get("capturas") or []
         textos = [t for t in (self.guion.get("textos_miniatura") or []) if t.strip()] or [self.guion["texto_miniatura"]]
@@ -165,7 +183,6 @@ class Produccion:
             graficos.miniatura(texto, self.guion["sello_miniatura"], self.imagenes.get("icono"), captura, p, spec, espejo=espejo)
             opciones.append({"archivo": p.name, "texto": texto})
         elegida, razon = 0, "La primera opción."
-        refs = estilo.referencias()
         if len(opciones) > 1 and refs:
             elegida, razon = elegir_miniatura([self.carpeta / o["archivo"] for o in opciones], refs)
         shutil.copyfile(self.carpeta / opciones[elegida]["archivo"], self.carpeta / "miniatura.jpg")

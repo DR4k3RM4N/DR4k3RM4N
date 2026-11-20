@@ -1939,6 +1939,25 @@ def configurar_suscripcion() -> None:
     print("5) Reinicia la oficina:  sudo systemctl restart oficina")
 
 
+def probar_miniatura() -> None:
+    """Prueba la miniatura ilustrada con Gemini y deja el resultado en salida/_prueba_miniatura.jpg."""
+    from agentes import ilustrador
+
+    if not ilustrador.disponible():
+        raise SystemExit("Falta GEMINI_API_KEY en .env (sudo nano /opt/canal/autocanal/.env).")
+    carpeta = config.SALIDA
+    carpeta.mkdir(exist_ok=True)
+    fondo = carpeta / "_prueba_fondo.jpg"
+    print("Pidiéndole el dibujo a Gemini…")
+    try:
+        ilustrador.dibujar("A very happy cartoon man holding a smartphone that shows a slot machine game, gold coins and "
+                           "dollar bills flying around, casino city at night background", [], fondo)
+    except Exception as exc:  # noqa: BLE001
+        raise SystemExit(f"✖ {exc}")
+    ilustrador.componer(fondo, None, "¿Paga o estafa?", "blanco", carpeta / "_prueba_miniatura.jpg")
+    print("✔ ¡Funciona! Mírala en tu oficina: /salida/_prueba_miniatura.jpg")
+
+
 def main() -> None:
     global ESTADO
     p = argparse.ArgumentParser(description="Oficina visual de agentes")
@@ -1954,7 +1973,10 @@ def main() -> None:
     p.add_argument("--configurar-whatsapp", action="store_true", help="asistente para poner los datos de WhatsApp")
     p.add_argument("--configurar-suscripcion", action="store_true",
                    help="conecta tu plan de Claude (Pro/Max) para no gastar créditos de la API")
+    p.add_argument("--probar-miniatura", action="store_true", help="prueba la miniatura ilustrada con Gemini y sale")
     a = p.parse_args()
+    if a.probar_miniatura:
+        return probar_miniatura()
     if a.configurar_suscripcion:
         return configurar_suscripcion()
     if a.configurar_whatsapp:

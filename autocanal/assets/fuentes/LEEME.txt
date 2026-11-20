@@ -1,0 +1,2 @@
+LuckiestGuy-Regular.ttf: "Luckiest Guy" de Astigmatic, Google Fonts, licencia Apache 2.0
+(https://github.com/google/fonts/tree/main/apache/luckiestguy). Se usa en los titulares de las miniaturas.
