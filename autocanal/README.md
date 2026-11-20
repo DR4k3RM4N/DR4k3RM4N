@@ -249,3 +249,8 @@ distintos (top, guía, noticias, opinión…). Si ya das el enfoque (*los mejore
 principiantes*), la primera idea es la tuya y las demás son alternativas. Cuesta ~3 búsquedas + una llamada a Haiku.
 Al aprobar una, Iván investiga el tema en Google, Gabi escribe el guion con imágenes del tema, Rosa el blog SEO y
 Edu lo edita igual que los demás. Si grabas clips (gameplay, por ejemplo) ponlos en `entrada/<id del proyecto>/`.
+
+## Usar tu plan de Claude (sin gastar créditos)
+
+La oficina puede usar tu suscripción de Claude (Pro/Max) a través de Claude Code en el servidor, con Sonnet
+en lo creativo. Si se acaba el límite del plan, sigue con la API. Pasos: `despliegue/GUIA_SUSCRIPCION.md`.

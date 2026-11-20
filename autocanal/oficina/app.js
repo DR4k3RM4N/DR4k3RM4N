@@ -45,7 +45,8 @@
     $("#modo").hidden = !nuevo.demo;
     if (nuevo.gasto) {
       $("#gasto").hidden = false;
-      $("#gasto").innerHTML = `💰 Hoy <b>${dinero(nuevo.gasto.hoy)}</b>${nuevo.gasto.tope ? `<span> / tope ${dinero(nuevo.gasto.tope)}</span>` : ""} <span>· mes ${dinero(nuevo.gasto.mes)}</span>`;
+      $("#gasto").innerHTML = (nuevo.gasto.plan ? `<span title="La oficina está usando tu plan de Claude: no gasta créditos de la API">🧠 Tu plan</span> · ` : "")
+        + `💰 API hoy <b>${dinero(nuevo.gasto.hoy)}</b>${nuevo.gasto.tope ? `<span> / tope ${dinero(nuevo.gasto.tope)}</span>` : ""} <span>· mes ${dinero(nuevo.gasto.mes)}</span>`;
       $("#gasto").classList.toggle("tope", !!nuevo.gasto.tope && nuevo.gasto.hoy >= nuevo.gasto.tope);
     }
     pintarBandeja();

@@ -66,6 +66,17 @@ tienen trabajo, y **Paola (productora) le propone ideas al jefe y le pide su opi
 - Conectado: Anthropic, Serper y Tavily, Telegram (chat con el equipo), YouTube (OAuth hecho, la app de Google Cloud
   ya está publicada). WhatsApp Cloud API está programado (opcional).
 
+## 3b. Motor de IA: tu plan de Claude (desde nov 2026)
+- `agentes/claude.py` llama a Claude por **dos caminos**: la suscripción de Miguel vía Claude Code (`claude -p`
+  con salida JSON estructurada, token de `claude setup-token` en `CLAUDE_CODE_OAUTH_TOKEN`) o la API.
+  `MOTOR_IA=auto` (por defecto) usa el plan y cae a la API si se acaba el límite (pausa 1 h) o si el token falla.
+- Con el plan: Sonnet en ideas/investigar/guion/blog/edición/estilo, Haiku en lo simple
+  (`SUSCRIPCION_MODELO_<TAREA>`). Gasto registrado en $0 con el "equivalente en API".
+- Claude Code se instala en `/usr/local/bin/claude` con `despliegue/claude_code.sh` (lo corre actualizar.sh).
+  Corre con HOME en `autocanal/.claude_casa/` y en una carpeta vacía (no lee el CLAUDE.md del repo).
+- Asistente: `oficina.py --configurar-suscripcion`. Guía: `despliegue/GUIA_SUSCRIPCION.md`.
+- Ojo: con un token inválido Claude Code se queda esperando; por eso hay tiempo límite y se pausa el plan.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

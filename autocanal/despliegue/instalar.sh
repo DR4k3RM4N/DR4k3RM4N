@@ -35,6 +35,9 @@ fi
 
 paso "Creando el usuario '$USR' que corre la oficina"
 id "$USR" >/dev/null 2>&1 || useradd --system --home-dir "$REPO" --shell /usr/sbin/nologin "$USR"
+paso "Instalando Claude Code (para usar tu plan de Claude)"
+bash "$APP/despliegue/claude_code.sh" || true
+
 chown -R "$USR:$USR" "$REPO"
 
 paso "Instalando librerías de Python"

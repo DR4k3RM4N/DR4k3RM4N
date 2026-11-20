@@ -407,7 +407,8 @@ class Oficina:
         hoy = self._hoy()
         mes = hoy[:7]
         return {"hoy": round(self.gasto.get(hoy, 0), 4),
-                "mes": round(sum(v for k, v in self.gasto.items() if k.startswith(mes)), 4), "tope": LIMITE_DIARIO}
+                "mes": round(sum(v for k, v in self.gasto.items() if k.startswith(mes)), 4), "tope": LIMITE_DIARIO,
+                "plan": ia.usar_suscripcion()}
 
     def nueva_tarea(self, agente: str, etapa: str, proyecto: str | None = None, titulo: str = "") -> dict:
         t = {"id": uuid.uuid4().hex[:8], "agente": agente, "etapa": etapa, "accion": ACCION.get(etapa, etapa),
@@ -1590,6 +1591,51 @@ def prender_tienda_demo() -> None:
         atexit.register(proceso.terminate)
 
 
+def configurar_suscripcion() -> None:
+    """Asistente: conecta tu plan de Claude (Pro/Max) para que la oficina lo use en vez de los créditos de la API."""
+    import getpass
+    import os
+    import re as _re
+    import subprocess
+
+    cli = ia.claude_cli()
+    if not cli:
+        raise SystemExit("No encontré Claude Code en el servidor. Corre primero:\n"
+                         "  sudo bash /opt/canal/autocanal/despliegue/actualizar.sh")
+    print("Conectar tu suscripción de Claude.\n"
+          "1) Ahorita se abre el inicio de sesión de Claude Code. Copia el enlace que salga, ábrelo en tu navegador,\n"
+          "   entra con tu cuenta de Claude (la del plan) y pega aquí el código que te dé.\n"
+          "2) Al final te mostrará un token largo (empieza con sk-ant-oat…). Cópialo completo.\n")
+    input("Dale Enter para empezar…")
+    casa = ia._env_suscripcion()
+    casa.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+    subprocess.run([cli, "setup-token"], check=False, env=casa)
+    token = getpass.getpass("\n3) Pega aquí el token que te mostró (no se ve al pegarlo): ").strip()
+    if not token.startswith("sk-ant-"):
+        raise SystemExit("Eso no parece el token. Vuelve a correr esto y copia el que empieza con sk-ant-oat.")
+    env = config.BASE / ".env"
+    texto = env.read_text(encoding="utf-8") if env.exists() else ""
+    for clave, valor in (("CLAUDE_CODE_OAUTH_TOKEN", token), ("MOTOR_IA", "auto")):
+        if _re.search(rf"^{clave}=", texto, flags=_re.M):
+            texto = _re.sub(rf"^{clave}=.*$", lambda _: f"{clave}={valor}", texto, flags=_re.M)
+        else:
+            texto = texto.rstrip("\n") + f"\n{clave}={valor}\n"
+    env.write_text(texto, encoding="utf-8")
+    os.chmod(env, 0o600)
+    os.environ["CLAUDE_CODE_OAUTH_TOKEN"], os.environ["MOTOR_IA"] = token, "auto"
+    print("\n4) Probando…")
+    try:
+        r = ia._por_suscripcion("Respondes en español.", "Saluda al jefe en 5 palabras.",
+                                {"type": "object", "properties": {"saludo": {"type": "string"}},
+                                 "required": ["saludo"], "additionalProperties": False}, "whatsapp", "prueba", "low",
+                                espera=90)
+    except ia.ErrorIA as exc:
+        raise SystemExit(f"No funcionó: {exc}")
+    print(f"\n✔ ¡Funciona! Claude dice: {r['saludo']}")
+    print("La oficina ahora usa tu plan; si se acaba el límite, sigue con los créditos de la API.")
+    print("5) Reinicia la oficina:  sudo systemctl restart oficina")
+
+
 def main() -> None:
     global ESTADO
     p = argparse.ArgumentParser(description="Oficina visual de agentes")
@@ -1603,7 +1649,11 @@ def main() -> None:
     p.add_argument("--probar-whatsapp", action="store_true", help="te manda un WhatsApp de prueba y sale")
     p.add_argument("--probar-wordpress", action="store_true", help="revisa la conexión con tu blog y sale")
     p.add_argument("--configurar-whatsapp", action="store_true", help="asistente para poner los datos de WhatsApp")
+    p.add_argument("--configurar-suscripcion", action="store_true",
+                   help="conecta tu plan de Claude (Pro/Max) para no gastar créditos de la API")
     a = p.parse_args()
+    if a.configurar_suscripcion:
+        return configurar_suscripcion()
     if a.configurar_whatsapp:
         return configurar_whatsapp()
     if a.configurar_telegram:
