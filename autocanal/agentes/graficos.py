@@ -282,7 +282,8 @@ def miniatura(texto: str, sello: str, icono_ruta: str | None, captura_ruta: str 
     MW, MH = 1280, 720
     spec = {**ESTILO_DEFECTO, **(spec or {})}
     if cara_ruta is None:
-        for c in (config.BASE / "estilo" / "cara.png", config.ASSETS / "cara.png"):
+        # sin tu cara, la mascota del canal sale en la miniatura
+        for c in (config.BASE / "estilo" / "cara.png", config.ASSETS / "cara.png", config.BASE / "estilo" / "mascota.png"):
             if c.exists():
                 cara_ruta = str(c)
                 break

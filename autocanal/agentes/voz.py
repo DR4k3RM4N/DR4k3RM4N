@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import subprocess
 import time
@@ -27,10 +26,16 @@ def tiempos(audio: Path | str) -> Path:
     return Path(audio).with_suffix(".palabras.json")
 
 
-def _edge(texto: str, destino: Path) -> None:
+def segunda_voz() -> str:
+    """La voz que pregunta o reacciona (si la principal es de hombre, de mujer, y al revés)."""
+    principal = config.env("VOZ_EDGE", "es-MX-JorgeNeural")
+    return config.env("VOZ_EDGE_2") or ("es-MX-DaliaNeural" if "Dalia" not in principal else "es-MX-JorgeNeural")
+
+
+def _edge(texto: str, destino: Path, voz: str | None = None) -> None:
     import edge_tts
 
-    voz, rate = config.env("VOZ_EDGE", "es-MX-JorgeNeural"), config.env("VOZ_VELOCIDAD", "+8%")
+    voz, rate = voz or config.env("VOZ_EDGE", "es-MX-JorgeNeural"), config.env("VOZ_VELOCIDAD", "+8%")
     try:
         com = edge_tts.Communicate(texto, voz, rate=rate, boundary="WordBoundary")
     except TypeError:  # edge-tts viejito: sin tiempos por palabra
@@ -52,8 +57,8 @@ def _edge(texto: str, destino: Path) -> None:
         tiempos(destino).unlink(missing_ok=True)
 
 
-def _elevenlabs(texto: str, destino: Path) -> None:
-    voz = config.env("ELEVENLABS_VOICE_ID")
+def _elevenlabs(texto: str, destino: Path, voz: str | None = None) -> None:
+    voz = voz or config.env("ELEVENLABS_VOICE_ID")
     r = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voz}",
         headers={"xi-api-key": config.env("ELEVENLABS_API_KEY"), "accept": "audio/mpeg"},
@@ -64,7 +69,7 @@ def _elevenlabs(texto: str, destino: Path) -> None:
     destino.write_bytes(r.content)
 
 
-def _silencio(texto: str, destino: Path) -> None:
+def _silencio(texto: str, destino: Path, voz: str | None = None) -> None:
     """Solo para pruebas sin internet: silencio con la duración aproximada de la narración."""
     segundos = max(2.5, len(texto.split()) / 2.6)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
@@ -99,11 +104,11 @@ def _silencio_fijo(destino: Path, segundos: float = 1.5) -> None:
                     "-t", f"{segundos:.2f}", "-q:a", "4", str(destino)], check=True)
 
 
-def _narrar_una(fn, motor: str, texto: str, destino: Path, i: int) -> None:
+def _narrar_una(fn, motor: str, texto: str, destino: Path, i: int, voz: str | None = None) -> None:
     ultimo = None
     for intento in range(3):
         try:
-            fn(texto, destino)
+            fn(texto, destino, voz)
             if _valido(destino):
                 return
             ultimo = "no llegó audio"
@@ -113,20 +118,15 @@ def _narrar_una(fn, motor: str, texto: str, destino: Path, i: int) -> None:
         print(f"    voz: escena {i} falló ({ultimo}); reintento {intento + 1}/3", flush=True)
         time.sleep(2 * 2 ** intento)
     if motor == "edge":  # última opción: otra voz de Edge
-        anterior = os.environ.get("VOZ_EDGE")
-        os.environ["VOZ_EDGE"] = VOZ_RESPALDO
+        # la principal cae a Dalia; la segunda, a otra voz parecida a la suya (mujer → Paloma, hombre → Alonso)
+        respaldo = VOZ_RESPALDO if voz is None else ("es-US-PalomaNeural" if "Dalia" in voz else "es-US-AlonsoNeural")
         try:
-            _edge(texto, destino)
+            _edge(texto, destino, respaldo)
             if _valido(destino):
-                print(f"    voz: escena {i} salió con la voz de respaldo ({VOZ_RESPALDO})", flush=True)
+                print(f"    voz: escena {i} salió con la voz de respaldo ({respaldo})", flush=True)
                 return
         except Exception as exc:  # noqa: BLE001
             ultimo = exc
-        finally:
-            if anterior is None:
-                os.environ.pop("VOZ_EDGE", None)
-            else:
-                os.environ["VOZ_EDGE"] = anterior
         destino.unlink(missing_ok=True)
     raise RuntimeError(f"La voz falló en la escena {i} («{texto[:60]}…»): {ultimo}. Dale Reintentar en unos minutos; "
                        "si sigue, puede que el servicio gratis de Microsoft esté fallando y conviene usar ElevenLabs.")
@@ -137,6 +137,8 @@ def narrar(escenas: list[dict], carpeta: Path, motor: str | None = None) -> list
     fn = MOTORES[motor]
     audio = carpeta / "audio"
     audio.mkdir(parents=True, exist_ok=True)
+    from . import estilo
+    dos_voces = bool(estilo.cargar()["ajustes"].get("dos_voces"))
     for i, esc in enumerate(escenas, 1):
         destino = audio / f"escena_{i:02d}.mp3"
         if not _valido(destino):
@@ -147,7 +149,10 @@ def narrar(escenas: list[dict], carpeta: Path, motor: str | None = None) -> list
                 print(f"    voz: la escena {i} no tiene texto para leer; va un silencio corto", flush=True)
                 _silencio_fijo(destino)
             else:
-                _narrar_una(fn, motor, texto, destino, i)
+                voz = None
+                if esc.get("voz") == "segunda" and dos_voces:
+                    voz = segunda_voz() if motor == "edge" else (config.env("ELEVENLABS_VOICE_ID_2") or None)
+                _narrar_una(fn, motor, texto, destino, i, voz)
         esc["audio"] = str(destino)
         esc["duracion"] = duracion(destino)
         esc.pop("palabras", None)  # los tiempos viven junto al audio (escena_XX.palabras.json)

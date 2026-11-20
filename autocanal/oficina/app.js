@@ -99,6 +99,7 @@
           ${i.personalizada ? `<div class="tuya">💡 Tu idea</div>` : ""}
           <div class="cabeza"><h4>${i.num ? `<span class="num">${i.num}</span>` : ""}${esc(i.titulo)}</h4><span class="chip chip-${esc(i.potencial_vistas)}">${esc(i.potencial_vistas)}</span></div>
           <p class="angulo">🎬 ${esc(i.angulo || "")}${i.formato ? ` <span class="chip chip-formato">${esc(i.formato)}</span>` : ""}</p>
+          ${i.inspiracion ? `<p class="pista">📈 Inspirada en <a href="${esc(i.inspiracion.url)}" target="_blank" rel="noopener">${esc(i.inspiracion.titulo)}</a> (x${esc(i.inspiracion.multiplicador)} vistas vs. suscriptores)</p>` : ""}
           <p class="porque">${esc(i.por_que)}</p>
           <p class="appid">${esc(i.app_id)}</p>
           ${i.comentarios?.length ? `<ul class="comentarios">${i.comentarios.map((c) => `<li>💬 ${esc(c)}</li>`).join("")}</ul>` : ""}
@@ -179,7 +180,13 @@
     try { await api("/api/ideas/auto", { activo: e.target.checked }); }
     catch (err) { alert(err.message); e.target.checked = !e.target.checked; }
   });
+  $("#piloto").addEventListener("change", async (e) => {
+    try { await api("/api/piloto", { activo: e.target.checked }); }
+    catch (err) { alert(err.message); e.target.checked = !e.target.checked; }
+  });
   function pintarIdeasAuto() {
+    const piloto = $("#piloto");
+    if (document.activeElement !== piloto) piloto.checked = !!estado.piloto;
     const c = estado.ideas_auto || {};
     const caja = $("#ideas-auto");
     if (document.activeElement !== caja) caja.checked = !!c.activo;
@@ -569,7 +576,7 @@
 
   // ---------- estilo: lo que los agentes aprenden de ti ----------
   const SUBIDAS = {
-    cara: ["Tu cara (PNG sin fondo)", ".png"], fuente: ["Tu tipografía (.ttf)", ".ttf,.otf"],
+    cara: ["Tu cara (PNG sin fondo)", ".png"], mascota: ["Mascota del canal (PNG sin fondo)", ".png"], fuente: ["Tu tipografía (.ttf)", ".ttf,.otf"],
     musica: ["Música de fondo", ".mp3,.m4a,.wav"], whoosh: ["Sonido en cambios de escena", ".mp3,.wav,.m4a"],
     intro: ["Intro de tu canal", ".mp4,.mov,.webm"], outro: ["Cierre / outro", ".mp4,.mov,.webm"],
     referencia: ["Video de referencia (cómo te gusta la edición)", ".mp4,.mov,.webm,.mkv"],
@@ -589,10 +596,26 @@
     let e;
     try { e = await api("/api/estilo"); } catch { return; }
     estado_estilo = e;
+    let man = { texto: "", propio: false };
+    try { man = await api("/api/manual"); } catch {}
     const a = e.ajustes, m = e.miniaturas, b = e.blog;
     const sel = (k, ops) => `<select data-ajuste="${k}">${ops.map(([v, t]) => `<option value="${v}" ${String(a[k]) === String(v) ? "selected" : ""}>${t}</option>`).join("")}</select>`;
     const chk = (k, t) => `<label class="chk"><input type="checkbox" data-ajuste="${k}" ${a[k] ? "checked" : ""}> ${t}</label>`;
     $("#estilo").innerHTML = `
+      <section class="tarjeta estilo-sec" style="--c:#e84d8a">
+        <h4>📘 Manual del canal · todos lo leen</h4>
+        <p class="pista">Es la "skill" de tu canal: cómo es el gancho, cuánto dura cada parte, las voces, lo que se ve y lo
+          que suena. Todos los agentes lo leen antes de trabajar. Se escribe solo con el video que te gusta (pega su
+          enlace en Edición) y lo que les has pedido; también lo puedes corregir a mano.</p>
+        <div class="acciones">
+          <button class="btn btn-primario" data-manual="escribir">✨ Que Paola lo escriba con mis referencias</button>
+          <a class="btn" href="/descargar/manual-skill.md" download>⬇ Bajar como skill</a>
+        </div>
+        <details class="manual"><summary>${man.propio ? "Ver o corregir tu manual" : "Ver el manual de inicio (todavía no es tuyo)"}</summary>
+          <textarea id="manual-texto" rows="18">${esc(man.texto)}</textarea>
+          <div class="acciones"><button class="btn" data-manual="guardar">💾 Guardar cambios</button></div>
+        </details>
+      </section>
       <section class="tarjeta estilo-sec" style="--c:#10b981">
         <h4>🎨 Miniaturas · Dani</h4>
         <p class="pista">Sube de 3 a 10 miniaturas que te gusten (tuyas o de canales que admiras). Dani aprende el estilo y lo usa en cada video.</p>
@@ -600,7 +623,7 @@
           <label class="ref-nueva">＋<br><small>Subir</small><input type="file" accept="image/*" multiple data-subir="miniatura" hidden></label></div>
         ${subida("cara", e.archivos.cara)}${subida("fuente", e.archivos.fuente)}
         <div class="acciones"><button class="btn btn-primario" data-estudiar="miniaturas" ${e.referencias.length ? "" : "disabled"}>🔍 Que Dani estudie el estilo</button>
-          <label class="chk">Opciones por video ${sel("opciones_miniatura", [[1, "1"], [2, "2"], [3, "3"]])}</label></div>
+          <label class="chk">Opciones por video ${sel("opciones_miniatura", [[1, "1"], [3, "3"], [6, "6"], [10, "10"]])}</label></div>
         ${m ? `<div class="aprendido"><b>Lo que aprendió:</b> ${esc(m.descripcion)}
           <div class="colores">${["color_fondo", "color_fondo_2", "color_texto", "color_borde_texto", "color_acento"].map((k) => `<span style="background:${esc(m[k])}" title="${k}"></span>`).join("")}</div>
           <small>Fondo: ${esc(m.fondo)} · Texto: ${esc(m.posicion_texto)}, ${esc(m.tamano_texto)}${m.mayusculas ? ", mayúsculas" : ""} · ${esc((m.elementos || []).join(", ") || "sin extras")}</small></div>` : ""}
@@ -629,6 +652,9 @@
           ${chk("mayusculas_subtitulo", "Subtítulos en MAYÚSCULAS")}
           ${chk("barra_progreso", "Barra de progreso")}${chk("sonido_cambios", "Sonido en cada cambio de escena")}
         </div>
+        ${subida("mascota", e.archivos.mascota)}
+        <div class="ajustes">${chk("dos_voces", "Dos voces (una pregunta o reacciona, como en los videos que pegan)")}
+          <label>Mascota en la esquina ${sel("mascota_lado", [["derecha", "Derecha"], ["izquierda", "Izquierda"]])}</label></div>
         ${subida("musica", e.archivos.musica)}${subida("whoosh", e.archivos.whoosh)}${subida("intro", e.archivos.intro)}${subida("outro", e.archivos.outro)}
         <p class="pista">Los colores de subtítulos y barra salen del estilo de tus miniaturas. Usa música sin copyright.</p>
       </section>
@@ -647,6 +673,8 @@
         <p>${e.youtube.conectado ? "✅ Tu canal está conectado." : e.youtube.secreto ? "⬜ Falta autorizar tu canal (ver la guía)." : "⬜ Aún no está conectado (ver la guía)."}
           Los videos se suben como <b>${esc({ private: "privados", unlisted: "ocultos", public: "públicos" }[e.youtube.privacidad] || e.youtube.privacidad)}</b>.</p>
         <p class="pista">Carla sube el video cuando le das <b>Publicar</b> en la revisión, con título, descripción, etiquetas, miniatura y el enlace al blog.</p>
+        <div class="ajustes"><label>Hora de publicar (cuando lo pides público) ${sel("publicar_hora", [["", "Al momento"], ["12:00", "12:00 pm"], ["14:00", "2:00 pm"], ["16:00", "4:00 pm"], ["18:00", "6:00 pm"], ["19:00", "7:00 pm"], ["20:00", "8:00 pm"], ["21:00", "9:00 pm"]])}</label></div>
+        <p class="pista">Si eliges hora, Carla lo sube privado y YouTube lo hace público solo a esa hora (la de más gente conectada en tu canal; en YouTube Studio → Estadísticas → Público lo ves).</p>
       </section>`;
   }
 
@@ -679,6 +707,21 @@
       if (!confirm("¿Quitar este archivo?")) return;
       await api("/api/estilo/borrar", { tipo: b.dataset.borrar, nombre: b.dataset.nombre || "" }).catch((e) => alert(e.message));
       return pintarEstilo();
+    }
+    if (b.dataset.manual === "guardar") {
+      try { await api("/api/manual", { texto: $("#manual-texto").value }); b.textContent = "✔ Guardado"; }
+      catch (err) { alert(err.message); }
+      return;
+    }
+    if (b.dataset.manual === "escribir") {
+      const urls = ($("#ref-url")?.value || "").split(/\s+/).filter((u) => u.startsWith("http"));
+      try {
+        await api("/api/estilo/estudiar", { que: "manual", urls });
+        b.textContent = "Paola está escribiendo el manual… (míralo en la oficina)";
+        b.disabled = true;
+        setTimeout(pintarEstilo, 90000);
+      } catch (err) { alert(err.message); }
+      return;
     }
     if (b.dataset.estudiar) {
       const fuente = b.dataset.estudiar === "video" ? $("#ref-url").value : $("#blog-urls").value;

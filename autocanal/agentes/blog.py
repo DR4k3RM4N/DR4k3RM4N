@@ -8,7 +8,7 @@ from pathlib import Path
 
 import requests
 
-from . import claude, config
+from . import claude, config, manual
 
 SYSTEM = f"""Eres redactora SEO del blog de "{config.CANAL_NOMBRE}", que analiza apps que prometen \
 pagar dinero. Escribes en español, claro y útil, para gente que busca en Google "<app> paga o es \
@@ -136,7 +136,7 @@ def escribir(ficha: dict, expediente: dict, n_capturas: int) -> dict:
     if internos:
         partes.append("ENTRADAS DEL MISMO BLOG (para enlaces internos):\n" + json.dumps(internos, ensure_ascii=False))
     partes.append(f"Hay {n_capturas} {'imágenes' if es_tema else 'capturas'} disponibles. Escribe la entrada ({largo} palabras).")
-    return claude.json_estructurado(SYSTEM_TEMA if es_tema else SYSTEM, "\n\n".join(partes), SCHEMA, tarea="blog",
+    return claude.json_estructurado((SYSTEM_TEMA if es_tema else SYSTEM) + "\n\n" + manual.para_agente(), "\n\n".join(partes), SCHEMA, tarea="blog",
                                     que="escribir post")
 
 

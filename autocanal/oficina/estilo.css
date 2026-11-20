@@ -507,3 +507,6 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
   align-items: center; margin: 8px 0 0; cursor: pointer; }
 .pedir label.ideas-auto input { width: auto; flex: none; margin: 0; }
 .pedir label.ideas-auto span { white-space: nowrap; }
+
+.manual textarea { width: 100%; font-family: ui-monospace, monospace; font-size: .8em; margin-top: 8px; }
+.manual summary { cursor: pointer; margin-top: 10px; }

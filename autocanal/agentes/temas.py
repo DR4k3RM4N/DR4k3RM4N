@@ -15,7 +15,7 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import buscar_web, claude, config, playstore
+from . import buscar_web, claude, config, manual, playstore
 
 FORMATOS = ["top", "guia", "noticias", "analisis", "opinion", "curiosidades", "comparativa", "tutorial", "historia"]
 
@@ -59,8 +59,9 @@ SCHEMA_IDEAS = {
                 "formato": {"type": "string", "enum": FORMATOS},
                 "por_que": {"type": "string"},
                 "potencial_vistas": {"type": "string", "enum": ["alto", "medio", "bajo"]},
+                "inspiracion": {"type": "string", "description": "Título del video que está pegando que inspiró la idea; vacío si ninguno"},
             },
-            "required": ["titulo", "formato", "por_que", "potencial_vistas"],
+            "required": ["titulo", "formato", "por_que", "potencial_vistas", "inspiracion"],
             "additionalProperties": False,
         }},
     },
@@ -82,12 +83,16 @@ def ideas(tema: str, angulo: str = "", pedido: str = "", guia: str = "", cuantas
         contexto = {"lo_que_pregunta_la_gente": s["preguntas"], "busquedas_relacionadas": s["relacionadas"],
                     "lo_que_sale_en_google": [{"titulo": r["titulo"], "fecha": r.get("fecha", ""), "texto": r["texto"]}
                                               for r in noticias[:10]]}
+    from . import tendencias
+    pegando = tendencias.buscar([tema, f"{tema} {angulo}".strip()] if angulo else [tema, f"{tema} guía", f"{tema} top"])
+    print(f"  · tendencias de YouTube: {len(pegando)} videos que están pegando", flush=True)
     pedido_ia = (f"PEDIDO DEL JEFE: {pedido or tema}\nTEMA: {tema}\n" + (f"ENFOQUE QUE DIO: {angulo}\n" if angulo else "")
                  + (f"\nGUSTOS DEL JEFE:\n{guia}\n" if guia else "")
                  + (f"\nGOOGLE HOY:\n{json.dumps(contexto, ensure_ascii=False)}\n" if contexto else
                     "\n(No hay búsqueda en Google disponible: usa lo que sabes y marca las ideas como para verificar.)\n")
+                 + (f"\n{tendencias.para_paola(pegando)}\n" if pegando else "")
                  + f"\nPropón {cuantas} ideas de video.")
-    r = claude.json_estructurado(SISTEMA_IDEAS, pedido_ia, SCHEMA_IDEAS, tarea="ideas", que="ideas de un tema")
+    r = claude.json_estructurado(SISTEMA_IDEAS + "\n\n" + manual.para_agente(), pedido_ia, SCHEMA_IDEAS, tarea="ideas", que="ideas de un tema")
     nombre = (r.get("tema") or tema).strip()[:60]
     salida = []
     for k, i in enumerate(r.get("ideas", [])[:cuantas]):
@@ -95,6 +100,8 @@ def ideas(tema: str, angulo: str = "", pedido: str = "", guia: str = "", cuantas
         salida.append({
             "app_id": f"tema:{_slug(nombre, 24)}-{_slug(titulo, 34)}", "titulo": nombre, "angulo": titulo,
             "tema": nombre, "formato": i["formato"], "potencial_vistas": i["potencial_vistas"],
+            "inspiracion": next(({"titulo": v["titulo"], "url": v["url"], "multiplicador": v["multiplicador"]}
+                                 for v in pegando if v["titulo"] == i.get("inspiracion")), None),
             "por_que": ("💡 Tu enfoque. " if angulo and k == 0 else "💡 ") + i["por_que"],
             "personalizada": True, "idea_jefe": pedido or tema,
         })

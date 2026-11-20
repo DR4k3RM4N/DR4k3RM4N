@@ -77,6 +77,26 @@ tienen trabajo, y **Paola (productora) le propone ideas al jefe y le pide su opi
 - Asistente: `oficina.py --configurar-suscripcion`. Guía: `despliegue/GUIA_SUSCRIPCION.md`.
 - Ojo: con un token inválido Claude Code se queda esperando; por eso hay tiempo límite y se pausa el plan.
 
+## 3c. La "fábrica" del video de referencia (nov 2026)
+Miguel vio un video de una "fábrica" de videos con Claude y pidió "haz todo, yo no quiero hacer nada". Se agregó:
+- **📘 Manual del canal** (`agentes/manual.py`, `estilo/manual.md`): la "skill" del canal; la leen ideas, guion,
+  plan de efectos y blog. Se escribe solo (Paola, `estudiar("manual")`) con cuadros + transcripción (faster-whisper)
+  del video de referencia, lo aprendido y las preferencias; también al estudiar un video. Editable en Estilo y
+  descargable como SKILL.md (`/descargar/manual-skill.md`).
+- **📈 Cazador de tendencias** (`agentes/tendencias.py`): API de YouTube con el OAuth del canal (scope `youtube`),
+  videos de los últimos 30 días, multiplicador = vistas ÷ suscriptores, sin Shorts; `NICHO_CONSULTAS` en .env.
+  Alimenta a Paola (apps y temas); las ideas muestran "📈 Inspirada en…". VidIQ no se usa (solo existe en claude.ai).
+- **Guion en tabla**: cada escena con momento (gancho/desarrollo/regancho/cierre), voz (principal/segunda) y sonido;
+  gancho ≤10 palabras, re-gancho cada ~60 s, 150 palabras/min; 5 títulos (mejor primero), 6 textos de miniatura.
+- **Dos voces** (ajuste `dos_voces`, por defecto sí): la segunda (`VOZ_EDGE_2`, por defecto Dalia si la principal es
+  Jorge) pregunta o reacciona. **Mascota** (`estilo/mascota.png`): se mece en una esquina del video y sale en la
+  miniatura si no hay cara. **Miniaturas**: hasta 10 opciones (por defecto 6).
+- **🚀 Piloto automático** (casilla en Bandeja, `oficina.piloto`): tras pedir ideas, Paola arranca sola la mejor
+  (la del jefe > potencial alto > inspirada en tendencia). Publicar sigue siendo un toque del jefe (los videos
+  hablan de apps y estafas: se revisa antes). Con "☀️ ideas cada mañana" + piloto, sale un video al día solo.
+- **Publicar a una hora** (ajuste `publicar_hora`): Carla sube privado con `publishAt` y YouTube lo hace público
+  a esa hora (si la app de Google no está auditada, YouTube puede dejarlo privado).
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

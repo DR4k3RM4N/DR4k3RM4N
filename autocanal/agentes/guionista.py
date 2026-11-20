@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from . import claude, config
+from . import claude, config, manual
 
 SYSTEM = f"""Eres el guionista del canal de YouTube "{config.CANAL_NOMBRE}", que investiga apps \
 que prometen pagar dinero. Escribes el texto que se leerá en voz alta y decides qué se ve en \
@@ -40,12 +40,12 @@ en evidencia.
 SCHEMA = {
     "type": "object",
     "properties": {
-        "titulos": {"type": "array", "items": {"type": "string"}, "description": "3 opciones"},
+        "titulos": {"type": "array", "items": {"type": "string"}, "description": "5 opciones, la que más clics daría PRIMERO"},
         "descripcion": {"type": "string", "description": "Descripción de YouTube; usa {{BLOG_URL}} donde va el enlace al blog"},
         "etiquetas": {"type": "array", "items": {"type": "string"}},
         "texto_miniatura": {"type": "string"},
         "textos_miniatura": {"type": "array", "items": {"type": "string"},
-                             "description": "3 opciones distintas de texto para la miniatura, 2 a 5 palabras cada una"},
+                             "description": "6 opciones distintas de texto para la miniatura, 2 a 5 palabras cada una, la mejor primero"},
         "sello_miniatura": {"type": "string", "enum": ["NO PAGA", "CUIDADO", "SÍ PAGA", "¿PAGA?"]},
         "escenas": {"type": "array", "items": {
             "type": "object",
@@ -54,8 +54,11 @@ SCHEMA = {
                 "visual": {"type": "string", "enum": ["titulo", "captura", "resena", "dato", "grabacion", "veredicto"]},
                 "indice": {"type": "integer"},
                 "texto": {"type": "string"},
+                "momento": {"type": "string", "enum": ["gancho", "desarrollo", "regancho", "cierre"]},
+                "voz": {"type": "string", "enum": ["principal", "segunda"]},
+                "sonido": {"type": "string", "description": "Qué suena en la escena (efecto o música), corto"},
             },
-            "required": ["narracion", "visual", "indice", "texto"],
+            "required": ["narracion", "visual", "indice", "texto", "momento", "voz", "sonido"],
             "additionalProperties": False,
         }},
     },
@@ -106,14 +109,36 @@ SCHEMA_TEMA = {
                 "visual": {"type": "string", "enum": ["titulo", "imagen", "dato", "resena", "grabacion", "cierre"]},
                 "indice": {"type": "integer"},
                 "texto": {"type": "string"},
+                "momento": {"type": "string", "enum": ["gancho", "desarrollo", "regancho", "cierre"]},
+                "voz": {"type": "string", "enum": ["principal", "segunda"]},
+                "sonido": {"type": "string", "description": "Qué suena en la escena (efecto o música), corto"},
             },
-            "required": ["narracion", "visual", "indice", "texto"],
+            "required": ["narracion", "visual", "indice", "texto", "momento", "voz", "sonido"],
             "additionalProperties": False,
         }},
     },
     "required": SCHEMA["required"],
     "additionalProperties": False,
 }
+
+
+REGLAS_TABLA = """
+GUION EN TABLA (así trabaja el canal):
+- Cada escena es una fila: lo que se dice (narracion) · lo que se ve (visual + texto) · lo que suena (sonido).
+- La PRIMERA escena es el gancho (momento "gancho"): su primera frase se escribe palabra por palabra y se dice en
+  menos de 4 segundos (máximo 10 palabras). Empieza a media acción; nunca saludes.
+- Más o menos cada 60 segundos pon una escena con momento "regancho": una frase que deja con ganas de lo que
+  sigue ("y espérate a ver lo que pasó cuando quise retirar…").
+- La última escena es el "cierre". Las demás, "desarrollo".
+- Largo: 150 palabras por minuto de video (te digo cuántas en el pedido).
+- Cada frase debe poder ilustrarse con lo que hay (capturas, imágenes, datos, reseñas); si no, reescríbela.
+- Voz: casi todo lo dice la voz "principal". Si te indico DOS VOCES, de vez en cuando (máximo 1 de cada 4
+  escenas) una escena corta con voz "segunda" que pregunta o reacciona como el público ("¿neta?", "¿y sí pagó?"),
+  y la siguiente escena le contesta. Nunca dos escenas seguidas de la segunda voz. Sin DOS VOCES: todo "principal".
+"""
+
+SYSTEM += REGLAS_TABLA
+SYSTEM_TEMA += REGLAS_TABLA
 
 
 def _pedido_tema(ficha: dict, expediente: dict, clips: list[dict], minutos: int, notas: str) -> str:
@@ -123,7 +148,7 @@ def _pedido_tema(ficha: dict, expediente: dict, clips: list[dict], minutos: int,
         f"EXPEDIENTE:\n{json.dumps(exp, ensure_ascii=False, default=str)}\n\n"
         f"IMÁGENES DISPONIBLES: {len(ficha.get('screenshots') or [])}\n"
         f"CLIPS DEL CREADOR: {json.dumps(clips, ensure_ascii=False) if clips else 'ninguno'}\n\n"
-        f"Escribe un guion de unos {minutos} minutos."
+        f"Escribe un guion de unos {minutos} minutos (≈{minutos * 150} palabras en total)."
     )
     return pedido
 
@@ -137,18 +162,20 @@ def escribir(ficha: dict, expediente: dict, clips: list[dict], minutos: int = 6,
         f"EXPEDIENTE:\n{json.dumps(exp, ensure_ascii=False, default=str)}\n\n"
         f"CAPTURAS DISPONIBLES: {len(ficha.get('screenshots') or [])}\n"
         f"CLIPS DEL CREADOR: {json.dumps(clips, ensure_ascii=False) if clips else 'ninguno'}\n\n"
-        f"Escribe un guion de unos {minutos} minutos."
+        f"Escribe un guion de unos {minutos} minutos (≈{minutos * 150} palabras en total)."
     )
     if notas:
         pedido += (f"\n\nINDICACIONES DEL JEFE (prioridad: el video debe seguir este enfoque; "
                    f"los títulos y el gancho van con esta idea):\n{notas}")
     from . import estilo
+    if estilo.cargar()["ajustes"].get("dos_voces"):
+        pedido += "\n\nDOS VOCES: sí (usa la segunda voz como se explica)."
     mini = estilo.cargar().get("miniaturas")
     if mini:
         pedido += (f"\n\nESTILO DE MINIATURAS DEL CANAL: {mini.get('descripcion', '')} "
                    f"Textos: {mini.get('consejos_texto', '')} Máximo {mini.get('palabras_max', 4)} palabras.")
     if es_tema:
-        r = claude.json_estructurado(SYSTEM_TEMA, pedido, SCHEMA_TEMA, tarea="guion")
+        r = claude.json_estructurado(SYSTEM_TEMA + "\n\n" + manual.para_agente(), pedido, SCHEMA_TEMA, tarea="guion")
         r["sello_miniatura"] = (r.get("sello_miniatura") or "").upper()[:14]
         return r
-    return claude.json_estructurado(SYSTEM, pedido, SCHEMA, tarea="guion")
+    return claude.json_estructurado(SYSTEM + "\n\n" + manual.para_agente(), pedido, SCHEMA, tarea="guion")

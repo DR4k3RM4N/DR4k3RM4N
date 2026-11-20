@@ -250,6 +250,26 @@ def _reporte(carpeta, ficha, exp, guion, entrada, video, mini) -> None:
     (carpeta / "REVISAR.md").write_text("\n".join(l), encoding="utf-8")
 
 
+def _hora_programada(privacidad: str) -> tuple[str | None, str]:
+    """Si pediste público y tienes hora de publicar (pestaña Estilo), devuelve (UTC para YouTube, texto para ti)."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    from agentes import estilo
+
+    hora = estilo.cargar()["ajustes"].get("publicar_hora") or ""
+    if privacidad != "public" or not hora:
+        return None, ""
+    zona = ZoneInfo(config.env("IDEAS_ZONA", "America/Mexico_City"))
+    ahora = dt.datetime.now(zona)
+    hh, mm = (int(x) for x in hora.split(":"))
+    cuando = ahora.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    if cuando < ahora + dt.timedelta(minutes=45):  # YouTube necesita margen; si ya pasó, mañana
+        cuando += dt.timedelta(days=1)
+    dia = "hoy" if cuando.date() == ahora.date() else "mañana"
+    return cuando.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), f"{dia} a las {cuando:%H:%M}"
+
+
 def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> dict:
     from agentes import blog, buscador, youtube
 
@@ -287,8 +307,13 @@ def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> d
         else:
             desc = "\n".join(l for l in guion["descripcion"].splitlines() if "{{BLOG_URL}}" not in l)
         sintetico = config.env("VOZ_MOTOR", "edge") != "propia"
+        publicar_en, programado = _hora_programada(privacidad or config.env("YT_PRIVACIDAD", "private"))
         pub["youtube"] = youtube.subir(carpeta / "video.mp4", carpeta / "miniatura.jpg",
-                                       guion["titulos"][titulo_n - 1], desc, guion["etiquetas"], sintetico, privacidad)
+                                       guion["titulos"][titulo_n - 1], desc, guion["etiquetas"], sintetico, privacidad,
+                                       publicar_en)
+        if programado:
+            pub["programado"] = programado
+            print(f"  · programado para hacerse público: {programado}")
         pub["privacidad_pedida"] = privacidad or config.env("YT_PRIVACIDAD", "private")
         try:
             pub["privacidad"] = youtube.privacidad_real(pub["youtube"])

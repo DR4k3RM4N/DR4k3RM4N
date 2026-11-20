@@ -370,7 +370,15 @@ def _editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> 
         vf += f":fontsdir='{fuente_propia.parent.resolve().as_posix()}'"
 
     entradas = ["-i", str(unido)]
-    filtros = [f"[0:v]{vf}[vs]"]
+    filtros, base_v = [], "[0:v]"
+    mascota = estilo.archivo("mascota")
+    if mascota:  # la mascota del canal vive en una esquina y se mece (va debajo de los subtítulos)
+        entradas += ["-loop", "1", "-framerate", str(FPS), "-i", str(mascota)]
+        izq = ajustes.get("mascota_lado") == "izquierda"
+        filtros.append("[1:v]scale=-1:250,format=rgba[masc]")
+        filtros.append(f"[0:v][masc]overlay=x={'40' if izq else 'W-w-40'}:y='H-h-60+10*sin(t*2.6)':shortest=1[vm]")
+        base_v = "[vm]"
+    filtros.append(f"{base_v}{vf}[vs]")
     v_final = "[vs]"
     if ajustes["barra_progreso"]:
         color = spec["color_acento"].lstrip("#")

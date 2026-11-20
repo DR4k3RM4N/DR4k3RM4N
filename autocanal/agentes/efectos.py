@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from . import claude, config, estilo, graficos, voz
+from . import claude, config, estilo, graficos, manual, voz
 
 FPS = 30
 W, H = 1920, 1080
@@ -70,6 +70,7 @@ Efectos que puedes usar (el código los dibuja; tú eliges cuál y en qué palab
 
 Reglas de oficio:
 - La escena 1 es el gancho: lleva el efecto más fuerte del video.
+- Las escenas marcadas "regancho" también llevan un efecto fuerte (es donde la gente se iba a ir).
 - "palabra" debe ser una palabra que aparezca TAL CUAL en la narración de esa escena (la del momento exacto).
 - No pongas el mismo efecto en dos escenas seguidas, y combina uno visual (golpe_zoom, sacudida, flash) con
   uno dibujado (texto_pop, contador, sello, cintillo) cuando la escena lo merezca.
@@ -162,7 +163,9 @@ def planear(escenas: list[dict], carpeta: Path) -> list[list[dict]]:
         except (json.JSONDecodeError, KeyError):
             pass
     lineas = [f"Escena {i} ({e.get('duracion', 0):.1f} s, visual: {e.get('visual')}"
-              + (f", texto en pantalla: «{e['texto']}»" if e.get("texto") else "") + f"): {e.get('narracion', '')}"
+              + (f", texto en pantalla: «{e['texto']}»" if e.get("texto") else "")
+              + (f", momento: {e['momento']}" if e.get("momento") else "")
+              + (f", el guionista pidió que suene: {e['sonido']}" if e.get("sonido") else "") + f"): {e.get('narracion', '')}"
               for i, e in enumerate(escenas, 1)]
     referencia = ""
     if edicion:
@@ -172,7 +175,7 @@ def planear(escenas: list[dict], carpeta: Path) -> list[list[dict]]:
     pedido = (f"Intensidad pedida: {intensidad} (máximo {maximo} efecto(s) por escena).{referencia}\n\n"
               "Guion:\n" + "\n".join(lineas) + "\n\nArma el plan de motion graphics, escena por escena.")
     try:
-        r = claude.json_estructurado(SISTEMA, pedido, SCHEMA_PLAN, tarea="edicion", que="plan de motion graphics")
+        r = claude.json_estructurado(SISTEMA + "\n\n" + manual.para_agente(), pedido, SCHEMA_PLAN, tarea="edicion", que="plan de motion graphics")
         efectos = _validar(r.get("plan"), escenas, maximo)
     except Exception as exc:  # noqa: BLE001 — sin plan el video sale igual, solo sin efectos
         print(f"  · no pude armar el plan de efectos ({exc}); el video sale sin motion graphics", flush=True)

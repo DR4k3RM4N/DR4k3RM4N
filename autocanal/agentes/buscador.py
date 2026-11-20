@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from . import buscar_web, claude, config, playstore
+from . import buscar_web, claude, config, manual, playstore
 
 CONSULTAS = [
     "ganar dinero", "gana dinero jugando", "ganar dinero rapido", "apps que pagan",
@@ -34,8 +34,9 @@ SCHEMA = {
                     "por_que": {"type": "string"},
                     "angulo": {"type": "string", "description": "Idea de video: título tentativo o enfoque"},
                     "potencial_vistas": {"type": "string", "enum": ["alto", "medio", "bajo"]},
+                    "inspiracion": {"type": "string", "description": "Título del video que está pegando en el nicho que inspiró esta idea; vacío si ninguno"},
                 },
-                "required": ["app_id", "titulo", "por_que", "angulo", "potencial_vistas"],
+                "required": ["app_id", "titulo", "por_que", "angulo", "potencial_vistas", "inspiracion"],
                 "additionalProperties": False,
             },
         }
@@ -262,14 +263,22 @@ def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
     if not encontradas:
         raise claude.ErrorIA("No encontré esa app en Play Store." if tipo == "app" else "No se encontraron apps.")
     datos = json.dumps(list(encontradas.values()), ensure_ascii=False)
+    from . import tendencias
+    pegando = tendencias.buscar([texto, f"{texto} app", f"{texto} paga o es estafa"] if tipo == "tema" else None)
+    print(f"  · tendencias de YouTube: {len(pegando)} videos que están pegando", flush=True)
     res = claude.json_estructurado(
-        SYSTEM,
+        SYSTEM + "\n\n" + manual.para_agente(),
         f"Apps encontradas:\n{datos}\n\n"
         + (f"Indicaciones y gustos del jefe (respétalos):\n{guia}\n\n" if guia else "")
+        + (tendencias.para_paola(pegando) + "\n\n" if pegando else "")
         + instruccion,
         SCHEMA, tarea="ideas",
     )
     validas = [c for c in res["candidatas"] if c["app_id"] in encontradas]  # nada de ids inventados
+    urls = {v["titulo"]: v for v in pegando}
+    for c in validas:  # la inspiración solo cuenta si de verdad salió en las tendencias
+        v = urls.get(c.get("inspiracion", ""))
+        c["inspiracion"] = {"titulo": v["titulo"], "url": v["url"], "multiplicador": v["multiplicador"]} if v else None
     if tipo == "app":  # la pidió el jefe: no se descarta aunque ya esté en la bandeja o ya se haya hecho
         for c in validas:
             c["personalizada"] = True

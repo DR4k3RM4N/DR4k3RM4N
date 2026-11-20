@@ -51,6 +51,8 @@ def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
         enfoques = [("top", f"Los 5 secretos de {tema} que nadie te dice"), ("guia", f"Guía de {tema} para principiantes"),
                     ("noticias", f"Todo lo nuevo de {tema} este mes"), ("opinion", f"¿{tema} vale la pena en 2026?")]
         return [{"app_id": f"tema:{slug}-{k}", "titulo": tema, "angulo": t, "tema": tema, "formato": f,
+                 "inspiracion": {"titulo": f"Nadie te dice esto de {tema} (demo)", "url": "https://www.youtube.com/",
+                                 "multiplicador": 23.5} if k == 0 else None,
                  "por_que": "💡 Es de lo que más busca la gente ahora (demo).", "potencial_vistas": "alto" if k < 2 else "medio",
                  "personalizada": True, "idea_jefe": pedido} for k, (f, t) in enumerate(enfoques[:cuantas])]
     if pedido and ("video" in pedido.lower() or "?" in pedido or "por qu" in pedido.lower()):
@@ -140,6 +142,11 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                 "color_subtitulo": "#FFE600", "color_borde_subtitulo": "#000000", "transicion": "corte", "zoom": "fuerte",
                 "barra_progreso": False, "karaoke": True, "color_resaltado": "#22C55E",
                 "efectos": ["texto_pop", "golpe_zoom", "sello", "sacudida"], "intensidad_motion": "mucho", "consejos": ["Usa memes y b-roll entre explicaciones", "Cámara en mano en las pruebas"]}
+    if "manual" in props and "cambios" in props:  # Paola escribe el manual del canal
+        from . import manual
+        return {"manual": manual.leer().replace("## Gancho (lo más importante)",
+                                                "## Gancho (lo más importante)\n- (demo) Empieza mostrando el dinero en pantalla."),
+                "cambios": ["Gancho con el dinero en pantalla (demo)", "Re-gancho cada minuto"]}
     if "puntos" in props and "curiosidades" in props:  # investigar un tema libre
         return {"resumen": "La comunidad está hablando mucho de los cambios de la última temporada (demo).",
                 "puntos": [{"titulo": "Nueva temporada", "detalle": "Llegaron personajes y mapas nuevos.", "url": ""},

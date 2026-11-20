@@ -34,7 +34,8 @@ PRIVACIDADES = ("public", "unlisted", "private")
 
 
 def subir(video: Path, miniatura: Path | None, titulo: str, descripcion: str, etiquetas: list[str],
-          sintetico: bool = True, privacidad: str | None = None) -> str:
+          sintetico: bool = True, privacidad: str | None = None, publicar_en: str | None = None) -> str:
+    """`publicar_en`: fecha y hora (ISO, UTC) en que YouTube lo hace público solo; mientras, queda privado."""
     from googleapiclient.http import MediaFileUpload
 
     yt = _servicio()
@@ -51,6 +52,9 @@ def subir(video: Path, miniatura: Path | None, titulo: str, descripcion: str, et
             "containsSyntheticMedia": sintetico,
         },
     }
+    if publicar_en:  # programado: YouTube exige que esté privado hasta esa hora
+        cuerpo["status"]["privacyStatus"] = "private"
+        cuerpo["status"]["publishAt"] = publicar_en
     req = yt.videos().insert(part="snippet,status", body=cuerpo,
                              media_body=MediaFileUpload(str(video), chunksize=-1, resumable=True))
     resp = None
