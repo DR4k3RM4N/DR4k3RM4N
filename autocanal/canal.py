@@ -350,6 +350,15 @@ def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> d
         _guardar(carpeta / "publicado.json", pub)
         print(f"  · {pub['youtube']} ({pub.get('privacidad') or '?'})")
 
+    if pub.get("youtube") and not pub.get("miniatura_puesta") and (carpeta / "miniatura.jpg").exists():
+        try:  # aparte del video: si YouTube no la acepta, el video ya quedó arriba y no se vuelve a subir
+            youtube.poner_miniatura(pub["youtube"], carpeta / "miniatura.jpg")
+            pub["miniatura_puesta"], pub["miniatura_error"] = True, None
+        except Exception as exc:  # noqa: BLE001
+            pub["miniatura_error"] = str(exc)[:300]
+            print(f"  · la miniatura no se pudo poner: {exc}")
+        _guardar(carpeta / "publicado.json", pub)
+
     if pub.get("blog") and not pub.get("video_en_blog"):
         try:
             blog.WordPress().insertar_video(pub["blog"]["id"], pub["youtube"])

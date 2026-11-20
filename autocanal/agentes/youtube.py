@@ -63,9 +63,22 @@ def subir(video: Path, miniatura: Path | None, titulo: str, descripcion: str, et
         if estado:
             print(f"  · subiendo {int(estado.progress() * 100)}%")
     video_id = resp["id"]
-    if miniatura and miniatura.exists():
-        yt.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(miniatura))).execute()
     return f"https://youtu.be/{video_id}"
+
+
+def poner_miniatura(url_video: str, miniatura: Path) -> None:
+    """Pone la miniatura. YouTube solo lo permite si el canal verificó su teléfono (youtube.com/verify)."""
+    from googleapiclient.errors import HttpError
+    from googleapiclient.http import MediaFileUpload
+
+    video_id = url_video.rstrip("/").rsplit("/", 1)[-1].split("=")[-1]
+    try:
+        _servicio().thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(miniatura))).execute()
+    except HttpError as exc:
+        if exc.resp.status == 403:
+            raise RuntimeError("YouTube no dejó poner la miniatura: tu canal necesita verificar tu teléfono para usar "
+                               "miniaturas propias (youtube.com/verify).") from exc
+        raise
 
 
 def privacidad_real(url_video: str) -> str:

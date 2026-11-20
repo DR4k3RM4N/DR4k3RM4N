@@ -14,6 +14,7 @@ import hmac
 import json
 import mimetypes
 import random
+import re
 import threading
 import time
 import uuid
@@ -972,10 +973,20 @@ class Oficina:
                 self._tocar()
                 threading.Thread(target=self._publicar, args=(app_id, titulo_n), daemon=True).start()
             elif accion == "reintentar" and p["estado"] == "error" and p.get("etapa") == "publicar":
-                # falló al publicar: se vuelve a intentar publicar (sin pasar otra vez por tu revisión)
+                # falló al publicar: se vuelve a intentar publicar (sin pasar otra vez por tu revisión).
+                # Si el video ya había subido (el error lo trae), se anota para no subirlo dos veces.
+                m = re.search(r"videoId=([\w-]{6,})", p.get("error") or "")
+                if m:
+                    f = config.SALIDA / app_id / "publicado.json"
+                    pub = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+                    if not pub.get("youtube"):
+                        pub["youtube"] = f"https://youtu.be/{m.group(1)}"
+                        f.write_text(json.dumps(pub, ensure_ascii=False, indent=2), encoding="utf-8")
                 p["estado"], p["error"] = "publicando", None
                 self._tocar()
                 threading.Thread(target=self._publicar, args=(app_id, p.get("titulo_n", 1)), daemon=True).start()
+            elif accion == "poner_miniatura" and p["estado"] == "publicado":  # volver a intentar poner la miniatura
+                threading.Thread(target=self._reintentar_miniatura, args=(app_id,), daemon=True).start()
             elif accion == "cambios" and p["estado"] in ("revision", "error"):
                 p["estado"], p["etapa"], p["error"] = "produccion", "guion", None
                 p["notas"] = (p.get("notas", "") + "\n" + texto).strip()
@@ -1052,6 +1063,24 @@ class Oficina:
         opciones = [" ".join(o.split())[:100] for o in r.get("opciones", []) if o.strip()][:3]
         return {"ok": True, "opciones": opciones, "costo": round(p.get("costo", 0) - antes, 5)}
 
+    def _reintentar_miniatura(self, app_id: str) -> None:
+        from agentes import youtube
+
+        carpeta = config.SALIDA / app_id
+        f = carpeta / "publicado.json"
+        pub = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+        try:
+            youtube.poner_miniatura(pub["youtube"], carpeta / "miniatura.jpg")
+            pub["miniatura_puesta"], pub["miniatura_error"] = True, None
+            self.avisar_jefe("¡Listo! Ya quedó la miniatura en YouTube 🖼️")
+        except Exception as exc:  # noqa: BLE001
+            pub["miniatura_error"] = str(exc)[:300]
+            self.avisar_jefe(f"La miniatura sigue sin entrar: {str(exc)[:200]}")
+        f.write_text(json.dumps(pub, ensure_ascii=False, indent=2), encoding="utf-8")
+        with self.lock:
+            self.proyectos[app_id]["publicado"] = pub
+            self._tocar()
+
     def _publicar(self, app_id: str, titulo_n: int) -> None:
         import canal
 
@@ -1089,6 +1118,9 @@ class Oficina:
             privado = " Quedó en privado: ábrelo en YouTube Studio para hacerlo público."
         else:
             privado = " Quedó sin listar (solo con el enlace)." if real == "unlisted" else ""
+        if (pub or {}).get("miniatura_error"):
+            privado += (" 🖼️ La miniatura no entró: YouTube pide verificar tu teléfono en youtube.com/verify para usar "
+                        "miniaturas propias. Ya verificado, dale «Poner miniatura» en Proyectos.")
         self.avisar_jefe(f"¡Publicado! {titulo} ya está {donde} 🎉" + privado
                          + (" El blog no se pudo subir; queda pendiente con el botón «Subir blog»." if p["blog_pendiente"] else "")
                          + (f"\n{pub.get('youtube')}" if (pub or {}).get("youtube") else ""))
