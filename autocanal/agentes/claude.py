@@ -71,6 +71,8 @@ class ErrorIA(Exception):
 TAREAS_SUSCRIPCION = {
     "ideas": "sonnet", "investigar": "sonnet", "guion": "sonnet", "blog": "sonnet", "edicion": "sonnet",
     "estilo": "sonnet", "leer_web": "haiku", "whatsapp": "haiku", "miniatura": "haiku",
+    # oficina de TikTok Shop y sala de edición
+    "ficha_shop": "haiku", "guion_shop": "sonnet", "tomas_shop": "sonnet", "sala": "sonnet", "sala_aprender": "haiku",
 }
 LIMITE_PALABRAS = ("usage limit", "rate limit", "limit reached", "out of extra usage", "5-hour", "weekly limit")
 _suscripcion_pausada_hasta = 0.0  # si se acabó el límite del plan, se usa la API un rato

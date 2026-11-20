@@ -16,8 +16,9 @@ y el plan de la oficina de TikTok Shop.
 ## Reglas que ya acordamos (no las rompas)
 - **Nunca le pidas que pegue claves, contraseñas o tokens en el chat.** Las claves van en el `.env` del servidor
   (`sudo nano /opt/canal/autocanal/.env`) o con los asistentes `--configurar-…` de `oficina.py`.
-- **Lo más barato posible.** Modelos Haiku (`claude-haiku-5-5`) para casi todo, Sonnet solo para estudiar estilos
-  una vez. Búsquedas con **Serper/Tavily** (Google), no con la búsqueda web de Claude. Él cuida mucho el gasto
+- **Lo más barato posible.** Si su plan de Claude está conectado (`MOTOR_IA`, ver `GUIA_SUSCRIPCION.md`), las llamadas
+  van por Claude Code con su suscripción (Sonnet en lo creativo, sin costo por token). Con la API: Haiku
+  (`claude-haiku-5-5`) para casi todo, Sonnet solo donde se justifique. Búsquedas con **Serper/Tavily** (Google), no con la búsqueda web de Claude. Él cuida mucho el gasto
   (hay tope diario `LIMITE_DIARIO`, 1 USD por defecto) y quiere ver el costo en centavos.
 - **Nada inventado**: datos con fuente, comentarios de usuarios copiados tal cual, URLs que de verdad salieron.
 - Antes de subir cambios: compila, y prueba en **modo demo** (`python oficina.py --demo --puerto 8787`) con

@@ -2,7 +2,7 @@
 
 Con esto la oficina usa **tu suscripción de Claude** (la misma de tus chats) en vez de los créditos de la API.
 Los agentes creativos (ideas, guion, plan de efectos, blog) pasan a **Sonnet**, que escribe mejor que Haiku,
-sin costo por token.
+sin costo por token. Aplica a las tres: la oficina del canal, la de TikTok Shop y la sala de edición.
 
 - Cuenta para los **límites de uso de tu plan** (los mismos del chat). Si se acaban, la oficina sigue con los
   créditos de la API (si tienes) y regresa a tu plan en una hora.
@@ -16,13 +16,17 @@ sin costo por token.
 ssh ubuntu@51.195.201.84
 ```
 
-2. Actualiza (instala Claude Code en el servidor):
+2. Revisa que Claude Code ya esté instalado (el servidor lo instala solo al actualizarse, en unos 10 minutos):
 
 ```bash
-sudo bash /opt/canal/autocanal/despliegue/actualizar.sh
+/usr/local/bin/claude --version
 ```
 
-Debe decir `✔ Claude Code …`.
+Debe salir algo como `2.x.x (Claude Code)`. Si dice "No such file", instálalo a mano:
+
+```bash
+sudo bash /opt/canal/autocanal/despliegue/claude_code.sh --forzar
+```
 
 3. Corre el asistente:
 
@@ -46,6 +50,6 @@ Arriba en la oficina verás **🧠 Tu plan**. En cada tarea el gasto sale en $0 
 en la API.
 
 ## Si algo sale mal
-- `No encontré Claude Code`: repite el paso 2 y fíjate si sale un ✖.
+- `No encontré Claude Code`: corre el comando del paso 2 con `--forzar` y fíjate si sale un ✖.
 - `El token … no sirve o caducó` o `no contestó a tiempo`: repite el paso 3.
 - Volver a usar solo la API: en `sudo nano /opt/canal/autocanal/.env` pon `MOTOR_IA=api` y reinicia.
