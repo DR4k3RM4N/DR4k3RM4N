@@ -1545,7 +1545,9 @@
               : c.claude_code === "listo" && c.motion === "sin_node" ? `<span class="chip" title="Corre otra vez INSTALAR_SALA.bat para instalar Node.js">🎨 falta Node.js</span>`
               : c.claude_code === "listo" && c.motion === "instalando" ? `<span class="chip">🎨 instalando…</span>` : ""}
             ${c.claude_code === "listo" ? `<span class="chip chip-estado-publicado" title="Editor IA: Claude Code edita con las manos libres en esta compu (tu plan, 0 ¢)">🧠 Editor IA</span>`
-              : c.claude_code === "sin_sesion" ? `<span class="chip" title="Abre Claude Code en esa compu e inicia sesión">🧠 sin sesión</span>` : ""}</span>
+              : c.claude_code === "sin_sesion" ? `<span class="chip" title="Abre Claude Code en esa compu e inicia sesión">🧠 sin sesión</span>` : ""}
+            ${c.celular === "falta autorizar" ? `<span class="chip" title="En el cel acepta el mensaje «¿Permitir depuración por USB?» (marca «Permitir siempre»)">📱 falta autorizar</span>`
+              : c.celular ? `<span class="chip chip-estado-publicado" title="El robot prueba las apps en este cel antes de investigarlas">📱 ${esc(c.celular)}</span>` : ""}</span>
         </div>
         ${carpetas.length ? `<div class="pc-carpetas"><small>📁 ${esc(loc.ruta || "Sala de edicion")}</small>
           ${carpetas.map(([pid, n]) => `<button type="button" class="pc-carpeta" data-abrir-producto="${esc(pid)}">

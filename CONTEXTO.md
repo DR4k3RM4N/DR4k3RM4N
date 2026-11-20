@@ -97,6 +97,25 @@ Miguel vio un video de una "fábrica" de videos con Claude y pidió "haz todo, y
 - **Publicar a una hora** (ajuste `publicar_hora`): Carla sube privado con `publishAt` y YouTube lo hace público
   a esa hora (si la app de Google no está auditada, YouTube puede dejarlo privado).
 
+## 3d. Prueba propia y robot del Android (nov 2026)
+Miguel hacía sus videos instalando la app, grabando la pantalla (anuncios = más apps estafa) y poniendo un GIF de
+fondo para llenar 16:9. Se automatizó:
+- **Fase 1** (`autocanal/agentes/prueba.py`): "📱 Probé esta app" en Bandeja (`/api/grabacion?app=`) o "Subir mi
+  grabación" en el proyecto (`?proyecto=`, rehace desde investigar). Grabaciones en `entrada/<id>/` y
+  `salida/<id>/prueba_robot/`. Claude ve ~40 cuadros (tarea "prueba", Sonnet con el plan) → `prueba.json`
+  (cómo funciona, promesa, pago mínimo, retiro, anuncios con app anunciada, momentos con segundo). Va al
+  expediente (`prueba_propia`), el guion la cuenta en primera persona con escenas `grabacion` + `desde`, y las apps
+  de dinero anunciadas se vuelven propuestas ("📢 Salió anunciada dentro de…"). Fondo de relleno: `estilo/fondo_relleno`
+  (GIF/video/imagen, tipo "fondo"); sin fondo, la grabación desenfocada.
+- **Fase 2** (`salaedicion/robot_cel.py` + `cel.py`): trabajo de sala `probar_app`; la compu lo anuncia si Claude
+  Code está listo y `adb devices` muestra un cel autorizado (chip "📱 modelo" en la pestaña Sala). Graba con
+  `screenrecord` en trozos de 170 s, corre Claude Code (`--allowedTools Bash(./cel:*) Read`, Sonnet) con reglas de
+  seguridad en CLAUDE.md (nada de datos reales, pagos, permisos sensibles, APKs, retiros), junta la grabación,
+  desinstala la app y sube `prueba.mp4` + `notas.json`. La oficina lo pide en `Produccion.investigar` si no hay
+  grabación y `probar_en_cel` está prendido. adb se instala solo con winget (Google.PlatformTools).
+  Guía para preparar el cel: `salaedicion/GUIA_CELULAR.md`. Probado aquí con adb y Claude simulados; falta
+  probar con el cel real de Miguel.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

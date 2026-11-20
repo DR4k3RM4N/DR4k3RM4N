@@ -799,6 +799,9 @@ def hacer(of: Oficina, t: dict) -> None:
             return pensar(of, t, carpeta, avance)
         if t["tipo"] == "claude_libre":
             return editar_libre(of, t, carpeta, avance)
+        if t["tipo"] == "probar_app":  # 📱 el robot prueba la app en tu Android
+            import robot_cel
+            return robot_cel.probar(of, t, carpeta, avance, claude_code(), log)
         if t["tipo"] != "cris":
             raise RuntimeError(f"Esta versión no sabe hacer trabajos de tipo {t['tipo']}.")
         if t.get("local"):  # tus clips ya están en esta compu: no se baja nada
@@ -873,8 +876,12 @@ def trabajar() -> None:
              "tipos": ["cris", "libre"], "con_carpetas": True}
 
     def cerebro():  # ¿Claude Code instalado y con sesión? Entonces esta compu también piensa
+        import robot_cel
         datos["claude_code"] = estado_claude()
-        datos["tipos"] = ["cris", "libre", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else [])]
+        cel = robot_cel.celular()  # 📱 ¿tu Android viejo está conectado? Entonces también prueba apps
+        datos["celular"] = cel.get("modelo") or ("falta autorizar" if cel.get("pendiente") else "")
+        datos["tipos"] = ["cris", "libre", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else []),
+                          *(["probar_app"] if datos["claude_code"] == "listo" and cel.get("serie") else [])]
         datos["motion"] = ESTADO_MOTION["texto"]
     cerebro()
     listo = threading.Event()
@@ -925,7 +932,15 @@ def trabajar() -> None:
             ESTADO_MOTION["texto"] = "error"
         cerebro()
 
-    for f in (pulso, preparar, carpetas, motion):
+    def adb():  # las herramientas para manejar el Android por cable (la primera vez se instalan solas)
+        import robot_cel
+        try:
+            if robot_cel.instalar_adb():
+                cerebro()
+        except Exception as exc:  # noqa: BLE001
+            log(f"No pude preparar adb para el celular: {exc}")
+
+    for f in (pulso, preparar, carpetas, motion, adb):
         threading.Thread(target=f, daemon=True).start()
     espera, revisado = 5, time.time()
     while True:
