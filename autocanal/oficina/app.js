@@ -229,9 +229,50 @@
           <a class="btn btn-mini" href="/descargar/autocanal-conexion.zip" download>🔌 Plugin para el blog</a></span></div>` : ""}
         ${p.costo ? `<div class="costo">💰 ${dinero(p.costo)} <span>${Object.entries(p.costos || {}).map(([e, v]) => `${esc(ETIQUETA_ETAPA[e] || e)} ${dinero(v)}`).join(" · ")}</span></div>` : ""}
         ${["revision", "publicado"].includes(p.estado) ? `<button class="btn ancho" data-revisar="${esc(p.id)}">Ver video</button>` : ""}
+        ${!p.id.startsWith("tema:") && p.estado !== "publicando" ? `<label class="btn btn-mini subir-grabacion" title="Tu grabación de pantalla usando la app: Iván la ve y el video se rehace con ella">📱 Subir mi grabación<input type="file" accept="video/*" hidden data-grabacion="${esc(p.id)}"></label>` : ""}
       </article>`;
     }).join("") + ayudaBlog;
   }
+  // 📱 tu grabación de pantalla (puede pesar cientos de MB: se ve cuánto lleva)
+  function subirGrabacion(params, archivo, etiqueta) {
+    return new Promise((ok, mal) => {
+      const x = new XMLHttpRequest();
+      x.open("POST", `/api/grabacion?${new URLSearchParams({ ...params, nombre: archivo.name })}`);
+      x.setRequestHeader("Content-Type", "application/octet-stream");
+      x.upload.onprogress = (ev) => { if (ev.lengthComputable && etiqueta) etiqueta.textContent = `Subiendo ${Math.round(ev.loaded / ev.total * 100)}%…`; };
+      x.onload = () => {
+        let j = {};
+        try { j = JSON.parse(x.responseText); } catch {}
+        if (x.status === 200) ok(j); else mal(new Error(j.error || "No se pudo subir"));
+      };
+      x.onerror = () => mal(new Error("Se cortó la conexión"));
+      x.send(archivo);
+    });
+  }
+  $("#proyectos").addEventListener("change", async (e) => {
+    const inp = e.target.closest("[data-grabacion]");
+    if (!inp || !inp.files.length) return;
+    const etiqueta = inp.closest("label");
+    try {
+      const r = await subirGrabacion({ proyecto: inp.dataset.grabacion }, inp.files[0], etiqueta.firstChild);
+      alert(r.mensaje || "Listo");
+    } catch (err) { alert(err.message); }
+    etiqueta.firstChild.textContent = "📱 Subir mi grabación";
+  });
+  $("#form-probe")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const nombre = $("#probe-nombre").value.trim(), archivo = $("#probe-archivo").files[0];
+    if (!nombre || !archivo) return alert("Escribe el nombre de la app y elige tu grabación.");
+    const boton = $("#probe-boton");
+    boton.disabled = true;
+    try {
+      const r = await subirGrabacion({ app: nombre }, archivo, boton);
+      alert(r.mensaje || "Listo");
+      e.target.reset();
+    } catch (err) { alert(err.message); }
+    boton.disabled = false;
+    boton.textContent = "📱 Hacer video con mi prueba";
+  });
   $("#proyectos").addEventListener("click", async (e) => {
     const sb = e.target.closest("[data-subir-blog]");
     if (sb) {
@@ -576,7 +617,8 @@
 
   // ---------- estilo: lo que los agentes aprenden de ti ----------
   const SUBIDAS = {
-    cara: ["Tu cara (PNG sin fondo)", ".png"], mascota: ["Mascota del canal (PNG sin fondo)", ".png"], fuente: ["Tu tipografía (.ttf)", ".ttf,.otf"],
+    cara: ["Tu cara (PNG sin fondo)", ".png"], mascota: ["Mascota del canal (PNG sin fondo)", ".png"],
+    fondo: ["Fondo para tus grabaciones del cel (GIF o video que rellena a 16:9)", ".gif,.mp4,.webm,.mov,.png,.jpg"], fuente: ["Tu tipografía (.ttf)", ".ttf,.otf"],
     musica: ["Música de fondo", ".mp3,.m4a,.wav"], whoosh: ["Sonido en cambios de escena", ".mp3,.wav,.m4a"],
     intro: ["Intro de tu canal", ".mp4,.mov,.webm"], outro: ["Cierre / outro", ".mp4,.mov,.webm"],
     referencia: ["Video de referencia (cómo te gusta la edición)", ".mp4,.mov,.webm,.mkv"],
@@ -652,9 +694,10 @@
           ${chk("mayusculas_subtitulo", "Subtítulos en MAYÚSCULAS")}
           ${chk("barra_progreso", "Barra de progreso")}${chk("sonido_cambios", "Sonido en cada cambio de escena")}
         </div>
-        ${subida("mascota", e.archivos.mascota)}
+        ${subida("mascota", e.archivos.mascota)}${subida("fondo", e.archivos.fondo)}
         <div class="ajustes">${chk("dos_voces", "Dos voces (una pregunta o reacciona, como en los videos que pegan)")}
-          <label>Mascota en la esquina ${sel("mascota_lado", [["derecha", "Derecha"], ["izquierda", "Izquierda"]])}</label></div>
+          <label>Mascota en la esquina ${sel("mascota_lado", [["derecha", "Derecha"], ["izquierda", "Izquierda"]])}</label>
+          ${chk("probar_en_cel", "📱 Si mi Android está conectado a mi compu, que el robot pruebe la app antes de investigar")}</div>
         ${subida("musica", e.archivos.musica)}${subida("whoosh", e.archivos.whoosh)}${subida("intro", e.archivos.intro)}${subida("outro", e.archivos.outro)}
         <p class="pista">Los colores de subtítulos y barra salen del estilo de tus miniaturas. Usa música sin copyright.</p>
       </section>

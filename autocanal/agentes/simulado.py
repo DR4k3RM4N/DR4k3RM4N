@@ -142,6 +142,15 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                 "color_subtitulo": "#FFE600", "color_borde_subtitulo": "#000000", "transicion": "corte", "zoom": "fuerte",
                 "barra_progreso": False, "karaoke": True, "color_resaltado": "#22C55E",
                 "efectos": ["texto_pop", "golpe_zoom", "sello", "sacudida"], "intensidad_motion": "mucho", "consejos": ["Usa memes y b-roll entre explicaciones", "Cámara en mano en las pruebas"]}
+    if "anuncios" in props and "momentos" in props:  # Iván ve la grabación de la prueba
+        return {"resumen": "Se ve la app pagando centavos por ver videos y muchos anuncios (demo).",
+                "como_funciona": "Ver videos y anuncios para juntar monedas.", "promesa": "Hasta $500 al día",
+                "pago_minimo": "50 USD", "intento_de_retiro": "Pide ver 30 anuncios más antes de retirar.",
+                "anuncios": [{"grabacion": 1, "segundo": 3, "app_anunciada": "Cash Cat Rewards", "parece_de_dinero": True},
+                             {"grabacion": 1, "segundo": 7, "app_anunciada": "Juego de granja", "parece_de_dinero": False}],
+                "momentos": [{"grabacion": 1, "segundo": 1, "que_se_ve": "Saldo de $0.50"},
+                             {"grabacion": 1, "segundo": 5, "que_se_ve": "Anuncio que tapa la pantalla"}],
+                "senales": ["Pide más anuncios para dejarte retirar"]}
     if "manual" in props and "cambios" in props:  # Paola escribe el manual del canal
         from . import manual
         return {"manual": manual.leer().replace("## Gancho (lo más importante)",
@@ -201,7 +210,9 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                 "sello_miniatura": "CUIDADO" if not cambio else "NO PAGA",
                 "escenas": [
                     {"narracion": f"{nombre} promete quinientos pesos al día. ¿Será cierto?", "visual": "titulo", "indice": 0, "texto": "¿500 al día?"},
-                    {"narracion": "Así se ve por dentro: monedas y premios por todos lados.", "visual": "captura", "indice": 1, "texto": ""},
+                    ({"narracion": "La instalé y mira: saldo de cincuenta centavos.", "visual": "grabacion", "indice": 1, "texto": "", "desde": 1}
+                     if "CLIPS DEL CREADOR: [" in texto else
+                     {"narracion": "Así se ve por dentro: monedas y premios por todos lados.", "visual": "captura", "indice": 1, "texto": ""}),
                     {"narracion": "Pero mira lo que dicen los usuarios.", "visual": "resena", "indice": 0, "texto": ""},
                     {"narracion": "El pago mínimo es de cincuenta dólares.", "visual": "dato", "indice": 0, "texto": "Pago mínimo: 50 USD"},
                     {"narracion": "Mi veredicto: no pierdas tu tiempo.", "visual": "veredicto", "indice": 0, "texto": "No pierdas tu tiempo"},
@@ -271,6 +282,11 @@ def recolectar_tema(app_id: str, carpeta: Path, origen: dict) -> dict:
     return {"ficha": ficha, "resenas": [], "imagenes": imagenes}
 
 
+def encontrar_app(nombre: str, hechas=None) -> dict:
+    app_id, titulo, _ = next((a for a in APPS if nombre.lower()[:4] in a[1].lower()), random.choice(APPS))
+    return {"app_id": app_id, "titulo": titulo}
+
+
 def activar() -> None:
     import canal
 
@@ -280,6 +296,7 @@ def activar() -> None:
     os.environ["VOZ_MOTOR"] = "silencio"
     config.HISTORIAL = config.BASE / "historial_demo.json"
     buscador.ideas = ideas
+    buscador.encontrar_app = encontrar_app
     playstore.ficha, playstore.resenas, playstore.descargar_imagenes = ficha, resenas, descargar_imagenes
     claude.json_estructurado, claude.investigar_web = json_estructurado, investigar_web
     canal.publicar = publicar

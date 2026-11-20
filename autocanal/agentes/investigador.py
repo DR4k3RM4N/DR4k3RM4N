@@ -324,9 +324,21 @@ def analizar(datos: dict, carpeta: Path, con_web: bool = True) -> dict:
         contenido[-1]["text"] += ("\n\nOJO: esta app NO está en Play Store (se descarga por fuera, APK o página web). "
                                   "Las 'reseñas' son comentarios de usuarios en internet, con su sitio. No estar en Play Store "
                                   "es un dato relevante para el usuario (menos controles, riesgo al instalar APK).")
+    prueba = datos.get("prueba")
+    if prueba:  # lo más fuerte del video: la usamos de verdad
+        contenido[-1]["text"] += ("\n\nPRUEBA PROPIA (el creador o su celular usó la app y la grabó; esto es evidencia "
+                                  "directa y vale más que las reseñas):\n" + json.dumps(
+            {k: prueba.get(k) for k in ("resumen", "como_funciona", "promesa", "pago_minimo", "intento_de_retiro",
+                                         "senales", "anuncios_por_minuto", "minutos_probados")}, ensure_ascii=False))
     exp = claude.json_estructurado(SYSTEM_EXPEDIENTE, contenido, SCHEMA, tarea="investigar", que="expediente")
     exp["resenas_citadas"] = [muestra[i] for i in exp["resenas_destacadas"] if 0 <= i < len(muestra)][:6]
     exp["fuentes_web"] = fuentes
+    if prueba:
+        exp["prueba_propia"] = {k: prueba.get(k) for k in ("resumen", "como_funciona", "promesa", "pago_minimo",
+                                                            "intento_de_retiro", "senales", "anuncios_por_minuto",
+                                                            "minutos_probados", "por_robot")}
+        exp["prueba_propia"]["anuncios_vistos"] = len(prueba.get("anuncios", []))
+        exp["prueba_firma"] = prueba.get("firma")
     exp["informe_web"] = informe_web
     exp["investigacion_web"] = ("hecha" if usar_web else "omitida") + f": {motivo}"
     playstore.guardar(carpeta, "expediente.json", exp)

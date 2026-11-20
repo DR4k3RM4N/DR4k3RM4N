@@ -74,6 +74,7 @@ class Produccion:
         self.carpeta = config.SALIDA / app_id
         self.carpeta.mkdir(parents=True, exist_ok=True)
         self.clips = _clips(app_id) or _clips(self.app_id)
+        self.prueba = None
         self.ficha = self.imagenes = self.expediente = self.guion = self.entrada = None
         self.video = self.mini = None
 
@@ -93,7 +94,25 @@ class Produccion:
             datos = (temas.recolectar(self.app_id, c, origen) if es_tema
                      else investigador.recolectar(self.app_id, c, origen.get("nombre", "")))
         self.ficha, self.imagenes = datos["ficha"], datos["imagenes"]
+        self.prueba = None
+        if not es_tema:  # 📱 la prueba propia: tu grabación o la del Android viejo
+            from agentes import editor, estilo, prueba
+
+            nombre = (self.ficha or {}).get("title") or self.app_id
+            if (not prueba.grabaciones(c.name) and estilo.cargar()["ajustes"].get("probar_en_cel")
+                    and prueba.celular_disponible()):
+                print("  · le pido al celular que la pruebe")
+                paquete = "" if self.app_id.startswith("web:") else self.app_id
+                prueba.pedir_al_celular(c.name, nombre, paquete, avance=editor._avance)
+            self.clips = [str(p) for p in prueba.grabaciones(c.name)] or self.clips
+            if self.clips:
+                print(f"  · viendo {len(self.clips)} grabación(es) de la prueba")
+                self.prueba = prueba.analizar(c.name, c, nombre)
+                datos["prueba"] = self.prueba
         self.expediente = _leer(c / "expediente.json")
+        firma_prueba = (self.prueba or {}).get("firma")
+        if self.expediente is not None and firma_prueba and self.expediente.get("prueba_firma") != firma_prueba:
+            self.expediente = None  # llegó una grabación nueva: se rehace el expediente con ella
         if self.expediente is None or "investigar" in self.rehacer:
             self.expediente = (temas.analizar(datos, c, con_web=self.con_web) if es_tema
                                else investigador.analizar(datos, c, con_web=self.con_web))
@@ -105,7 +124,16 @@ class Produccion:
 
         self.guion = _leer(self.carpeta / "guion.json")
         if self.guion is None or "guion" in self.rehacer:
-            info = [{"indice": i, "archivo": Path(x).name} for i, x in enumerate(self.clips, 1)]
+            prueba = _leer(self.carpeta / "prueba.json") or {}
+            info = []
+            for i, x in enumerate(self.clips, 1):
+                g = {"indice": i, "archivo": Path(x).name}
+                d = next((x for x in prueba.get("grabaciones", []) if x["archivo"] == g["archivo"]), None)
+                if d:  # el guion puede elegir el segundo exacto de cada momento
+                    g["segundos"] = d["segundos"]
+                    g["momentos"] = [{"segundo": m["segundo"], "que_se_ve": m["que_se_ve"]}
+                                     for m in prueba.get("momentos", []) if m.get("grabacion") == d["indice"]]
+                info.append(g)
             self.guion = guionista.escribir(self.ficha, self.expediente, info, self.minutos, self.notas)
             _guardar(self.carpeta / "guion.json", self.guion)
 

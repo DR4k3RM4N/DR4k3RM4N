@@ -34,6 +34,10 @@ en evidencia.
   * "dato": dato o cifra grande en pantalla (campo texto, máx 8 palabras).
   * "grabacion": clip grabado por el creador (indice empieza en 1). Úsalo si hay clips.
   * "veredicto": tarjeta final con el veredicto.
+- Si el expediente trae "prueba_propia" (alguien usó la app y la grabó), ESE es el corazón del video:
+  cuéntalo en primera persona ("la instalé y la usé", "en 10 minutos me salieron 14 anuncios"), usa bastantes
+  escenas "grabacion" y en cada una pon en "desde" el segundo del momento que estás narrando (te paso los momentos
+  de cada grabación con lo que se ve). Narra lo que se ve en ese momento.
 - Títulos de YouTube: curiosos y honestos, sin clickbait falso; máx 70 caracteres.
 - Texto de miniatura: 2 a 4 palabras, impactantes."""
 
@@ -57,8 +61,9 @@ SCHEMA = {
                 "momento": {"type": "string", "enum": ["gancho", "desarrollo", "regancho", "cierre"]},
                 "voz": {"type": "string", "enum": ["principal", "segunda"]},
                 "sonido": {"type": "string", "description": "Qué suena en la escena (efecto o música), corto"},
+                "desde": {"type": "number", "description": "Solo en 'grabacion': segundo de la grabación donde empieza la escena; 0 si no"},
             },
-            "required": ["narracion", "visual", "indice", "texto", "momento", "voz", "sonido"],
+            "required": ["narracion", "visual", "indice", "texto", "momento", "voz", "sonido", "desde"],
             "additionalProperties": False,
         }},
     },
@@ -112,8 +117,9 @@ SCHEMA_TEMA = {
                 "momento": {"type": "string", "enum": ["gancho", "desarrollo", "regancho", "cierre"]},
                 "voz": {"type": "string", "enum": ["principal", "segunda"]},
                 "sonido": {"type": "string", "description": "Qué suena en la escena (efecto o música), corto"},
+                "desde": {"type": "number", "description": "Solo en 'grabacion': segundo de la grabación donde empieza la escena; 0 si no"},
             },
-            "required": ["narracion", "visual", "indice", "texto", "momento", "voz", "sonido"],
+            "required": ["narracion", "visual", "indice", "texto", "momento", "voz", "sonido", "desde"],
             "additionalProperties": False,
         }},
     },

@@ -54,6 +54,16 @@
         <label class="pista ideas-auto"><input type="checkbox" id="ideas-auto"> ☀️ Que Paola busque ideas sola cada mañana <span id="ideas-auto-hora"></span></label>
         <label class="pista ideas-auto"><input type="checkbox" id="piloto"> 🚀 Piloto automático: Paola arranca sola la mejor idea (tú solo revisas y publicas)</label>
       </form>
+      <form class="pedir probe" id="form-probe">
+        <label for="probe-nombre">📱 ¿Probaste una app? Sube tu grabación</label>
+        <p class="pista">Graba la pantalla de tu cel usándola (anuncios, saldo, cuando intentas retirar). Iván la ve, anota los
+          anuncios y de qué apps son (te las deja como ideas) y el video se arma con tu grabación.</p>
+        <div class="fila">
+          <input id="probe-nombre" placeholder="Nombre de la app (ej. Cash Gato)" maxlength="80">
+          <input id="probe-archivo" type="file" accept="video/*">
+          <button class="btn btn-primario" type="submit" id="probe-boton">📱 Hacer video con mi prueba</button>
+        </div>
+      </form>
       <div id="bandeja"></div>
     </div>
     <div class="contenido" id="tab-shop" hidden>

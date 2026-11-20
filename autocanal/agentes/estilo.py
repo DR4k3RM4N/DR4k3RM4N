@@ -31,6 +31,7 @@ TIPOS = {
     "miniatura": (None, (".jpg", ".jpeg", ".png", ".webp"), 10),
     "cara": ("cara.png", (".png",), 10),
     "mascota": ("mascota.png", (".png",), 10),
+    "fondo": ("fondo_relleno", (".gif", ".mp4", ".webm", ".mov", ".png", ".jpg", ".jpeg"), 60),  # relleno 16:9 de tus grabaciones
     "fuente": ("fuente_negrita.ttf", (".ttf", ".otf"), 10),
     "musica": ("musica.mp3", (".mp3", ".m4a", ".wav"), 30),
     "whoosh": ("whoosh.mp3", (".mp3", ".wav", ".m4a"), 5),
@@ -55,7 +56,8 @@ AJUSTES_DEFECTO = {
     "karaoke": True,             # la palabra que se dice se ilumina
     "color_resaltado": "",       # color de esa palabra (vacío = color de acento de tus miniaturas)
     "motion": "normal",
-    "dos_voces": True,           # una segunda voz pregunta o reacciona de vez en cuando (como en los videos que pegan)
+    "dos_voces": True,
+    "probar_en_cel": True,       # si tu Android está conectado a tu compu, el robot prueba la app antes de investigar           # una segunda voz pregunta o reacciona de vez en cuando (como en los videos que pegan)
     "mascota_lado": "derecha",
     "publicar_hora": "",         # "18:00" = Carla lo deja programado para esa hora (cuando pides público); vacío = al momento   # esquina donde vive la mascota del canal (si subiste mascota.png)          # motion graphics de Edu por escena: nada · poco · normal · mucho
 }
@@ -440,7 +442,7 @@ def ajustar(cambios: dict) -> dict:
     validos = {
         "subtitulos": ("grande", "clasico"), "transicion": ("corte", "fundido", "deslizar", "variado"),
         "barra_progreso": (True, False), "sonido_cambios": (True, False), "opciones_miniatura": (1, 2, 3, 4, 6, 8, 10),
-        "dos_voces": (True, False), "mascota_lado": ("izquierda", "derecha"),
+        "dos_voces": (True, False), "probar_en_cel": (True, False), "mascota_lado": ("izquierda", "derecha"),
         "palabras_subtitulo": (0, 1, 2, 3, 4, 5, 6, 7), "mayusculas_subtitulo": (True, False),
         "posicion_subtitulo": ("abajo", "centro"), "zoom": ("suave", "medio", "fuerte"),
         "corte_cada": (0, 1.5, 2, 2.5, 3, 4, 5, 6, 8), "karaoke": (True, False),

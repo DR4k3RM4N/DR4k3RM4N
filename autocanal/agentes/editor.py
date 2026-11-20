@@ -116,13 +116,35 @@ def _segmento_imagen(png: Path, audio: str, dur: float, destino: Path, i: int, e
         "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}", *RAPIDO, *AUDIO, str(destino))
 
 
-def _segmento_clip(clip: str, audio: str, dur: float, destino: Path, extra: float) -> None:
-    """Grabación de pantalla del celular (vertical) sobre fondo desenfocado, sin su audio original."""
-    _ff("-stream_loop", "-1", "-i", clip, "-i", audio,
-        "-filter_complex",
-        "[0:v]split[a][b];"
-        "[a]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=30:5,eq=brightness=-0.15[bg];"
-        f"[b]scale=-2:1020[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps={FPS}[v];"
+def _entrada_fondo(fondo: Path) -> list[str]:
+    """Tu fondo para rellenar a 16:9 (GIF, video o imagen), repitiéndose todo lo que dure la escena."""
+    with open(fondo, "rb") as f:
+        cabeza = f.read(8)
+    if cabeza.startswith(b"GIF8"):
+        return ["-ignore_loop", "0", "-i", str(fondo)]
+    if cabeza.startswith(b"\x89PNG") or cabeza.startswith(b"\xff\xd8"):
+        return ["-loop", "1", "-framerate", str(FPS), "-i", str(fondo)]
+    return ["-stream_loop", "-1", "-i", str(fondo)]
+
+
+def _segmento_clip(clip: str, audio: str, dur: float, destino: Path, extra: float, desde: float = 0) -> None:
+    """Grabación de pantalla del celular (vertical) al centro, sin su audio original. Para llenar el 16:9 va tu
+    fondo (GIF/video/imagen de la pestaña Estilo) o, si no subiste, la misma grabación desenfocada.
+    `desde`: segundo de la grabación donde empieza (el momento que se está narrando)."""
+    total = _duracion(Path(clip))
+    desde = max(0.0, min(float(desde or 0), max(total - 1, 0)))
+    fondo = estilo.archivo("fondo")
+    entradas = ["-ss", f"{desde:.2f}", "-stream_loop", "-1", "-i", clip, "-i", audio]
+    if fondo:
+        entradas += _entrada_fondo(fondo)
+        filtro = ("[2:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1[bg];"
+                  "[0:v]scale=-2:1020[fg];")
+    else:
+        filtro = ("[0:v]split[a][b];"
+                  "[a]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=30:5,eq=brightness=-0.15[bg];"
+                  "[b]scale=-2:1020[fg];")
+    _ff(*entradas, "-filter_complex",
+        filtro + f"[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1,fps={FPS}[v];"
         "[1:a]apad,aformat=sample_rates=44100:channel_layouts=stereo[au]",
         "-map", "[v]", "-map", "[au]", "-t", f"{dur + extra:.3f}", *RAPIDO, *AUDIO, str(destino))
 
@@ -303,7 +325,9 @@ def _editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> 
         # nombre según lo que lleva la escena: si nada cambió y ya existe, se reutiliza
         firma = hashlib.sha1(json.dumps([esc.get("narracion"), esc.get("visual"), esc.get("indice"), esc.get("texto"),
                                          round(esc["duracion"], 3), extra, ajustes.get("zoom"), ajustes.get("corte_cada"),
-                                         spec.get("color_acento")], ensure_ascii=False).encode()).hexdigest()[:10]
+                                         spec.get("color_acento"), esc.get("desde"),
+                                         (lambda f: f.stat().st_mtime if f else 0)(estilo.archivo("fondo"))],
+                                        ensure_ascii=False).encode()).hexdigest()[:10]
         seg = trabajo / f"seg_{i:02d}_{firma}.mp4"
         _avance(f"Escena {i} de {len(escenas)}", 0.45 * (i - 1) / len(escenas))
         try:
@@ -316,7 +340,8 @@ def _editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> 
             pass
         seg.unlink(missing_ok=True)
         if esc["visual"] == "grabacion" and clips:
-            _segmento_clip(clips[(max(esc.get("indice", 1), 1) - 1) % len(clips)], esc["audio"], esc["duracion"], seg, extra)
+            _segmento_clip(clips[(max(esc.get("indice", 1), 1) - 1) % len(clips)], esc["audio"], esc["duracion"], seg, extra,
+                           float(esc.get("desde") or 0))
         else:
             png = _imagen_escena(esc, i, ctx, trabajo)
             _segmento_imagen(png, esc["audio"], esc["duracion"], seg, i, extra,

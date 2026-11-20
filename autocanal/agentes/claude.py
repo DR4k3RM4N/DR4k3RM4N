@@ -39,7 +39,8 @@ TAREAS = {
     "leer_web": ("claude-haiku-5-5", "low"),        # leer resultados de Google y sacar hechos con fuente
     "estilo": ("claude-sonnet-5-5", "low"),         # estudiar tus miniaturas y entradas (una sola vez)
     "miniatura": ("claude-haiku-5-5", "low"),       # elegir la opción de miniatura más parecida a tu estilo
-    "edicion": ("claude-haiku-5-5", "medium"),      # plan de motion graphics escena por escena (fracciones de centavo)
+    "edicion": ("claude-haiku-5-5", "medium"),
+    "prueba": ("claude-haiku-5-5", "low"),          # ver la grabación de la prueba (cuadros) y anotar anuncios      # plan de motion graphics escena por escena (fracciones de centavo)
     # oficina de TikTok Shop
     "ficha_shop": ("claude-haiku-5-5", "low"),      # Toño: ordenar lo que salió en Google del producto
     "guion_shop": ("claude-haiku-5-5", "medium"),   # Sofi: guion que vende con 3 ganchos
@@ -72,7 +73,7 @@ TAREAS_SUSCRIPCION = {
     "ideas": "sonnet", "investigar": "sonnet", "guion": "sonnet", "blog": "sonnet", "edicion": "sonnet",
     "estilo": "sonnet", "leer_web": "haiku", "whatsapp": "haiku", "miniatura": "haiku",
     # oficina de TikTok Shop y sala de edición
-    "ficha_shop": "haiku", "guion_shop": "sonnet", "tomas_shop": "sonnet", "sala": "sonnet", "sala_aprender": "haiku",
+    "prueba": "sonnet", "ficha_shop": "haiku", "guion_shop": "sonnet", "tomas_shop": "sonnet", "sala": "sonnet", "sala_aprender": "haiku",
 }
 LIMITE_PALABRAS = ("usage limit", "rate limit", "limit reached", "out of extra usage", "5-hour", "weekly limit")
 _suscripcion_pausada_hasta = 0.0  # si se acabó el límite del plan, se usa la API un rato

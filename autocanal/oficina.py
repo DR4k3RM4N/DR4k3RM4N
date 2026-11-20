@@ -564,6 +564,89 @@ class Oficina:
             self.decir("productora", "Jefe, busqué pero todas las que encontré ya están en tu bandeja o ya las hicimos. "
                                      "Si tienes una idea concreta, dime cuál y la hago.")
 
+    # ---------- 📱 tu prueba de la app ----------
+    def grabacion_nueva(self, app_id: str) -> dict:
+        """Subiste una grabación a un proyecto: si ya no se está haciendo, se rehace desde la investigación con ella."""
+        with self.lock:
+            p = self.proyectos[app_id]
+            ocupado = p["estado"] in ("produccion", "publicando")
+            if not ocupado:
+                p["estado"], p["error"], p["etapa"] = "produccion", None, "investigar"
+                self._tocar()
+        if ocupado:
+            return {"ok": True, "mensaje": "Guardé tu grabación. Como el video se está haciendo, la uso si le pides cambios."}
+        self.decir("investigador", f"¡Tu grabación de {p['titulo']}! La veo y rehacemos el video con ella 📱")
+        threading.Thread(target=self._producir, args=(app_id, p.get("notas", ""), "investigar", set()), daemon=True).start()
+        return {"ok": True, "mensaje": "Listo: Iván ve tu grabación y el equipo rehace el video con ella."}
+
+    def probe_app(self, nombre: str, grabacion: Path) -> None:
+        """📱 «Probé esta app»: Paola encuentra la app, arma el proyecto y lo arranca con tu grabación."""
+        from agentes import buscador
+
+        t = self.nueva_tarea("productora", "ideas", titulo=f"Tu prueba de {nombre}")
+        ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "ideas", t
+        self.tarea(t, estado="trabajando", inicio=time.time())
+        self.decir("productora", f"¡Probaste {nombre}! La busco y arrancamos con tu grabación 📱")
+        try:
+            app = buscador.encontrar_app(nombre, set()) or buscador.fuera_de_play(nombre)
+        except Exception as exc:  # noqa: BLE001
+            app, error = None, exc
+        if not app:
+            self.tarea(t, estado="fallo", fin=time.time(), error=f"No encontré «{nombre}»")
+            self.avisar_jefe(f"Jefe, no encontré «{nombre}» ni en Play Store ni en Google. Tu grabación quedó guardada; "
+                             "dime el nombre exacto y la uso.")
+            return
+        base = app["app_id"]
+        with self.lock:
+            app_id, n = base, 2
+            while app_id in self.proyectos:
+                app_id, n = f"{base}~{n}", n + 1
+        carpeta = config.ENTRADA / app_id
+        carpeta.mkdir(parents=True, exist_ok=True)
+        grabacion.rename(carpeta / grabacion.name)
+        self.tarea(t, estado="hecha", fin=time.time(), resultado=app["titulo"])
+        propuesta = {"app_id": app_id, "titulo": app["titulo"], "angulo": f"Probé {app['titulo']}: ¿paga o no?",
+                     "fuera_de_play": bool(app.get("fuera_de_play")), "personalizada": True,
+                     "idea_jefe": f"La probé yo (grabación de pantalla): {nombre}"}
+        self.iniciar_proyecto(propuesta, notas="El jefe probó la app y grabó la pantalla: el video se basa en su prueba.")
+        self.avisar_jefe(f"¡Va! Arranqué el video de {app['titulo']} con tu grabación. Te aviso cuando esté.")
+
+    def ideas_de_anuncios(self, app_id: str) -> None:
+        """Las apps de dinero que salieron en anuncios durante la prueba se vuelven ideas en tu bandeja."""
+        from agentes import buscador
+        from agentes import prueba as prueba_mod
+
+        datos = json.loads((config.SALIDA / app_id / "prueba.json").read_text(encoding="utf-8")) \
+            if (config.SALIDA / app_id / "prueba.json").exists() else None
+        nombres = prueba_mod.apps_anunciadas(datos)
+        if not nombres:
+            return
+        titulo = self.proyectos.get(app_id, {}).get("titulo", app_id)
+        hechas = set(buscador.historial())
+        nuevas = []
+        for nombre in nombres:
+            try:
+                app = buscador.encontrar_app(nombre, hechas)
+            except Exception:  # noqa: BLE001 — una que no se encuentre no frena las demás
+                app = None
+            if not app:
+                continue
+            with self.lock:
+                if any(p["app_id"] == app["app_id"] and p["estado"] == "pendiente" for p in self.propuestas) \
+                        or app["app_id"] in self.proyectos:
+                    continue
+                pendientes = [p.get("num", 0) for p in self.propuestas if p["estado"] == "pendiente"]
+                self.propuestas.append({
+                    "app_id": app["app_id"], "titulo": app["titulo"], "angulo": f"¿{app['titulo']} paga o es estafa?",
+                    "por_que": f"📢 Salió anunciada dentro de {titulo} mientras la probábamos (así llegan las estafas).",
+                    "potencial_vistas": "alto", "id": uuid.uuid4().hex[:8], "estado": "pendiente",
+                    "creado": time.time(), "comentarios": [], "num": max(pendientes, default=0) + 1})
+                self._tocar()
+            nuevas.append(app["titulo"])
+        if nuevas:
+            self.avisar_jefe(f"📢 Mientras probábamos {titulo} salieron anuncios de: {', '.join(nuevas)}. "
+                             "Te las dejé como ideas en la bandeja.")
+
     def _arrancar_mejor(self, candidatas: list[dict]) -> bool:
         """Piloto automático: Paola escoge la mejor idea y la arranca sin esperar tu 👍 (las demás se quedan en la
         bandeja). La mejor: la que pediste tú; si no, la de más potencial, y entre esas la inspirada en un video que pega."""
@@ -772,6 +855,8 @@ class Oficina:
                 return
             self.tarea(t, estado="hecha", fin=time.time())
             self._marcar(app_id, etapa, "hecha")
+            if etapa == "investigar" and getattr(prod, "prueba", None):
+                threading.Thread(target=self.ideas_de_anuncios, args=(app_id,), daemon=True).start()
             self.poner(agente, estado="libre", proyecto=None)
             # entregar: a quienes siguen (todos a la vez apenas llega con el primero) o a Paola si es lo último
             siguientes = sorted({ETAPA_AGENTE[e] for e, deps in canal.DEPENDE.items() if etapa in deps})
@@ -1389,6 +1474,47 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"error": str(exc)}, 400)
             return self._json({"ok": True, "archivo": p.name})
 
+        def _subir_grabacion(self):
+            """📱 Tu grabación de pantalla probando una app: a un proyecto (?proyecto=id) o para uno nuevo (?app=nombre).
+            Va en trozos directo al disco (puede pesar cientos de MB)."""
+            if "application/octet-stream" not in self.headers.get("Content-Type", ""):
+                return self._json({"error": "tipo no permitido"}, 403)
+            origen = self.headers.get("Origin")
+            if origen and urlparse(origen).netloc != self.headers.get("Host"):
+                return self._json({"error": "origen no permitido"}, 403)
+            q = parse_qs(urlparse(self.path).query)
+            proyecto, app = q.get("proyecto", [""])[0], q.get("app", [""])[0].strip()[:80]
+            ext = Path(q.get("nombre", ["grabacion.mp4"])[0]).suffix.lower()
+            largo = int(self.headers.get("Content-Length") or 0)
+            if ext not in (".mp4", ".mov", ".mkv", ".webm"):
+                return self._json({"error": "Sube un video (.mp4, .mov, .mkv o .webm)."}, 400)
+            if largo <= 0 or largo > 1536 * 1024 * 1024:
+                return self._json({"error": "La grabación debe pesar menos de 1.5 GB."}, 400)
+            if proyecto and proyecto not in oficina.proyectos:
+                return self._json({"error": "No existe ese proyecto."}, 400)
+            if not proyecto and len(app) < 2:
+                return self._json({"error": "Escribe el nombre de la app que probaste."}, 400)
+            carpeta = config.ENTRADA / (proyecto or "_por_asignar")
+            carpeta.mkdir(parents=True, exist_ok=True)
+            destino = carpeta / f"grabacion_{time.strftime('%Y%m%d_%H%M%S')}{ext}"
+            temporal = destino.with_name(destino.name + ".subiendo")
+            restante = largo
+            with open(temporal, "wb") as f:
+                while restante > 0:
+                    trozo = self.rfile.read(min(1024 * 1024, restante))
+                    if not trozo:
+                        break
+                    f.write(trozo)
+                    restante -= len(trozo)
+            if restante:
+                temporal.unlink(missing_ok=True)
+                return self._json({"error": "La subida se cortó; inténtalo otra vez."}, 400)
+            temporal.rename(destino)
+            if proyecto:
+                return self._json(oficina.grabacion_nueva(proyecto))
+            threading.Thread(target=oficina.probe_app, args=(app, destino), daemon=True).start()
+            return self._json({"ok": True, "mensaje": f"Paola está buscando «{app}» para armar el video con tu grabación."})
+
         def _tienda(self, metodo: str, cuerpo=None, tipo: str = "application/json", largo: int | None = None):
             """Pasa la petición a la oficina de TikTok Shop (misma contraseña que esta). Los videos y los clips
             pasan en trozos, sin cargarlos completos en memoria."""
@@ -1562,6 +1688,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return
             if urlparse(self.path).path == "/api/estilo/subir":
                 return self._subir()
+            if urlparse(self.path).path == "/api/grabacion":
+                return self._subir_grabacion()
             if urlparse(self.path).path in ("/tiktok/api/subir", "/sala/api/subir"):
                 return self._tienda_subir()
             if not self._mismo_origen():
