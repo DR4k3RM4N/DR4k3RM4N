@@ -15,7 +15,7 @@ paso() { printf '\n\033[1;33m▶ %s\033[0m\n' "$1"; }
 paso "Instalando programas (Python, ffmpeg, fuentes, firewall)"
 apt-get update -q
 DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3 python3-venv python3-pip ffmpeg \
-  fonts-dejavu-core git curl ufw debian-keyring debian-archive-keyring apt-transport-https gnupg
+  fonts-dejavu-core libcairo2 git curl ufw debian-keyring debian-archive-keyring apt-transport-https gnupg
 
 paso "Instalando Caddy (HTTPS automático)"
 if ! command -v caddy >/dev/null; then

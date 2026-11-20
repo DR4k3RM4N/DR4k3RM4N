@@ -7,8 +7,9 @@
 3. El código pone encima tu plantilla: titular enorme con borde (letra Luckiest Guy), el icono de la app en su
    cuadro blanco arriba a la derecha y el botón de SUSCRÍBETE abajo a la izquierda. Así el texto nunca sale chueco.
 
-Necesita GEMINI_API_KEY (Google AI Studio). Costo aprox.: PRECIO_IMAGEN USD por imagen (0.04 por defecto).
-Sin clave, Dani hace las miniaturas de siempre (gratis).
+Quién dibuja (MINIATURA_MOTOR en .env):
+  - "claude" (por defecto): Claude dibuja la escena con código (SVG) con tu plan, sin costo extra.
+  - "gemini": Gemini dibuja (necesita GEMINI_API_KEY; ~0.04 USD por imagen).
 """
 from __future__ import annotations
 
@@ -28,8 +29,19 @@ COLORES = {"blanco": ((255, 255, 255), (0, 0, 0)), "rojo": ((230, 30, 35), (255,
            "amarillo": ((255, 214, 10), (0, 0, 0)), "naranja": ((255, 150, 20), (255, 255, 255))}
 
 
+def motor() -> str:
+    m = config.env("MINIATURA_MOTOR", "claude").lower()
+    return "gemini" if m == "gemini" and config.env("GEMINI_API_KEY") else "claude"
+
+
 def disponible() -> bool:
-    return bool(config.env("GEMINI_API_KEY"))
+    if motor() == "gemini":
+        return True
+    try:
+        import cairosvg  # noqa: F401 — convierte el dibujo de Claude en imagen
+    except (ImportError, OSError):
+        return False
+    return True
 
 
 SCHEMA = {
@@ -147,6 +159,71 @@ def dibujar(escena: str, referencias: list[str], destino: Path) -> Path:
                        + json.dumps(r.json())[:200])
 
 
+# ---------- Claude dibuja con código (SVG) ----------
+SCHEMA_SVG = {
+    "type": "object",
+    "properties": {"svg": {"type": "string", "description": "El SVG completo, de <svg ...> a </svg>"}},
+    "required": ["svg"],
+    "additionalProperties": False,
+}
+
+SISTEMA_SVG = """Eres ilustrador de miniaturas de YouTube y dibujas con código: escribes SVG a mano. Tu estilo: caricatura
+2D moderna, vibrante y muy colorida, como los anuncios de juegos móviles (contornos oscuros gruesos, colores
+saturados, degradados, brillos, sombras suaves).
+
+Reglas técnicas (obligatorias):
+- <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">.
+- Solo formas: path, rect, circle, ellipse, polygon, line, g, defs, linearGradient, radialGradient, filter sencillo
+  (feGaussianBlur / feDropShadow). NADA de <text>, <image>, <foreignObject>, <script>, enlaces ni fuentes.
+- Sin letras ni números en ningún lado (el titular lo ponemos nosotros). Un "$" dibujado con path en monedas y
+  billetes sí se vale.
+- Composición (medidas exactas): la MITAD IZQUIERDA (x < 960) es solo fondo del escenario, sin personaje ni objetos
+  grandes (ahí va un titular enorme encima); la esquina superior derecha (x > 1400, y < 480) despejada (ahí va el
+  icono de la app). El personaje completo (cabeza, cuerpo y manos) va entre x = 980 y x = 1880, y el celular pegado
+  a él, de frente y grande (unos 300 x 520 px).
+- OBLIGATORIO: al menos 10 monedas doradas (círculos con borde, brillo y un "$" dibujado) y al menos 6 billetes
+  verdes (rectángulos inclinados con detalle) volando por TODA la imagen, también sobre el lado izquierdo (pequeños
+  y detrás del titular está bien), más destellos.
+- Personaje grande y MUY expresivo (ojos grandes, boca abierta, cejas marcadas, manos visibles) sosteniendo un
+  smartphone cuya pantalla muestra la mecánica de la app con formas (ruleta, tragamonedas, monedas, barra de
+  progreso, video, cripto…). Alrededor: billetes verdes, monedas doradas con brillo, diamantes o piezas, en
+  movimiento (inclinados, con estelas).
+- Detalle: fondo con escenario del tema (casino, parque, cuarto, ciudad), al menos 60 formas; que se vea profesional.
+- SVG válido y completo, máximo ~45,000 caracteres."""
+
+
+def _limpiar_svg(svg: str) -> str:
+    import re
+
+    svg = svg[svg.find("<svg"): svg.rfind("</svg>") + 6]
+    svg = re.sub(r"<(text|image|foreignObject|script|a|style)\b[^>]*>.*?</\1>", "", svg, flags=re.S | re.I)
+    svg = re.sub(r"<(text|image|foreignObject|script|a|use)\b[^>]*/>", "", svg, flags=re.I)
+    svg = re.sub(r'\s(xlink:)?href="(?!#)[^"]*"', "", svg)  # nada externo
+    return svg
+
+
+def dibujar_svg(escena: str, referencias: list[str], destino: Path) -> Path:
+    import cairosvg
+
+    contenido = []
+    for r in referencias[:2]:
+        if r and Path(r).exists():
+            contenido += [{"type": "text", "text": "Referencia de la app (colores, personaje, mecánica):"},
+                          estilo.imagen_bloque(r, 512)]
+    contenido.append({"type": "text", "text": f"Dibuja esta escena en SVG:\n{escena}"})
+    ultimo = None
+    for _ in range(2):  # si el SVG sale roto, una segunda vuelta
+        r = claude.json_estructurado(SISTEMA_SVG, contenido, SCHEMA_SVG, tarea="miniatura_dibujo", que="dibujar miniatura")
+        svg = _limpiar_svg(r.get("svg", ""))
+        try:
+            png = cairosvg.svg2png(bytestring=svg.encode("utf-8"), output_width=W, output_height=H, unsafe=False)
+            Image.open(io.BytesIO(png)).convert("RGB").save(destino, quality=95)
+            return destino
+        except Exception as exc:  # noqa: BLE001
+            ultimo = exc
+    raise RuntimeError(f"El dibujo salió roto: {ultimo}")
+
+
 # ---------- tu plantilla encima ----------
 def _fuente(tam: int) -> ImageFont.FreeTypeFont:
     propia = estilo.archivo("fuente")
@@ -245,7 +322,7 @@ def miniaturas(ficha: dict, expediente: dict, guion: dict, imagenes: dict, carpe
     for i, c in enumerate(conceptos(ficha, expediente, guion), 1):
         fondo = carpeta / f"miniatura_ia_fondo_{i}.jpg"
         try:
-            dibujar(c["escena"], refs, fondo)
+            (dibujar(c["escena"], refs, fondo) if motor() == "gemini" else dibujar_svg(c["escena"], refs, fondo))
         except Exception as exc:  # noqa: BLE001 — si una falla, siguen las demás
             print(f"  · la miniatura ilustrada {i} no salió: {exc}", flush=True)
             continue

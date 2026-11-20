@@ -130,8 +130,11 @@ distintos (escena en inglés + titular en español + por qué sube el CTR, regla
 (`GEMINI_API_KEY`, `GEMINI_MODELO_IMAGEN`, por defecto gemini-2.5-flash-image; ~$0.04/imagen, `PRECIO_IMAGEN`) dibuja
 la escena SIN texto con el icono y capturas como referencia; Pillow pone titular (Luckiest Guy, Apache 2.0, en
 `assets/fuentes/`), icono y botón. Solo videos de apps (no `tema:`); ajuste `miniaturas_ia`; sin clave o si falla,
-las miniaturas de siempre. Prueba en el servidor: `oficina.py --probar-miniatura`. El formato exacto de la API de
-Gemini NO se pudo verificar desde aquí (ai.google.dev bloqueado): hay reintentos sin imageConfig y con otro modelo.
+las miniaturas de siempre. Prueba en el servidor: `oficina.py --probar-miniatura`.
+**Miguel ya no usa Gemini**: el motor por defecto es `MINIATURA_MOTOR=claude` — Claude (tarea "miniatura_dibujo",
+Sonnet con el plan, ~75 s y ~$0.12–0.17 equivalentes por dibujo) escribe la escena en SVG (sin <text>/<image>,
+mitad izquierda libre, monedas y billetes obligatorios) y `cairosvg` (libcairo2) la convierte. Probado aquí con
+Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`MINIATURA_MOTOR=gemini`), sin probar.
 
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".

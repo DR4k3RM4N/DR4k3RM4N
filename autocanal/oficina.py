@@ -1944,14 +1944,15 @@ def probar_miniatura() -> None:
     from agentes import ilustrador
 
     if not ilustrador.disponible():
-        raise SystemExit("Falta GEMINI_API_KEY en .env (sudo nano /opt/canal/autocanal/.env).")
+        raise SystemExit("Falta instalar cairosvg: corre sudo bash /opt/canal/autocanal/despliegue/actualizar.sh")
     carpeta = config.SALIDA
     carpeta.mkdir(exist_ok=True)
     fondo = carpeta / "_prueba_fondo.jpg"
-    print("Pidiéndole el dibujo a Gemini…")
+    print("Dibujando (tarda 1 o 2 minutos)…")
     try:
-        ilustrador.dibujar("A very happy cartoon man holding a smartphone that shows a slot machine game, gold coins and "
-                           "dollar bills flying around, casino city at night background", [], fondo)
+        escena = ("A very happy cartoon man holding a smartphone that shows a slot machine game, gold coins and "
+                  "dollar bills flying around, casino city at night background")
+        (ilustrador.dibujar(escena, [], fondo) if ilustrador.motor() == "gemini" else ilustrador.dibujar_svg(escena, [], fondo))
     except Exception as exc:  # noqa: BLE001
         raise SystemExit(f"✖ {exc}")
     ilustrador.componer(fondo, None, "¿Paga o estafa?", "blanco", carpeta / "_prueba_miniatura.jpg")

@@ -5,6 +5,8 @@ if [ "$(id -u)" -ne 0 ]; then echo "Córrelo con sudo:  sudo bash $0"; exit 1; f
 APP="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$APP/.." && pwd)"
 sudo -u canal git -C "$REPO" pull --ff-only
+# Para convertir en imagen las miniaturas que Claude dibuja con código
+dpkg -s libcairo2 >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get install -y -q libcairo2 >/dev/null
 sudo -u canal "$APP/.venv/bin/pip" install -q -r "$APP/requirements.txt"
 # La voz gratis de Microsoft cambia seguido: edge-tts siempre en su última versión.
 sudo -u canal "$APP/.venv/bin/pip" install -q --upgrade edge-tts
