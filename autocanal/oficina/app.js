@@ -1794,7 +1794,8 @@
               : c.claude_code === "listo" && c.motion === "instalando" ? `<span class="chip">🎨 instalando…</span>` : ""}
             ${c.claude_code === "listo" ? `<span class="chip chip-estado-publicado" title="Editor IA: Claude Code edita con las manos libres en esta compu (tu plan, 0 ¢)">🧠 Editor IA</span>`
               : c.claude_code === "sin_sesion" ? `<span class="chip" title="Abre Claude Code en esa compu e inicia sesión">🧠 sin sesión</span>` : ""}
-            ${c.celular === "falta autorizar" ? `<span class="chip" title="En el cel acepta el mensaje «¿Permitir depuración por USB?» (marca «Permitir siempre»)">📱 falta autorizar</span>`
+            ${c.celular && c.celular.startsWith("!") ? `<span class="chip chip-cel-aviso" title="Revisa en el cel: Opciones de desarrollador → Depuración por USB prendida, y un cable de datos (no solo de carga). Si dice «faltan las herramientas», vuelve a correr INSTALAR_SALA.bat en esa compu.">📱 ${esc(c.celular.slice(1))}</span>`
+              : c.celular === "falta autorizar" ? `<span class="chip" title="En el cel acepta el mensaje «¿Permitir depuración por USB?» (marca «Permitir siempre»)">📱 falta autorizar</span>`
               : c.celular ? `<span class="chip chip-estado-publicado" title="El robot prueba las apps en este cel antes de investigarlas">📱 ${esc(c.celular)}</span>` : ""}</span>
         </div>
         ${carpetas.length ? `<div class="pc-carpetas"><small>📁 ${esc(loc.ruta || "Sala de edicion")}</small>

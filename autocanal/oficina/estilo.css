@@ -554,3 +554,4 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 #ide-desc { width: 100%; }
 .chat-botones { display: flex; gap: 6px; align-items: stretch; }
 .chat-botones label.btn { cursor: pointer; display: grid; place-items: center; min-width: 44px; }
+.chip-cel-aviso { background: rgba(250, 204, 21, .15); color: #fde68a; }

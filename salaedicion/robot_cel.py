@@ -80,12 +80,13 @@ def celular() -> dict:
     """{'serie', 'modelo'} si hay un Android conectado y autorizado; {} si no (o {'pendiente': True} si falta autorizar)."""
     ruta = cel.adb_ruta()
     if not ruta:
-        return {}
+        return {"motivo": "sin_adb"}
     try:
         salida = subprocess.run([ruta, "devices", "-l"], capture_output=True, text=True, timeout=15,
                                 creationflags=SIN_VENTANA).stdout
     except (OSError, subprocess.SubprocessError):
-        return {}
+        return {"motivo": "sin_adb"}
+    motivo = "no_veo"
     for linea in salida.splitlines()[1:]:
         partes = linea.split()
         if len(partes) >= 2 and partes[1] == "device":
@@ -93,7 +94,15 @@ def celular() -> dict:
             return {"serie": partes[0], "modelo": modelo.replace("_", " ")}
         if len(partes) >= 2 and partes[1] == "unauthorized":
             return {"pendiente": True}
-    return {}
+        if len(partes) >= 2 and partes[1] in ("offline", "no"):
+            motivo = "offline"
+    return {"motivo": motivo}
+
+
+# lo que se ve en la oficina cuando el cel todavía no está listo (empieza con "!")
+MOTIVOS = {"sin_adb": "!faltan las herramientas del cel (adb)",
+           "no_veo": "!no veo ningún cel conectado",
+           "offline": "!el cel no responde: desconecta y conecta el cable"}
 
 
 class Grabadora:

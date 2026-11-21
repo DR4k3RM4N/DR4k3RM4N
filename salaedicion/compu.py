@@ -921,7 +921,8 @@ def trabajar() -> None:
         import robot_cel
         datos["claude_code"] = estado_claude()
         cel = robot_cel.celular()  # 📱 ¿tu Android viejo está conectado? Entonces también prueba apps
-        datos["celular"] = cel.get("modelo") or ("falta autorizar" if cel.get("pendiente") else "")
+        datos["celular"] = cel.get("modelo") or ("falta autorizar" if cel.get("pendiente")
+                                                  else robot_cel.MOTIVOS.get(cel.get("motivo"), ""))
         datos["tipos"] = ["cris", "libre", "edu", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else []),
                           *(["probar_app"] if datos["claude_code"] == "listo" and cel.get("serie") else [])]
         datos["motion"] = ESTADO_MOTION["texto"]
@@ -935,6 +936,16 @@ def trabajar() -> None:
             vueltas += 1
             if vueltas % 30 == 0:  # cada 5 min: por si ya instalaste o iniciaste sesión en Claude Code
                 cerebro()
+            elif vueltas % 3 == 0:  # cada 30 s: ¿conectaste o autorizaste el cel? (es rápido)
+                try:
+                    import robot_cel
+                    c = robot_cel.celular()
+                    nuevo = c.get("modelo") or ("falta autorizar" if c.get("pendiente")
+                                                else robot_cel.MOTIVOS.get(c.get("motivo"), ""))
+                    if bool(c.get("serie")) != ("probar_app" in datos.get("tipos", [])) or nuevo != datos.get("celular"):
+                        cerebro()
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 of2.post("latido", {**datos, "libre": False, "pulso": True, "estado": ESTADO_COMPU["texto"]}, timeout=20)
             except (requests.RequestException, ValueError):
