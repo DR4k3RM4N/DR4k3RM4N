@@ -189,6 +189,9 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
     if "opcion" in props:
         return {"opcion": random.randint(1, 3), "razon": "Se parece más a tus referencias (demo)."}
     if "acciones" in props:
+        if re.search(r"publica", texto, re.I):  # demo: publicar desde el chat
+            return {"respuesta": "Va, los mando a publicar.", "acciones": [{"tipo": "publicar", "numero": 0, "texto": "",
+                    "agente": "", "canal": ""}]}
         if re.search(r"deja de|no vuelvas|nunca|siempre", texto, re.I):  # demo: una corrección para Gabi
             return {"respuesta": "¡Entendido, jefe!", "acciones": [{"tipo": "corregir", "numero": 0, "agente": "guionista",
                     "canal": "", "texto": "Nunca empieces el guion con un saludo; arranca con el gancho (demo)."}]}

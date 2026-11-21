@@ -393,6 +393,36 @@ class Oficina:
                 else:
                     partes.append(f"*{video['titulo']}* ya está {ESTADO_TEXTO.get(video['estado'], video['estado'])}: "
                                   "no lo puedo rehacer, pero anoté la corrección para los que siguen.")
+            elif tipo in ("publicar", "reintentar", "descartar"):  # 📤 todo desde el chat
+                buscado = {"publicar": ("revision",), "reintentar": ("error",), "descartar": ("revision", "error")}[tipo]
+                if n:
+                    elegidos = [videos[n - 1]] if 0 < n <= len(videos) else []
+                elif tipo == "descartar":
+                    elegidos = []  # descartar siempre pide número: no se tira todo por accidente
+                else:
+                    elegidos = [v for v in videos if v["estado"] in buscado]
+                if not elegidos:
+                    partes.append("No encontré videos para eso. Escribe *¿cómo van?* para ver la lista.")
+                hechos, fallas = [], []
+                for v in elegidos:
+                    if v["estado"] not in buscado:
+                        fallas.append(f"{v['titulo']} ({ESTADO_TEXTO.get(v['estado'], v['estado'])})")
+                        continue
+                    priv = texto if texto in ("public", "unlisted", "private") else "public"
+                    r = self.accion_proyecto(v["id"], tipo, "", int(v.get("titulo_n") or 1), priv if tipo == "publicar" else "")
+                    (fallas if "error" in r else hechos).append(v["titulo"])
+                verbo = {"publicar": "📤 Carla está subiendo", "reintentar": "🔁 Reintento", "descartar": "🗑️ Descartado"}[tipo]
+                if hechos:
+                    partes.append(f"{verbo}: " + ", ".join(f"*{t}*" for t in hechos)
+                                  + (". Si son públicos, se programan en la 📅 agenda y te aviso cada uno." if tipo == "publicar" else ""))
+                if fallas:
+                    partes.append("No se pudo con: " + ", ".join(fallas))
+            elif tipo == "piloto":
+                with self.lock:
+                    self.piloto = texto.lower() in ("on", "si", "sí", "prender", "true", "1")
+                    self._tocar()
+                partes.append("🚀 Piloto automático " + ("prendido: Paola arranca solas las mejores ideas." if self.piloto
+                                                          else "apagado: nada arranca sin que tú digas."))
             elif tipo == "miniaturas":  # 🖼️ Carla vuelve a poner las miniaturas que faltan en YouTube
                 video = videos[n - 1] if 0 < n <= len(videos) else None
                 threading.Thread(target=self.poner_miniaturas_faltantes, args=(canal, video["id"] if video else None),

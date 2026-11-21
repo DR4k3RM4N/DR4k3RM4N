@@ -195,6 +195,12 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   con error) con `accion_proyecto("cambios")`. Lista "📚 Lo que el equipo aprendió" con ✕ en el chat.
 - Probado aquí con Claude real: entiende correcciones por agente y por canal, y cambios a un video.
 
+- Chat (nov 2026, después): Miguel quiere resolver TODO desde el chat. Acciones extra: "miniaturas" (Carla pone
+  las que faltan en videos ya subidos de todos los canales; `poner_miniaturas_faltantes`), "publicar" (video N o 0 =
+  todos en revisión; privacidad en texto, por defecto público con agenda), "reintentar" (N o 0 = todos con error),
+  "descartar" (N obligatorio), "piloto" on/off. Paola NO debe prometer acciones que no existen (regla en el prompt).
+  El canal viejo no puede verificar teléfono → YouTube rechaza sus miniaturas (403); Cuida Tu Lana ya verificado.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

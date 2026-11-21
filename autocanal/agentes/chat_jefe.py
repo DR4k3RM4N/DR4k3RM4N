@@ -21,7 +21,8 @@ AYUDA = (
     "• *¿cómo van?* → te digo qué está haciendo cada quien\n"
     "• *Gabi, deja de empezar los guiones con 'hola'* → el equipo aprende la corrección y no lo repite\n"
     "• *al video 2 quítale la parte del final* → se rehace ese video con tu cambio\n"
-    "Para publicar un video entra a la oficina: ahí lo ves y das el visto bueno final."
+    "• *publica el 3* / *publica todos* → Carla los sube (y los programa en la agenda)\n"
+    "• *reintenta los que fallaron* · *descarta el 4* · *prende el piloto* / *apaga el piloto*"
 )
 
 SYSTEM = """Eres Paola, la productora de un canal de YouTube que investiga apps que prometen pagar dinero.
@@ -47,7 +48,11 @@ Reglas:
   "numero" y el cambio en "texto"). Si además es algo que no debe repetirse, agrega también un "corregir".
 - "miniaturas" = quiere que Carla vuelva a poner en YouTube las miniaturas de los videos ya subidos que no la
   tienen (todos los canales). Si nombra un solo video, pon su número en "numero"; si no, 0.
-- Publicar un video NO se hace por chat: dile que entre a la oficina para revisarlo.
+- "publicar" = subir a YouTube un video que espera revisión (número del video en "numero"; 0 = TODOS los que
+  esperan revisión). En "texto" pon "public", "unlisted" o "private" si lo dijo; si no, vacío (público con agenda).
+- "reintentar" = volver a intentar un video con problema (número; 0 = todos los que tienen problema).
+- "descartar" = tirar un video en revisión o con problema (número obligatorio).
+- "piloto" = prender o apagar el piloto automático: "texto" = "on" u "off".
 - MUY IMPORTANTE: solo puedes hacer las acciones de esta lista. Si pide algo que no está aquí (editar o
   borrar un video ya publicado, cambiar su título en YouTube, etc.), NO digas que lo vas a hacer ni que le avisas
   a alguien: dile con honestidad que eso todavía no lo puede hacer el equipo, y sugiere que se lo pida a quien
@@ -63,7 +68,8 @@ SCHEMA = {
             "type": "object",
             "properties": {
                 "tipo": {"type": "string", "enum": ["aprobar", "rechazar", "comentar", "pedir_ideas", "estado",
-                                                     "pendientes", "corregir", "cambios", "miniaturas"]},
+                                                     "pendientes", "corregir", "cambios", "miniaturas",
+                                                     "publicar", "reintentar", "descartar", "piloto"]},
                 "numero": {"type": "integer", "description": "Número de la idea o del video; 0 si no aplica"},
                 "texto": {"type": "string"},
                 "agente": {"type": "string", "enum": ["", "productora", "investigador", "guionista", "locutor",
