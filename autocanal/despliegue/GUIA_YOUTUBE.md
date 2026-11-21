@@ -71,3 +71,25 @@ YT_CATEGORIA=28         # 28 = Ciencia y tecnología · 22 = Gente y blogs · 26
 Reinicia después de cambiarlos: `sudo systemctl restart oficina`.
 
 En la pestaña **Estilo → YouTube** de la oficina verás si tu canal ya está conectado.
+
+## Otro canal más (sin quitar el principal)
+
+La oficina puede subir a varios canales. Cada canal extra tiene su propio proyecto de Google y su permiso:
+
+1. Crea sus credenciales (paso 1) **con la cuenta de ese canal** y súbelas a `/tmp/client_secret.json`.
+2. En el servidor (con el túnel `ssh -L 8090:localhost:8090 …`), cambia `fraudes` por el nombre corto que quieras:
+
+```bash
+sudo -u canal mkdir -p /opt/canal/autocanal/canales/fraudes
+```
+
+```bash
+sudo install -o canal -g canal -m 600 /tmp/client_secret.json /opt/canal/autocanal/canales/fraudes/client_secret.json
+```
+
+```bash
+cd /opt/canal/autocanal && sudo -u canal .venv/bin/python canal.py autorizar-youtube --canal fraudes --nicho fraudes --puerto 8090 --sin-navegador
+```
+
+3. `sudo systemctl restart oficina`. En la Bandeja aparece "📺 Para el canal" para elegir a qué canal van las ideas.
+

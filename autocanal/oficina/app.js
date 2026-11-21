@@ -97,7 +97,7 @@
       html += `
         <article class="tarjeta" data-idea="${esc(i.id)}">
           ${i.personalizada ? `<div class="tuya">💡 Tu idea</div>` : ""}
-          <div class="cabeza"><h4>${i.num ? `<span class="num">${i.num}</span>` : ""}${esc(i.titulo)}</h4><span class="chip chip-${esc(i.potencial_vistas)}">${esc(i.potencial_vistas)}</span></div>
+          <div class="cabeza"><h4>${i.num ? `<span class="num">${i.num}</span>` : ""}${esc(i.titulo)}${chipCanal(i.canal)}</h4><span class="chip chip-${esc(i.potencial_vistas)}">${esc(i.potencial_vistas)}</span></div>
           <p class="angulo">🎬 ${esc(i.angulo || "")}${i.formato ? ` <span class="chip chip-formato">${esc(i.formato)}</span>` : ""}</p>
           ${(i.fuentes || []).length ? `<p class="pista">📎 ${i.fuentes.map((u, k) => `<a href="${esc(u)}" target="_blank" rel="noopener">fuente ${k + 1}</a>`).join(" · ")}</p>` : ""}
           ${i.inspiracion ? `<p class="pista">📈 Inspirada en <a href="${esc(i.inspiracion.url)}" target="_blank" rel="noopener">${esc(i.inspiracion.titulo)}</a> (x${esc(i.inspiracion.multiplicador)} vistas vs. suscriptores)</p>` : ""}
@@ -198,7 +198,7 @@
     e.preventDefault();
     const boton = e.submitter || $("#form-ideas button");
     boton.disabled = true;
-    try { await api("/api/ideas", { guia: $("#guia").value.trim() }); $("#guia").value = ""; }
+    try { await api("/api/ideas", { guia: $("#guia").value.trim(), canal: $("#canal-pedido")?.value || "" }); $("#guia").value = ""; }
     catch (err) { alert(err.message); }
     setTimeout(() => (boton.disabled = false), 4000);
   });
@@ -218,7 +218,24 @@
   $("#a-la-vez").addEventListener("change", async (e) => {
     try { await api("/api/estilo/ajustes", { videos_a_la_vez: Number(e.target.value) }); } catch (err) { alert(err.message); }
   });
+  // 📺 varios canales: chip con el canal (si no es el principal) y el selector del pedido
+  function chipCanal(cid) {
+    if (!cid || cid === "principal") return "";
+    const c = (estado.canales || []).find((x) => x.id === cid);
+    return ` <span class="chip chip-canal">📺 ${esc(c?.nombre || cid)}</span>`;
+  }
+  function pintarCanales() {
+    const lista = estado.canales || [];
+    const caja = $("#canal-pedido");
+    if (!caja) return;
+    caja.parentElement.hidden = lista.length < 2;
+    if (document.activeElement === caja) return;
+    const actual = caja.value || "principal";
+    caja.innerHTML = lista.map((c) => `<option value="${esc(c.id)}">${esc(c.nombre || c.id)}${c.conectado ? "" : " (sin conectar)"}</option>`).join("");
+    caja.value = lista.some((c) => c.id === actual) ? actual : "principal";
+  }
   function pintarIdeasAuto() {
+    pintarCanales();
     const piloto = $("#piloto");
     if (document.activeElement !== piloto) piloto.checked = !!estado.piloto;
     if (document.activeElement !== $("#publicar-solo")) $("#publicar-solo").checked = !!estado.publicar_solo;
@@ -260,7 +277,7 @@
       const pub = p.publicado ? `<div class="enlaces"><a href="${esc(p.publicado.youtube)}" target="_blank" rel="noopener">▶ YouTube</a>
         ${p.publicado.blog?.link ? `<a href="${esc(p.publicado.blog.link)}" target="_blank" rel="noopener">✎ Blog</a>` : ""}</div>` : "";
       return `<article class="tarjeta">
-        <div class="cabeza"><h4>${esc(p.titulo)}</h4><span class="chip chip-estado-${esc(p.estado)}">${esc(ESTADO_PROY[p.estado] || p.estado)}</span></div>
+        <div class="cabeza"><h4>${esc(p.titulo)}${chipCanal(p.canal)}</h4><span class="chip chip-estado-${esc(p.estado)}">${esc(ESTADO_PROY[p.estado] || p.estado)}</span></div>
         <ol class="pasos">${pasos}</ol>${pub}
         ${(estado.tareas || []).filter((t) => t.proyecto === p.id && t.estado === "trabajando" && t.paso).map((t) =>
           `<p class="en-curso">${esc(agentes[t.agente]?.nombre || t.agente)}: ${esc(t.paso)}${t.avance ? ` · ${Math.round(t.avance * 100)}%` : ""}</p>`).join("")}
@@ -703,19 +720,22 @@
     try { e = await api("/api/estilo"); } catch { return; }
     estado_estilo = e;
     let man = { texto: "", propio: false };
-    try { man = await api("/api/manual"); } catch {}
+    const canalManual = (window.__canalManual = window.__canalManual || "principal");
+    try { man = await api(`/api/manual?canal=${encodeURIComponent(canalManual)}`); } catch {}
+    const canalesLista = estado?.canales || [{ id: "principal", nombre: "Canal principal" }];
     const a = e.ajustes, m = e.miniaturas, b = e.blog;
     const sel = (k, ops) => `<select data-ajuste="${k}">${ops.map(([v, t]) => `<option value="${v}" ${String(a[k]) === String(v) ? "selected" : ""}>${t}</option>`).join("")}</select>`;
     const chk = (k, t) => `<label class="chk"><input type="checkbox" data-ajuste="${k}" ${a[k] ? "checked" : ""}> ${t}</label>`;
     $("#estilo").innerHTML = `
       <section class="tarjeta estilo-sec" style="--c:#e84d8a">
         <h4>📘 Manual del canal · todos lo leen</h4>
+        ${canalesLista.length > 1 ? `<label>Canal <select id="canal-manual">${canalesLista.map((c) => `<option value="${esc(c.id)}" ${c.id === canalManual ? "selected" : ""}>${esc(c.nombre || c.id)}</option>`).join("")}</select></label>` : ""}
         <p class="pista">Es la "skill" de tu canal: cómo es el gancho, cuánto dura cada parte, las voces, lo que se ve y lo
           que suena. Todos los agentes lo leen antes de trabajar. Se escribe solo con el video que te gusta (pega su
           enlace en Edición) y lo que les has pedido; también lo puedes corregir a mano.</p>
         <div class="acciones">
           <button class="btn btn-primario" data-manual="escribir">✨ Que Paola lo escriba con mis referencias</button>
-          <a class="btn" href="/descargar/manual-skill.md" download>⬇ Bajar como skill</a>
+          <a class="btn" href="/descargar/manual-skill.md?canal=${encodeURIComponent(canalManual)}" download>⬇ Bajar como skill</a>
         </div>
         <details class="manual"><summary>${man.propio ? "Ver o corregir tu manual" : "Ver el manual de inicio (todavía no es tuyo)"}</summary>
           <textarea id="manual-texto" rows="18">${esc(man.texto)}</textarea>
@@ -795,6 +815,7 @@
 
   $("#estilo").addEventListener("change", async (ev) => {
     const el = ev.target;
+    if (el.id === "canal-manual") { window.__canalManual = el.value; return pintarEstilo(); }
     if (el.dataset.subir) {
       const archivos = [...el.files];
       el.closest(".tarjeta").classList.add("saliendo");
@@ -825,14 +846,14 @@
       return pintarEstilo();
     }
     if (b.dataset.manual === "guardar") {
-      try { await api("/api/manual", { texto: $("#manual-texto").value }); b.textContent = "✔ Guardado"; }
+      try { await api("/api/manual", { texto: $("#manual-texto").value, canal: window.__canalManual || "principal" }); b.textContent = "✔ Guardado"; }
       catch (err) { alert(err.message); }
       return;
     }
     if (b.dataset.manual === "escribir") {
       const urls = ($("#ref-url")?.value || "").split(/\s+/).filter((u) => u.startsWith("http"));
       try {
-        await api("/api/estilo/estudiar", { que: "manual", urls });
+        await api("/api/estilo/estudiar", { que: "manual", urls, canal: window.__canalManual || "principal" });
         b.textContent = "Paola está escribiendo el manual… (míralo en la oficina)";
         b.disabled = true;
         setTimeout(pintarEstilo, 90000);

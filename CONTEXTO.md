@@ -170,6 +170,21 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   "REGLA PERMANENTE". Paola dice "Entendí: …". Pedido vacío = apps nuevas de Play Store como antes.
 - Probado aquí con Claude real y resultados simulados: buena mezcla de temas y apps, regla bien detectada.
 
+## 3i. Varios canales de YouTube (nov 2026)
+- El canal "Apps que sí pagan" perdió el acceso por la web pero sigue subiendo y monetizando por API: se queda como
+  canal **principal** (youtube_token.json / client_secret.json en autocanal/). Miguel abrió un canal nuevo de
+  **alertas de fraude / montadeudas (México)** con cuenta y proyecto de Google nuevos.
+- `agentes/canales.py`: registro en `canales.json` (id, nombre, nicho apps|fraudes|libre, blog). Canales extra en
+  `canales/<id>/` (token + client_secret; ignorados en git). `claude.contexto.canal` = canal del trabajo en curso.
+- Alta: `canal.py autorizar-youtube --canal <id> --nicho fraudes --puerto 8090 --sin-navegador` (toma el nombre
+  real del canal de la API). YouTube por canal en `youtube.py` (`_servicio(canal=…)`, nunca pide permiso a media
+  publicación); `canal.publicar` usa `origen.json["canal"]`; el blog (WordPress) solo en el principal.
+- Pedido de ideas con selector "📺 Para el canal" (Bandeja); ideas y proyectos llevan `canal` (chip rosa).
+  Canal de fraudes con casilla vacía → alerta de la semana (investigadora). 📌 reglas por canal ("[id] regla").
+  Ideas de la mañana para cada canal conectado. 📘 manual por canal (`estilo/manual_<id>.md`; el de fraudes trae un
+  manual de inicio con reglas de datos/fuentes), selector en Estilo. Agenda por canal (cuota propia por proyecto).
+  Miniaturas ilustradas solo en el principal. El robot nunca pide préstamos.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

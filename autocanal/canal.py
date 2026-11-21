@@ -157,7 +157,8 @@ class Produccion:
         datos = estilo.cargar()
         refs = estilo.referencias()
         # 🎨 videos de apps: 3 miniaturas ilustradas (caricatura con IA + tu plantilla), si hay clave de Gemini
-        if not self.app_id.startswith("tema:") and ilustrador.disponible() and datos["ajustes"].get("miniaturas_ia", True):
+        if (not self.app_id.startswith("tema:") and ilustrador.disponible() and datos["ajustes"].get("miniaturas_ia", True)
+                and _canal_de(self.carpeta.name) == "principal"):  # ese estilo es solo de "Apps que sí pagan"
             try:
                 opciones = ilustrador.miniaturas(self.ficha, self.expediente, self.guion, self.imagenes, self.carpeta)
             except Exception as exc:  # noqa: BLE001 — si falla, Dani hace las de siempre
@@ -306,6 +307,11 @@ def _reporte(carpeta, ficha, exp, guion, entrada, video, mini) -> None:
     (carpeta / "REVISAR.md").write_text("\n".join(l), encoding="utf-8")
 
 
+def _canal_de(app_id: str) -> str:
+    from agentes import canales
+    return (_leer(config.SALIDA / app_id / "origen.json") or {}).get("canal") or canales.PRINCIPAL
+
+
 def _hora_programada(privacidad: str, app_id: str = "") -> tuple[str | None, str]:
     """Si pediste público, el horario en que sale: el 📅 gestor de horarios (si está prendido) o la hora fija de la
     pestaña Estilo. Devuelve (UTC para YouTube, texto para ti)."""
@@ -315,7 +321,7 @@ def _hora_programada(privacidad: str, app_id: str = "") -> tuple[str | None, str
     from agentes import agenda, estilo
 
     if privacidad == "public" and app_id and agenda.reglas()["activa"]:
-        t = agenda.siguiente(app_id, agenda.tipo_de(app_id))
+        t = agenda.siguiente(app_id, agenda.tipo_de(app_id), canal=_canal_de(app_id))
         return t.strftime("%Y-%m-%dT%H:%M:%SZ"), agenda.texto(t)
 
     hora = estilo.cargar()["ajustes"].get("publicar_hora") or ""
@@ -340,8 +346,12 @@ def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> d
     if not (guion and entrada and (carpeta / "video.mp4").exists()):
         raise RuntimeError(f"Falta el video o el blog. Primero ejecuta: python canal.py crear {app_id}")
     pub = _leer(carpeta / "publicado.json") or {}
+    from agentes import canales
+    canal = pub.get("canal") or (_leer(carpeta / "origen.json") or {}).get("canal") or canales.PRINCIPAL
+    pub["canal"] = canal
 
-    con_blog = bool(config.env("WP_URL") and config.env("WP_USUARIO") and config.env("WP_APP_PASSWORD"))
+    con_blog = bool(config.env("WP_URL") and config.env("WP_USUARIO") and config.env("WP_APP_PASSWORD")) \
+        and bool(canales.get(canal).get("blog"))  # el blog es del canal principal
     if "blog" not in pub:
         if con_blog:
             print("Subiendo entrada a WordPress…")
@@ -371,7 +381,7 @@ def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> d
         publicar_en, programado = _hora_programada(privacidad or config.env("YT_PRIVACIDAD", "private"), app_id)
         pub["youtube"] = youtube.subir(carpeta / "video.mp4", carpeta / "miniatura.jpg",
                                        guion["titulos"][titulo_n - 1], desc, guion["etiquetas"], sintetico, privacidad,
-                                       publicar_en)
+                                       publicar_en, canal=canal)
         if programado:
             from agentes import agenda
             pub["programado"], pub["programado_utc"] = programado, publicar_en
@@ -379,7 +389,7 @@ def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> d
             print(f"  · programado para hacerse público: {programado}")
         pub["privacidad_pedida"] = privacidad or config.env("YT_PRIVACIDAD", "private")
         try:
-            pub["privacidad"] = youtube.privacidad_real(pub["youtube"])
+            pub["privacidad"] = youtube.privacidad_real(pub["youtube"], canal=canal)
         except Exception as exc:  # noqa: BLE001 — saberlo es un extra
             print(f"  · no pude revisar cómo quedó el video: {exc}")
         _guardar(carpeta / "publicado.json", pub)
@@ -387,7 +397,7 @@ def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> d
 
     if pub.get("youtube") and not pub.get("miniatura_puesta") and (carpeta / "miniatura.jpg").exists():
         try:  # aparte del video: si YouTube no la acepta, el video ya quedó arriba y no se vuelve a subir
-            youtube.poner_miniatura(pub["youtube"], carpeta / "miniatura.jpg")
+            youtube.poner_miniatura(pub["youtube"], carpeta / "miniatura.jpg", canal=canal)
             pub["miniatura_puesta"], pub["miniatura_error"] = True, None
         except Exception as exc:  # noqa: BLE001
             pub["miniatura_error"] = str(exc)[:300]
@@ -426,7 +436,8 @@ def publicar_blog(app_id: str) -> dict:
         _guardar(carpeta / "publicado.json", pub)
     if pub.get("youtube") and not pub.get("enlace_en_youtube"):
         try:
-            youtube.agregar_a_descripcion(pub["youtube"], f"Análisis completo: {pub['blog']['link']}")
+            youtube.agregar_a_descripcion(pub["youtube"], f"Análisis completo: {pub['blog']['link']}",
+                                          canal=pub.get("canal"))
             pub["enlace_en_youtube"] = True
             _guardar(carpeta / "publicado.json", pub)
         except Exception as exc:  # noqa: BLE001 — el blog ya está; esto es un extra
@@ -487,6 +498,9 @@ def main() -> None:
     sub.add_parser("demo")
     s = sub.add_parser("autorizar-youtube", help="da permiso a tu canal (crea youtube_token.json)")
     s.add_argument("--puerto", type=int, default=0, help="en un servidor usa 8090 con un túnel SSH")
+    s.add_argument("--canal", default="principal",
+                   help="id del canal (principal = el de siempre; otro nombre = canal extra en canales/<id>/)")
+    s.add_argument("--nicho", choices=["apps", "fraudes", "libre"], default=None, help="de qué trata ese canal")
     s.add_argument("--sin-navegador", action="store_true", help="solo muestra el enlace (para servidores)")
     a = p.parse_args()
 
@@ -511,10 +525,18 @@ def main() -> None:
     elif a.cmd == "demo":
         demo()
     elif a.cmd == "autorizar-youtube":
-        from agentes import youtube
-        canal_info = youtube._servicio(a.puerto, not a.sin_navegador).channels().list(part="snippet", mine=True).execute()
+        from agentes import canales, youtube
+        cid = canales.slug(a.canal) if a.canal != canales.PRINCIPAL else canales.PRINCIPAL
+        canales.carpeta(cid).mkdir(parents=True, exist_ok=True)
+        if not canales.secreto(cid).exists():
+            raise SystemExit(f"Falta {canales.secreto(cid)}: pon ahí el client_secret.json de ese canal.")
+        canal_info = youtube._servicio(a.puerto, not a.sin_navegador, canal=cid, autorizar=True) \
+            .channels().list(part="snippet", mine=True).execute()
         nombre = (canal_info.get("items") or [{}])[0].get("snippet", {}).get("title", "?")
-        print(f"✔ Listo, autorizado el canal: {nombre}. Se creó youtube_token.json")
+        if cid != canales.PRINCIPAL:
+            canales.guardar(cid, nombre=nombre, nicho=a.nicho or canales.get(cid).get("nicho") or "libre",
+                            blog=False)
+        print(f"✔ Listo, autorizado el canal: {nombre} (id en la oficina: {cid}). Se creó {canales.token(cid)}")
 
 
 if __name__ == "__main__":

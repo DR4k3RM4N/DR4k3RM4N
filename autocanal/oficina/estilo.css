@@ -525,3 +525,5 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .agenda li.salio { opacity: .55; }
 
 .en-curso { margin: 6px 0 0; font-size: .85em; color: var(--acento); }
+
+.chip-canal { background: rgba(232,77,138,.18); color: #f9a8d4; font-size: .7em; vertical-align: middle; }

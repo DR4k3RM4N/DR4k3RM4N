@@ -49,6 +49,8 @@ de verdad paga.
 - NUNCA escribas datos reales: ni nombres, ni correos, ni teléfonos, ni datos bancarios o de PayPal. Si un paso los
   exige, anótalo (`./cel nota "Pide número de teléfono para seguir"`) y no sigas por ahí.
 - NUNCA pagues, compres ni aceptes suscripciones o pruebas gratis.
+- NUNCA pidas un préstamo ni un crédito, ni llenes solicitudes. En apps de préstamos solo revisa qué permisos pide
+  (anótalos), qué promete y sus condiciones, y termina: muchas son montadeudas que extorsionan con tus contactos.
 - Permisos: niega contactos, SMS, llamadas, ubicación y archivos. Acepta solo notificaciones si no hay otra forma.
 - NUNCA instales nada fuera de Play Store (APKs, "descarga aquí"), ni instales las apps de los anuncios: solo se
   guardan en la lista de deseos con `./cel guardar_deseo` y se regresa.

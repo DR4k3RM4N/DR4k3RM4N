@@ -186,6 +186,7 @@ class Oficina:
                     "deseos": [d for d in self.deseos if d["estado"] == "pendiente"][-60:],
                     "deseos_por_dia": int(config.env("DESEOS_POR_DIA", "2") or 0),
                     "agenda": self._agenda_cache(),
+                    "canales": self._canales(),
                     "publicar_solo": bool(estilo.cargar()["ajustes"].get("publicar_solo")),
                     "a_la_vez": self.a_la_vez(),
                     "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
@@ -463,7 +464,10 @@ class Oficina:
                     if 0 <= minutos < 120 and self.ultima_busqueda != hoy:
                         self.ultima_busqueda = hoy
                         self._tocar()
-                        self.pedir_ideas(IDEAS_GUIA)
+                        from agentes import canales
+                        for c in canales.lista():  # cada canal conectado recibe sus ideas de la mañana
+                            if c["id"] == canales.PRINCIPAL or canales.conectado(c["id"]):
+                                self.pedir_ideas(IDEAS_GUIA if c["id"] == canales.PRINCIPAL else "", c["id"])
                 if time.time() - ultima_limpieza > 3600:
                     ultima_limpieza = time.time()
                     self.limpiar()
@@ -508,27 +512,50 @@ class Oficina:
         self.visitar("productora", "jefe", texto)
 
     # ---------- ideas ----------
-    def pedir_ideas(self, guia: str = "") -> None:
-        threading.Thread(target=self._ideas, args=(guia,), daemon=True).start()
+    def pedir_ideas(self, guia: str = "", canal: str = "") -> None:
+        threading.Thread(target=self._ideas, args=(guia, canal), daemon=True).start()
 
-    def _ideas(self, guia: str) -> None:
-        from agentes import buscador
+    def reglas_de(self, canal: str) -> list[str]:
+        """Las 📌 reglas que aplican a un canal: las generales y las que dicen «[canal]»."""
+        salida = []
+        for r in self.reglas:
+            if r.startswith("[") and "] " in r:
+                cid, texto = r[1:].split("] ", 1)
+                if cid == canal:
+                    salida.append(texto)
+            else:
+                salida.append(r)
+        return salida
 
+    def _ideas(self, guia: str, canal: str = "") -> None:
+        from agentes import buscador, canales
+
+        canal = canal if canal and canales.existe(canal) else canales.PRINCIPAL
+        info_canal = canales.get(canal)
         if guia:
             with self.lock:
-                self.preferencias.append(f"Pidió: {guia}")
-        t = self.nueva_tarea("productora", "ideas", titulo=guia or "Búsqueda general")
+                self.preferencias.append(f"Pidió{'' if canal == canales.PRINCIPAL else ' para ' + info_canal['nombre']}: {guia}")
+        elif info_canal.get("nicho") == "fraudes":  # vacío en el canal de fraudes: la alerta de la semana
+            guia = ("Investiga las alertas de fraude y estafas que están pegando esta semana en México (Condusef, Policía "
+                    "Cibernética, Consejo Ciudadano, noticias), incluyendo apps de préstamo montadeudas, y propón videos "
+                    "que expliquen cómo operan, cómo reconocerlas y qué hacer.")
+        t = self.nueva_tarea("productora", "ideas", titulo=(guia or "Búsqueda general")
+                             + ("" if canal == canales.PRINCIPAL else f" · 📺 {info_canal['nombre']}"))
         ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "ideas", t
+        ia.contexto.canal = canal
         self.tarea(t, estado="trabajando", inicio=time.time())
         self.poner("productora", estado="trabajando")
         self.decir("productora", f"¡Voy con tu pedido! «{guia[:80]}»" if guia else "¡Voy! Busco apps nuevas en Play Store")
         try:
-            gustos = "\n".join([*(f"- REGLA PERMANENTE: {r}" for r in self.reglas[-20:]),
+            gustos = "\n".join([f"- CANAL: {info_canal['nombre']} — {canales.NICHOS.get(info_canal.get('nicho'), '')}",
+                                 *(f"- REGLA PERMANENTE: {r}" for r in self.reglas_de(canal)[-20:]),
                                  *(f"- {p}" for p in self.preferencias[-15:])])
             candidatas = buscador.ideas(5, gustos, pedido=guia)
             if candidatas:
                 entendi = candidatas[0].pop("entendi", "")
                 regla = (candidatas[0].pop("regla_permanente", "") or "").strip()
+                if canal != canales.PRINCIPAL and regla:
+                    regla = f"[{canal}] {regla}"
                 if regla and regla not in self.reglas:
                     with self.lock:
                         self.reglas.append(regla[:200])
@@ -547,6 +574,7 @@ class Oficina:
             ya = set(pend) | {k.split("~")[0] for k in self.proyectos}
             nuevas, actualizadas = [], []
             for c in candidatas:
+                c["canal"] = canal
                 notas = [f"Idea del jefe: {c['idea_jefe']}"] if c.get("idea_jefe") else []
                 if c.get("personalizada") and c["app_id"] in pend:  # ya estaba: se le pone tu enfoque
                     p = pend[c["app_id"]]
@@ -751,6 +779,10 @@ class Oficina:
             except Exception as exc:  # noqa: BLE001 — el ciclo nunca debe morir
                 print(f"aviso: ciclo de deseos: {exc}")
 
+    def _canales(self) -> list:
+        from agentes import canales
+        return [{**c, "conectado": canales.conectado(c["id"])} for c in canales.lista()]
+
     def _agenda_cache(self) -> list:
         from agentes import agenda
         ahora = time.time()
@@ -867,11 +899,13 @@ class Oficina:
             carpeta.mkdir(parents=True, exist_ok=True)
             (carpeta / "origen.json").write_text(json.dumps(
                 {"nombre": propuesta["titulo"], "angulo": propuesta.get("angulo", ""), "fuera_de_play": propuesta.get("fuera_de_play", False),
-                 "tema": propuesta.get("tema", ""), "formato": propuesta.get("formato", "")},
+                 "tema": propuesta.get("tema", ""), "formato": propuesta.get("formato", ""),
+                 "canal": propuesta.get("canal") or "principal"},
                 ensure_ascii=False), encoding="utf-8")
             self.proyectos[app_id] = {"id": app_id, "titulo": propuesta["titulo"], "angulo": propuesta.get("angulo", ""),
                                       "estado": "produccion", "etapa": "investigar", "etapas": {},
-                                      "creado": time.time(), "error": None, "notas": notas, "publicado": None}
+                                      "creado": time.time(), "error": None, "notas": notas, "publicado": None,
+                                      "canal": propuesta.get("canal") or "principal"}
             self._tocar()
         threading.Thread(target=self._producir, args=(app_id, notas, None, set()), daemon=True).start()
 
@@ -979,6 +1013,7 @@ class Oficina:
             self.poner(agente, estado="trabajando", proyecto=app_id)
             self.decir(agente, random.choice(FRASES[agente]), al_log=False)
             ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = app_id, etapa, t
+            ia.contexto.canal = self.proyectos.get(app_id, {}).get("canal") or "principal"
             ultimo = {"t": 0.0, "paso": ""}
 
             def al_avanzar(paso, fraccion, t=t, agente=agente):
@@ -1243,12 +1278,12 @@ class Oficina:
         self.avisar_jefe(f"¡Listo! El blog de {titulo} ya está arriba y enlazado con el video 📝")
 
     # ---------- estilo ----------
-    def estudiar(self, que: str, urls: list[str] | None = None) -> None:
+    def estudiar(self, que: str, urls: list[str] | None = None, canal: str = "principal") -> None:
         agente, etapa = {"miniaturas": ("disenadora", "estilo_miniaturas"), "video": ("editor", "estilo_video"),
                          "manual": ("productora", "estilo_manual")}.get(que, ("redactora", "estilo_blog"))
-        threading.Thread(target=self._estudiar, args=(agente, etapa, urls or []), daemon=True).start()
+        threading.Thread(target=self._estudiar, args=(agente, etapa, urls or [], canal), daemon=True).start()
 
-    def _estudiar(self, agente: str, etapa: str, urls: list[str]) -> None:
+    def _estudiar(self, agente: str, etapa: str, urls: list[str], canal: str = "principal") -> None:
         t = self.nueva_tarea(agente, etapa, titulo="Tu estilo")
         with self.turnos[agente]:
             self.tarea(t, estado="trabajando", inicio=time.time())
@@ -1257,6 +1292,7 @@ class Oficina:
                                 "productora": "Voy a escribir el manual del canal con lo que te gusta 📘"}
                        .get(agente, "Voy a leer tus entradas…"))
             ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, etapa, t
+            ia.contexto.canal = canal
             try:
                 if agente == "disenadora":
                     r = estilo.estudiar_miniaturas()
@@ -1819,9 +1855,11 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             if ruta.startswith("/estilo/"):
                 return self._archivo(estilo.DIR / ruta[len("/estilo/"):], estilo.DIR)
             if ruta == "/api/manual":
-                return self._json({"texto": manual_canal.leer(), "propio": manual_canal.ARCHIVO.exists()})
+                cid = parse_qs(urlparse(self.path).query).get("canal", ["principal"])[0]
+                return self._json({"texto": manual_canal.leer(cid), "propio": manual_canal.archivo(cid).exists()})
             if ruta == "/descargar/manual-skill.md":  # para usarlo como skill en tus chats de Claude
-                cuerpo = manual_canal.como_skill().encode()
+                cid = parse_qs(urlparse(self.path).query).get("canal", ["principal"])[0]
+                cuerpo = manual_canal.como_skill(cid).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/markdown; charset=utf-8")
                 self.send_header("Content-Disposition", 'attachment; filename="SKILL.md"')
@@ -1915,7 +1953,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 urls = [str(u)[:500] for u in datos.get("urls", [])][:6]
                 if que == "blog" and not urls:
                     return self._json({"error": "Pega al menos un enlace."}, 400)
-                oficina.estudiar(que, urls)
+                oficina.estudiar(que, urls, str(datos.get("canal") or "principal"))
                 return self._json({"ok": True})
             if ruta == "/api/estilo/ajustes":
                 return self._json({"ajustes": estilo.ajustar(datos)})
@@ -1923,7 +1961,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 texto = str(datos.get("texto", ""))
                 if len(texto.strip()) < 200:
                     return self._json({"error": "El manual quedó muy corto; no lo guardé."}, 400)
-                manual_canal.guardar(texto)
+                manual_canal.guardar(texto, str(datos.get("canal") or "principal"))
                 return self._json({"ok": True})
             if ruta == "/api/estilo/borrar":
                 estilo.borrar(str(datos.get("tipo")), str(datos.get("nombre", "")))
@@ -1952,7 +1990,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     oficina._tocar()
                 return self._json({"ok": True, "activo": oficina.ideas_auto})
             if ruta == "/api/ideas":
-                oficina.pedir_ideas(str(datos.get("guia", ""))[:500])
+                oficina.pedir_ideas(str(datos.get("guia", ""))[:500], str(datos.get("canal", ""))[:40])
                 return self._json({"ok": True})
             if ruta.startswith("/api/idea/"):
                 accion = datos.get("accion")

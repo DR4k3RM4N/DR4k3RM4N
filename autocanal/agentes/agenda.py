@@ -31,7 +31,7 @@ def reglas() -> dict:
             "max_dia": int(config.env("AGENDA_MAX_DIA", "5") or 5)}
 
 
-def ocupados(sin: str = "") -> list[dict]:
+def ocupados(sin: str = "", canal: str | None = None) -> list[dict]:
     """Lo que ya está programado o publicado en los últimos días (de todos los proyectos)."""
     salida = []
     limite = dt.datetime.now(UTC) - dt.timedelta(days=2)
@@ -45,9 +45,12 @@ def ocupados(sin: str = "") -> list[dict]:
         cuando = pub.get("programado_utc")
         if not cuando or pub.get("desprogramado"):
             continue
+        if canal and (pub.get("canal") or "principal") != canal:  # cada canal tiene su propia agenda
+            continue
         t = dt.datetime.strptime(cuando, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
         if t >= limite:
             salida.append({"t": t, "tipo": pub.get("tipo_video", "investigacion"), "app": f.parent.name.split("~")[0],
+                           "canal": pub.get("canal") or "principal",
                            "proyecto": f.parent.name, "titulo": pub.get("titulo", "")})
     return sorted(salida, key=lambda x: x["t"])
 
@@ -58,12 +61,12 @@ def tipo_de(app_id: str) -> str:
     return "grabacion" if prueba.exists() else "investigacion"
 
 
-def siguiente(app_id: str, tipo: str, desde: dt.datetime | None = None) -> dt.datetime:
+def siguiente(app_id: str, tipo: str, desde: dt.datetime | None = None, canal: str | None = None) -> dt.datetime:
     """El primer horario libre que cumple las reglas (en UTC)."""
     r = reglas()
     z = zona()
     ahora = (desde or dt.datetime.now(UTC)).astimezone(z)
-    otros = ocupados(sin=app_id)
+    otros = ocupados(sin=app_id, canal=canal or "principal")
     app = app_id.split("~")[0]
     inicio = ahora + dt.timedelta(minutes=50)  # YouTube necesita margen para programar
     hora = inicio.replace(minute=0, second=0, microsecond=0) + (dt.timedelta(hours=1) if inicio.minute else dt.timedelta())
@@ -98,6 +101,6 @@ def proximos() -> list[dict]:
     """Para la pestaña Agenda: lo que viene (y lo de hoy que ya salió)."""
     z = zona()
     hoy = dt.datetime.now(z).replace(hour=0, minute=0, second=0, microsecond=0)
-    return [{"proyecto": o["proyecto"], "titulo": o["titulo"], "tipo": o["tipo"], "cuando": texto(o["t"]),
+    return [{"proyecto": o["proyecto"], "titulo": o["titulo"], "tipo": o["tipo"], "cuando": texto(o["t"]), "canal": o["canal"],
              "t": o["t"].timestamp(), "ya_salio": o["t"] <= dt.datetime.now(UTC)}
             for o in ocupados() if o["t"].astimezone(z) >= hoy]
