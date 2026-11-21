@@ -100,7 +100,7 @@ ACCION = {
     "publicar_blog": "Subir el blog pendiente",
     "estilo_miniaturas": "Estudiar tus miniaturas", "estilo_blog": "Estudiar tus entradas del blog",
     "estilo_video": "Estudiar tu video de referencia",
-    "estilo_manual": "Escribir el manual del canal",
+    "estilo_manual": "Escribir el manual del canal", "analisis": "Ver y analizar un video que le pasaste",
 }
 QUE_ES = {"investigar": "el expediente de Iván", "guion": "el guion de Gabi", "voz": "la narración de Leo"}
 ACTIVAS = ("esperando", "en_cola", "trabajando")
@@ -348,6 +348,18 @@ class Oficina:
         texto_jefe = self.BOTONES_FIJOS.get(mensaje["texto"].strip().lower(), mensaje["texto"])
         if texto_jefe == "ayuda":
             return self._responder(canal, chat_jefe.AYUDA, teclado=True)
+        from agentes import analizar_video
+        videos_link = [u for u in analizar_video.enlaces(texto_jefe) if analizar_video.es_video(u)]
+        if videos_link:  # 🎬 le pasaste un video: Paola lo ve, lo transcribe y te dice qué tiene
+            pregunta = texto_jefe
+            for u in videos_link:
+                pregunta = pregunta.replace(u, " ")
+            self._responder(canal, f"🎬 Voy a ver {'el video' if len(videos_link) == 1 else f'los {len(videos_link)} videos'}: "
+                                   "lo bajo, lo transcribo y reviso sus imágenes. Tardo unos minutos.")
+            for u in videos_link[:3]:
+                threading.Thread(target=self._analizar_video, args=(canal, u, " ".join(pregunta.split())),
+                                 daemon=True).start()
+            return
         ideas = self._pendientes()
         ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "whatsapp", None
         try:
@@ -442,6 +454,26 @@ class Oficina:
             texto += f"\n\n👉 {URL_PUBLICA}"
         botones = tg.botones_ideas(self._pendientes()) if canal == "telegram" and pidio_lista and self._pendientes() else None
         self._responder(canal, texto, botones)
+
+    def _analizar_video(self, canal: str, url: str, pregunta: str) -> None:
+        from agentes import analizar_video
+        t = self.nueva_tarea("productora", "analisis", titulo=f"Ver video: {url[:60]}")
+        ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "analisis", t
+        self.tarea(t, estado="trabajando", inicio=time.time())
+        self.poner("productora", estado="trabajando")
+        try:
+            r = analizar_video.analizar(url, pregunta)
+        except Exception as exc:  # noqa: BLE001
+            self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
+            self.poner("productora", estado="libre")
+            return self._responder(canal, f"No pude analizar ese video: {exc}")
+        self.tarea(t, estado="hecha", fin=time.time(), resultado=r["titulo"][:80])
+        self.poner("productora", estado="libre")
+        texto = r["texto"]
+        if canal != "oficina" and r["transcripcion"]:  # fuera de la oficina, el enlace completo
+            texto = texto.replace(r["transcripcion"], (URL_PUBLICA.rstrip("/") + r["transcripcion"]) if URL_PUBLICA
+                                  else "(la tienes en la oficina, en el chat)")
+        self._responder(canal, texto)
 
     def chat_oficina(self, texto: str) -> None:
         """💻 Lo que escribes en el chat de la oficina (igual que por Telegram/WhatsApp)."""

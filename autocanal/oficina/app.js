@@ -429,6 +429,9 @@
   });
 
   // ---------- chat ----------
+  // enlaces del chat (videos que pegas, transcripciones) se pueden abrir
+  const enlazar = (t) => esc(t).replace(/(https?:\/\/[^\s<]+|\/estilo\/analisis\/[^\s<]+)/g,
+    (u) => `<a href="${u}" target="_blank" rel="noopener">${u.startsWith("/estilo/") ? "📄 abrir" : u}</a>`);
   function pintarChat() {
     pintarLecciones();
     const agentes = {};
@@ -437,7 +440,7 @@
     const abajo = lista.scrollHeight - lista.scrollTop - lista.clientHeight < 40;
     lista.innerHTML = estado.log.map((m) => {
       const a = agentes[m.quien] || { nombre: m.quien, color: "#888" };
-      return `<li><span class="hora">${hora(m.t)}</span> <b style="color:${a.color === "#334155" ? "#cbd5e1" : a.color}">${esc(a.id === "jefe" ? "Tú" : a.nombre)}</b> ${esc(m.texto)}</li>`;
+      return `<li><span class="hora">${hora(m.t)}</span> <b style="color:${a.color === "#334155" ? "#cbd5e1" : a.color}">${esc(a.id === "jefe" ? "Tú" : a.nombre)}</b> ${enlazar(m.texto)}</li>`;
     }).join("");
     if (abajo) lista.scrollTop = lista.scrollHeight;
   }

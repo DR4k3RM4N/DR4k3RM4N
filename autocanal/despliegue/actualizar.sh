@@ -12,6 +12,8 @@ sudo -u canal "$APP/.venv/bin/pip" install -q -r "$APP/requirements.txt"
 sudo -u canal "$APP/.venv/bin/pip" install -q --upgrade edge-tts
 # Igual el que baja videos de referencia (YouTube cambia seguido).
 sudo -u canal "$APP/.venv/bin/pip" install -q --upgrade yt-dlp
+# Whisper local (gratis) para transcribir los videos que le pasas al chat. Opcional: si falla, no detiene nada.
+sudo -u canal "$APP/.venv/bin/pip" install -q "faster-whisper>=1.0" || echo "aviso: no se pudo instalar faster-whisper"
 # Claude Code: para que la oficina use tu plan de Claude en vez de créditos de la API.
 bash "$APP/despliegue/claude_code.sh" || true
 # Memoria de respaldo (swap) de 2 GB: evita que el video se corte si se acaba la RAM.

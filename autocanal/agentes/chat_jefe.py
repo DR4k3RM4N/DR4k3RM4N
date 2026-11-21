@@ -22,7 +22,9 @@ AYUDA = (
     "• *Gabi, deja de empezar los guiones con 'hola'* → el equipo aprende la corrección y no lo repite\n"
     "• *al video 2 quítale la parte del final* → se rehace ese video con tu cambio\n"
     "• *publica el 3* / *publica todos* → Carla los sube (y los programa en la agenda)\n"
-    "• *reintenta los que fallaron* · *descarta el 4* · *prende el piloto* / *apaga el piloto*"
+    "• *reintenta los que fallaron* · *descarta el 4* · *prende el piloto* / *apaga el piloto*\n"
+    "• pega el *enlace de un video* (YouTube, TikTok, Instagram…) → lo veo, lo transcribo y te digo por qué funciona; "
+    "puedes agregar una pregunta, ej. *¿qué gancho usa?*"
 )
 
 SYSTEM = """Eres Paola, la productora de un canal de YouTube que investiga apps que prometen pagar dinero.

@@ -471,3 +471,11 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   y revisada para «fraudes»; con Claude para los demás). «Poner en YouTube» = `channelBanners.insert` +
   `channels.update(brandingSettings)` conservando keywords/idioma/país/tráiler. La foto de perfil NO se puede por API:
   se baja y se sube en Studio. Archivos en `estilo/identidad_<canal>/`. Rutas GET/POST `/api/identidad`.
+- **🎬 Analizar videos desde el chat** (`agentes/analizar_video.py`): si el mensaje del jefe (oficina, Telegram o
+  WhatsApp) trae un enlace de video (YouTube, TikTok, IG, FB, X, Vimeo…; `es_video`), `Oficina._atender` lo manda a
+  `_analizar_video` (tarea "analisis", hasta 3 enlaces; el resto del mensaje es la pregunta). Baja hasta 30 min a
+  ≤480p con yt-dlp + subtítulos (es/en, auto) + miniatura; transcripción = subtítulos (`_vtt`, sin repeticiones) o
+  Whisper local (`faster-whisper`, instalado opcional en actualizar.sh; modelo `WHISPER_MODELO`, "small"); 16 cuadros
+  + miniatura a Claude (tarea estilo): resumen, estructura con tiempos, gancho, por qué funciona, visual, empaque,
+  qué copiar para el canal y respuesta a la pregunta. Transcripción completa en `estilo/analisis/*.txt` (enlace
+  📄 en el chat). Aquí no se pudo probar con YouTube real (red bloqueada); probado con video y subtítulos locales.
