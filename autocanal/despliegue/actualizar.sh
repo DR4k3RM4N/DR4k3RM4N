@@ -40,8 +40,10 @@ for servicio in oficina caddy; do
   fi
   systemctl is-active --quiet "$servicio" && echo "  ✔ $servicio funcionando" || echo "  ✖ $servicio NO arrancó: sudo journalctl -u $servicio -n 30"
 done
-# De aquí en adelante se actualiza solo (revisa GitHub cada 10 min); solo la primera vez hay que prenderlo.
-if [ -f "$APP/despliegue/autoactualizar.sh" ] && ! systemctl is-enabled --quiet autocanal-actualizar.timer 2>/dev/null; then
+# De aquí en adelante se actualiza solo (revisa GitHub cada minuto); se prende la primera vez y se vuelve a
+# instalar si el reloj guardado es de una versión vieja (antes revisaba cada 10 min).
+if [ -f "$APP/despliegue/autoactualizar.sh" ] && { ! systemctl is-enabled --quiet autocanal-actualizar.timer 2>/dev/null \
+    || ! grep -q "OnUnitActiveSec=1min" /etc/systemd/system/autocanal-actualizar.timer 2>/dev/null; }; then
   bash "$APP/despliegue/autoactualizar.sh" --activar
 fi
 echo "✔ Actualizado y reiniciado."

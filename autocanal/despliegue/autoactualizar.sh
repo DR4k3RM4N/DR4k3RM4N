@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Se actualiza solo: cada 10 minutos revisa si hay versión nueva en GitHub y, si nadie está editando, la instala.
+# Se actualiza solo: cada minuto revisa si hay versión nueva en GitHub y, si nadie está editando, la instala.
 # Lo corre el reloj del servidor (autocanal-actualizar.timer). Para prenderlo una vez:  sudo bash autoactualizar.sh --activar
 # Para apagarlo:  sudo bash autoactualizar.sh --apagar      Para ver qué ha hecho:  sudo tail -n 30 /var/log/autocanal-actualizar.log
 set -uo pipefail
@@ -22,19 +22,19 @@ ExecStart=/usr/bin/env bash $APP/despliegue/autoactualizar.sh
 UNIT
   cat > /etc/systemd/system/autocanal-actualizar.timer <<UNIT
 [Unit]
-Description=AutoCanal: revisa cada 10 minutos si hay versión nueva
+Description=AutoCanal: revisa cada minuto si hay versión nueva
 
 [Timer]
-OnBootSec=3min
-OnUnitActiveSec=10min
-RandomizedDelaySec=60
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
 
 [Install]
 WantedBy=timers.target
 UNIT
   systemctl daemon-reload
   systemctl enable --now autocanal-actualizar.timer >/dev/null 2>&1
-  echo "  ✔ Se actualiza solo: revisa GitHub cada 10 minutos (si están editando, espera a que terminen)."
+  echo "  ✔ Se actualiza solo: revisa GitHub cada minuto (si están editando, espera a que terminen)."
   exit 0
 fi
 if [ "${1:-}" = "--apagar" ]; then

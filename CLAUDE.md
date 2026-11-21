@@ -25,7 +25,7 @@ y el plan de la oficina de TikTok Shop.
   Playwright (ya está instalado). Borra `oficina_estado_demo.json` e `historial_demo.json` antes del commit.
 - El repo es **público**: no metas claves, correos ni datos personales en archivos.
 - El servidor se actualiza desde la rama `claude/keen-johnson-v42a39`. **Se actualiza solo**: revisa GitHub cada
-  10 min (`despliegue/autoactualizar.sh`, timer `autocanal-actualizar`) y espera si hay un video o una edición en
-  curso. Ya no le pidas que corra `actualizar.sh` después de cada cambio: dile que en ~10 min recargue con Ctrl + F5.
+  minuto (`despliegue/autoactualizar.sh`, timer `autocanal-actualizar`) y espera si hay un video o una edición en
+  curso. Ya no le pidas que corra `actualizar.sh` después de cada cambio: dile que en ~2 min recargue con Ctrl + F5.
   Lo que subas a esa rama llega solo al servidor: súbelo solo cuando esté probado.
 - Commits en español, describiendo lo que él va a notar.
