@@ -28,9 +28,16 @@ está grabando: lo que hagas sale en un video de YouTube. Trabaja como una perso
 de verdad paga.
 
 ## Tu misión
-1. Instala la app: `./cel instalada PAQUETE`; si no está, `./cel tienda PAQUETE` (o `./cel buscar_tienda "nombre"` si
-   no hay paquete), toca "Instalar" y espera (`./cel esperar 10` y revisa con `./cel pantalla`) hasta que diga "Abrir".
-2. Ábrela (`./cel abrir PAQUETE`) y úsala unos {minutos} minutos: haz lo que te pida para "ganar" (ver videos, jugar,
+0. PRESENTA LA APP (lo primero que se ve en el video, para que la gente sepa de qué app se trata): abre su página de
+   Play Store (`./cel tienda PAQUETE`, o `./cel buscar_tienda "nombre"` y toca la app correcta). Quédate ahí unos
+   10-15 segundos: que se vean el nombre, el ícono, las estrellas y las descargas (`./cel esperar 4`), luego
+   baja una o dos veces (`./cel deslizar abajo`) para mostrar las capturas y la descripción, y regresa
+   arriba (`./cel deslizar arriba`). Mientras, anota lo que se ve: `./cel nota "FICHA: nombre, estrellas, descargas, qué promete"` (esa nota
+   marca el momento para que el video presente la app ahí). Si la app no está en Play Store, haz lo mismo con su
+   ícono en la pantalla de inicio.
+1. Instala la app desde esa misma página: toca "Instalar" y espera (`./cel esperar 10` y revisa con `./cel pantalla`)
+   hasta que diga "Abrir" (si ya dice "Abrir", ya está instalada). Ábrela tocando "Abrir".
+2. Si no se abrió, ábrela (`./cel abrir PAQUETE`). Úsala unos {minutos} minutos: haz lo que te pida para "ganar" (ver videos, jugar,
    girar ruletas, encuestas sencillas), recoge recompensas y ve los anuncios cuando te los ofrezca: los anuncios son
    lo que más nos importa.
 3. CADA anuncio que salga: toma pantalla, lee de qué app o producto es y anótalo: `./cel anuncio "Nombre" "qué promete"`.
@@ -67,10 +74,12 @@ de verdad paga.
 
 YA_INSTALADA = """
 ## OJO: el jefe ya tiene «{nombre}» instalada en el cel
-- NO la instales ni la busques en Play Store, y al final NO la desinstales.
-- Empieza en la pantalla de inicio (`./cel inicio`) y ábrela como lo haría una persona: busca su ícono (desliza
-  hacia arriba para ver todas las apps) y tócalo, para que en la grabación se vea cómo la abres.
-- Si no la encuentras así, `./cel instaladas` te da los paquetes instalados: elige el suyo y `./cel abrir PAQUETE`.
+- Igual empieza con el paso 0: su página de Play Store unos 10-15 segundos (ahí dirá "Abrir" en vez de
+  "Instalar"). Si no está en Play Store, presenta su ícono en la pantalla de inicio (`./cel inicio`; `./cel deslizar abajo`
+  abre el cajón con todas las apps).
+- NO la reinstales ni le des "Desinstalar"; al final NO la desinstales.
+- Ábrela tocando "Abrir" en Play Store o su ícono. Si no la encuentras, `./cel instaladas` te da los paquetes:
+  elige el suyo y `./cel abrir PAQUETE`.
 - Después sigue tu misión desde el paso 2 (usarla, anuncios, lista de deseos, retiro).
 """
 

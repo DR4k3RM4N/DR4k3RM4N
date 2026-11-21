@@ -35,6 +35,9 @@ en evidencia.
   * "dato": dato o cifra grande en pantalla (campo texto, máx 8 palabras).
   * "grabacion": clip grabado por el creador (indice empieza en 1). Úsalo si hay clips.
   * "veredicto": tarjeta final con el veredicto.
+- Si la prueba empieza en la página de Play Store de la app (un momento o nota "FICHA"), úsala justo después del
+  gancho: una escena "grabacion" con "desde" en ese segundo que PRESENTA la app (cuál es, estrellas, descargas, qué
+  promete) para que la gente sepa de qué app hablamos.
 - Si el expediente trae "prueba_propia" (alguien usó la app y la grabó), ESE es el corazón del video:
   cuéntalo en primera persona ("la instalé y la usé", "en 10 minutos me salieron 14 anuncios"), usa bastantes
   escenas "grabacion" y en cada una pon en "desde" el segundo del momento que estás narrando (te paso los momentos
