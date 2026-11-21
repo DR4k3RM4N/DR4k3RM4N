@@ -75,6 +75,26 @@ def guardar(cid: str, **datos) -> None:
     ARCHIVO.write_text(json.dumps(todo, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+MASCOTAS = {"fraudes": "lanudo"}  # el personaje de cada tema (Lanudo, el borrego de «Cuida Tu Lana»)
+
+
+def mascota(cid: str | None = None, expresion: str = "normal") -> Path | None:
+    """La mascota del canal: estilo/mascota_<id>.png si subiste una; si no, la del tema; el principal, la suya."""
+    from . import estilo
+
+    cid = cid or actual()
+    if cid == PRINCIPAL:
+        return estilo.archivo("mascota")
+    propia = config.ESTILO_DIR / f"mascota_{cid}.png"
+    if propia.exists():
+        return propia
+    nombre = MASCOTAS.get(get(cid).get("nicho"))
+    if nombre:
+        ruta = config.ASSETS / "mascotas" / nombre / f"{expresion}.png"
+        return ruta if ruta.exists() else config.ASSETS / "mascotas" / nombre / "normal.png"
+    return None
+
+
 def actual() -> str:
     """El canal del trabajo en curso (la oficina lo pone en cada hilo)."""
     from . import claude

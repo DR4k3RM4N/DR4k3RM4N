@@ -65,8 +65,11 @@ def _preparar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -
                   "capturas": [r for r in (poner(c, f"img/captura_{k}{Path(c).suffix}")
                                            for k, c in enumerate(img.get("capturas") or [], 1)) if r]}
     clips_r = [r for r in (poner(c, f"clips/clip_{k}{Path(c).suffix}") for k, c in enumerate(clips, 1)) if r]
+    from . import canales
     for nombre in ESTILO_ARCHIVOS:
-        poner(config.ESTILO_DIR / nombre, f"estilo/{nombre}")
+        if nombre != "mascota.png":
+            poner(config.ESTILO_DIR / nombre, f"estilo/{nombre}")
+    poner(canales.mascota(canales.actual()), "estilo/mascota.png")  # la del canal del video
     sfx = config.ESTILO_DIR / "sfx"
     for f in sorted(sfx.glob("*")) if sfx.exists() else []:
         poner(f, f"estilo/sfx/{f.name}")

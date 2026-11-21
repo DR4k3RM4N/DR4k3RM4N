@@ -398,7 +398,8 @@ def _editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> 
 
     entradas = ["-i", str(unido)]
     filtros, base_v = [], "[0:v]"
-    mascota = estilo.archivo("mascota")
+    from . import canales
+    mascota = canales.mascota(canales.actual())  # la de este canal (Lanudo en Cuida Tu Lana)
     if mascota:  # la mascota del canal vive en una esquina y se mece (va debajo de los subtítulos)
         entradas += ["-loop", "1", "-framerate", str(FPS), "-i", str(mascota)]
         izq = ajustes.get("mascota_lado") == "izquierda"

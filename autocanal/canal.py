@@ -173,6 +173,10 @@ class Produccion:
                 self.mini = self.carpeta / "miniatura.jpg"
                 return
         spec, n = datos.get("miniaturas"), int(datos["ajustes"].get("opciones_miniatura", 3))
+        from agentes import canales
+        canal = _canal_de(self.carpeta.name)
+        # en canales con mascota (Lanudo), ella sale en la miniatura con cara de sorpresa
+        cara_canal = str(canales.mascota(canal, "sorprendido")) if canal != canales.PRINCIPAL and canales.mascota(canal) else None
         caps = self.imagenes.get("capturas") or []
         textos = [t for t in (self.guion.get("textos_miniatura") or []) if t.strip()] or [self.guion["texto_miniatura"]]
         opciones = []
@@ -181,7 +185,8 @@ class Produccion:
             espejo = i >= len(textos) or (i == 1 and len(textos) == 1)
             captura = caps[i % len(caps)] if caps else None
             p = self.carpeta / f"miniatura_{i + 1}.jpg"
-            graficos.miniatura(texto, self.guion["sello_miniatura"], self.imagenes.get("icono"), captura, p, spec, espejo=espejo)
+            graficos.miniatura(texto, self.guion["sello_miniatura"], self.imagenes.get("icono"), captura, p, spec, espejo=espejo,
+                               cara_ruta=cara_canal)
             opciones.append({"archivo": p.name, "texto": texto})
         elegida, razon = 0, "La primera opción."
         if len(opciones) > 1 and refs:
