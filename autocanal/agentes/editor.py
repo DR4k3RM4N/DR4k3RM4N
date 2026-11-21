@@ -237,6 +237,22 @@ def subtitulos_ass(escenas: list[dict], destino: Path, ajustes: dict, color: str
     return destino
 
 
+_SCRIPT: list[str] = []
+
+
+def script_filtros() -> str:
+    """Cómo se le pasa a ffmpeg el archivo con los filtros: ffmpeg 8 quitó «-filter_complex_script» (ahora es
+    «-/filter_complex»). Se pregunta una vez a la versión que haya en esta compu."""
+    if not _SCRIPT:
+        try:
+            ayuda = subprocess.run(["ffmpeg", "-hide_banner", "-h", "full"], capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace", timeout=30).stdout
+        except (OSError, subprocess.SubprocessError):
+            ayuda = "filter_complex_script"
+        _SCRIPT.append("-filter_complex_script" if "filter_complex_script" in ayuda else "-/filter_complex")
+    return _SCRIPT[0]
+
+
 def _xfade(partes: list[Path], duraciones: list[float], tipos: list[str], destino: Path, trabajo: Path,
            nombre: str, extra_final: float) -> None:
     """Une pocas piezas con transiciones en un solo ffmpeg. `duraciones` = lo que dura cada pieza sin el
@@ -251,7 +267,7 @@ def _xfade(partes: list[Path], duraciones: list[float], tipos: list[str], destin
     script = trabajo / f"{nombre}.txt"
     script.write_text(";\n".join(filtros), encoding="utf-8")
     entradas = [x for p in partes for x in ("-i", str(p))]
-    _ff(*entradas, "-filter_complex_script", str(script), "-map", "[vout]", "-map", "[aout]", *RAPIDO, *AUDIO, str(destino))
+    _ff(*entradas, script_filtros(), str(script), "-map", "[vout]", "-map", "[aout]", *RAPIDO, *AUDIO, str(destino))
 
 
 def _unir(partes: list[Path], duraciones: list[float], transicion: str, destino: Path, trabajo: Path) -> list[float]:
@@ -436,7 +452,7 @@ def _editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> 
     script = trabajo / "final.txt"
     script.write_text(";\n".join(filtros), encoding="utf-8")
     principal = trabajo / "principal.mp4"
-    _ff_avance([*entradas, "-filter_complex_script", str(script), "-map", v_final, "-map", a_final,
+    _ff_avance([*entradas, script_filtros(), str(script), "-map", v_final, "-map", a_final,
                 "-t", f"{duracion:.3f}", *VIDEO, *AUDIO, str(principal)], duracion, "Subtítulos y música", 0.8, 0.97)
     _avance("Últimos detalles", 0.98)
 

@@ -177,6 +177,8 @@ class Proyectos:
                 continue
             if any(x.get("carpeta", "").lower() == nombre.lower() for x in self.proyectos.values()):
                 continue
+            if f"{cid}|{nombre.lower()}" in getattr(self, "ignoradas", []):  # lo borraste: no se vuelve a crear
+                continue
             self.crear_proyecto(nombre, cid, origen="compu")
 
     def carpetas_de_proyectos(self, cid: str) -> list[dict]:
@@ -259,6 +261,10 @@ class Proyectos:
             p = self.proyectos.pop(pid, None)
             if not p:
                 return {"error": "No encontré ese proyecto."}
+            if p.get("compu") and p.get("carpeta"):  # su carpeta sigue en tu compu: que no lo vuelva a crear
+                clave = f"{p['compu']}|{p['carpeta'].lower()}"
+                if clave not in self.ignoradas:
+                    self.ignoradas.append(clave)
             self._tocar()
         shutil.rmtree(SALIDA / pid, ignore_errors=True)
         return {"ok": True}

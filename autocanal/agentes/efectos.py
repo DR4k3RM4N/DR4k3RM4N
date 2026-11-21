@@ -362,8 +362,8 @@ def aplicar(base: Path, efectos: list[dict], pals: list[dict], dur: float, total
         actual = "[vfin]"
     script = trabajo / f"fx_{i:02d}.txt"
     script.write_text(";\n".join(filtros), encoding="utf-8")
-    from .editor import AUDIO, RAPIDO, _ff
-    _ff(*entradas, "-filter_complex_script", str(script), "-map", actual, "-map", audio, "-t", f"{total:.3f}",
+    from .editor import AUDIO, RAPIDO, _ff, script_filtros
+    _ff(*entradas, script_filtros(), str(script), "-map", actual, "-map", audio, "-t", f"{total:.3f}",
         *RAPIDO, *AUDIO, str(destino))
     for f in carpeta.glob(f"e{i:02d}_*.png"):
         f.unlink()

@@ -1821,9 +1821,11 @@
       <div class="pc-lista">${compus.map(monitor).join("") || `<p class="vacio">Todavía no hay compus en la sala.</p>`}</div>
       ${compus.length ? `<details class="tarjeta"><summary>➕ Agregar otra compu (Windows)</summary>${agregar}</details>`
         : `<article class="tarjeta"><h4>➕ Agregar una compu (Windows)</h4>${agregar}</article>`}
-      ${estadoSala.trabajos.length ? `<h4 class="seccion-mini">Últimos trabajos</h4><ul class="trabajos-sala">${estadoSala.trabajos.map((t) => `<li>
+      ${estadoSala.trabajos.length ? `<details class="trabajos-caja" ${window.__trabajosAbiertos ? "open" : ""}><summary>📋 Últimos trabajos (${estadoSala.trabajos.length})</summary>
+        <button type="button" class="btn btn-mini" data-limpiar-trabajos>🧹 Borrar la lista</button>
+        <ul class="trabajos-sala">${estadoSala.trabajos.map((t) => `<li>
           <b>${esc(t.etiqueta)}</b> · ${esc(ESTADO_TRABAJO[t.estado] || t.estado)}${t.inicio && t.fin ? ` · ${duracion(t.fin - t.inicio)}` : ""} · ${haceRato(t.creado)}
-          ${t.error ? `<br><small>${esc(t.error)}</small>` : ""}</li>`).join("")}</ul>` : ""}`;
+          ${t.error ? `<br><small title="${esc(t.error)}">${esc(t.error.length > 110 ? t.error.slice(0, 110) + "…" : t.error)}</small>` : ""}</li>`).join("")}</ul></details>` : ""}`;
   }
 
   $("#sala-panel").addEventListener("submit", async (e) => {
@@ -1852,10 +1854,18 @@
     if (e.target.id === "np-carpeta" && e.target.value && e.target.value !== "__otra" && !$("#np-nombre").value)
       $("#np-nombre").value = e.target.value.replace(/\\/g, "/").split("/").pop();
   });
+  $("#sala-panel").addEventListener("toggle", (e) => {
+    if (e.target.classList?.contains("trabajos-caja")) window.__trabajosAbiertos = e.target.open;
+  }, true);
   $("#sala-panel").addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b) return;
     if (b.dataset.abrirSala) return abrirProyectoSala(b.dataset.abrirSala);
+    if (b.dataset.limpiarTrabajos !== undefined) {
+      b.disabled = true;
+      try { await salaApi("/api/trabajos/limpiar", {}); consultarSala(); } catch (err) { alert(err.message); b.disabled = false; }
+      return;
+    }
     if (b.id === "np-elegir") return elegirCarpetaEnCompu(b);
     if (b.dataset.estiloSala !== undefined) return abrirEstilo();
     if (b.dataset.nuevoProyecto !== undefined) { $("#nuevo-proyecto").hidden = !$("#nuevo-proyecto").hidden; return $("#np-nombre").focus(); }

@@ -59,6 +59,7 @@ class Sala(Aprendizaje, Proyectos):
         self.proyectos: dict = datos.get("proyectos", {})
         self.chat: list = datos.get("chat", [])
         self.gasto: dict = datos.get("gasto", {})
+        self.ignoradas: list = datos.get("ignoradas", [])  # carpetas de tus compus que borraste: no vuelven a ser proyecto
         self.cargar_estilo(datos)  # el cuaderno de estilo que comparten los editores
         for pr in self.proyectos.values():
             if pr.get("estado") == "editando":
@@ -83,7 +84,7 @@ class Sala(Aprendizaje, Proyectos):
             self.trabajos.pop(t["id"], None)
         ESTADO.write_text(json.dumps({"compus": self.compus, "trabajos": self.trabajos, "proyectos": self.proyectos,
                                       "chat": self.chat[-200:], "gasto": dict(sorted(self.gasto.items())[-90:]),
-                                      "estilo": self.estilo},
+                                      "estilo": self.estilo, "ignoradas": self.ignoradas[-300:]},
                                      ensure_ascii=False, indent=1), encoding="utf-8")
 
     # ---------- lo que se ve en el edificio ----------
@@ -597,6 +598,12 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                     n = 0
                 r = sala.calificar(ruta.split("/")[3], n, str(d.get("voto", "")), str(d.get("comentario", "")))
                 return self._json(r, 400 if "error" in r else 200)
+            if ruta == "/api/trabajos/limpiar":  # 🧹 quitar de la lista los trabajos terminados
+                with sala.lock:
+                    for tid in [k for k, t in sala.trabajos.items() if t["estado"] in ("listo", "error", "cancelado")]:
+                        sala.trabajos.pop(tid, None)
+                    sala._tocar()
+                return self._json({"ok": True})
             if ruta.startswith("/api/proyecto/") and ruta.endswith("/borrar"):
                 r = sala.borrar_proyecto(ruta.split("/")[3])
                 return self._json(r, 400 if "error" in r else 200)
