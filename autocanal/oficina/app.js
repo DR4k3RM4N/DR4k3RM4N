@@ -130,6 +130,11 @@
           <small>visto en ${esc(d.visto_en)}${d.paquete ? "" : " · sin paquete (se busca por nombre)"}</small>
           <span class="fila"><button class="btn btn-mini btn-primario" data-deseo="${esc(d.id)}" data-deseo-accion="probar">📱 Probar ahora</button>
           <button class="btn btn-mini" data-deseo="${esc(d.id)}" data-deseo-accion="quitar">Quitar</button></span></li>`).join("")}</ul></details>`;
+    } else {
+      html += `<details class="deseos"><summary>⭐ Lista de deseos: todavía vacía</summary>
+        <p class="pista">Aquí caen solas las apps que salen <b>anunciadas</b> mientras el robot prueba otras en tu cel. Para
+          llenarla, haz el primer video de una app (pídele ideas a Paola y dale 👍 Hazlo): el robot la prueba, ve los
+          anuncios y los anota aquí con su botón 📱 Probar ahora.</p></details>`;
     }
     if (estado.reglas?.length) {
       html += `<details class="gustos"><summary>📌 Reglas que Paola aplica siempre (${estado.reglas.length})</summary>
