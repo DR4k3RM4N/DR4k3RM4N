@@ -178,6 +178,15 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   distintas; solo pasan puntaje ≥ 6 y ≥ 2 señales (si ninguna, las 3 mejores). La tarjeta muestra ⭐ puntaje,
   competencia, 📊 evidencia e 📈 inspiración; el análisis sale en el chat de la oficina. Sistema por canal
   (`_sistema()` usa el nombre/nicho del canal del trabajo).
+- **🎯 Cazador de apps** (`_cazar_apps`): si el plan dice `una_app_por_video` (ej. "apps de préstamo montadeudas",
+  "las peores apps de…"), Paola busca NOMBRES (Google último año con `consultas_nombres` + operadores tipo
+  site:condusef.gob.mx / site:reddit.com, y Play Store con `consultas_play`), Claude extrae hasta 12 nombres que
+  aparecen tal cual en los datos, y cada app se VERIFICA sin Claude (`_verificar`): Play Store (¿sigue publicada?,
+  descargas, estrellas, 100+ reseñas → cuántas con `PALABRAS_QUEJA` y 3 citas textuales), 1 búsqueda de Google
+  "<nombre> + amenazas/extorsión/montadeudas/fraude" y autocompletado. Luego 1 llamada califica (gravedad,
+  popularidad, puntaje, nivel de evidencia) con títulos según evidencia (fuerte: «X: así te extorsiona»; media:
+  «¿X es montadeudas? Esto cuentan N usuarios»; débil: se descarta). Un video por app, ordenadas según `criterio`
+  (peores/mejores/populares/nuevas). Si falla, cae a ideas normales. Costo extra: ~6 + 1 por app búsquedas.
 
 ## 3i. Varios canales de YouTube (nov 2026)
 - El canal "Apps que sí pagan" perdió el acceso por la web pero sigue subiendo y monetizando por API: se queda como
