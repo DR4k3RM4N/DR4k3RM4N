@@ -204,7 +204,7 @@ textarea { resize: vertical; }
 .angulo { font-weight: 600; color: var(--acento); }
 .tuya { display: inline-block; font-size: 11px; font-weight: 700; background: var(--rosa); color: #fff; border-radius: 4px; padding: 1px 7px; margin-bottom: 6px; }
 .num { display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-right: 6px; border-radius: 6px; background: var(--acento); color: #1b1a26; font-size: 12px; font-weight: 700; }
-.porque { color: var(--texto); font-size: 13px; }
+.porque { color: var(--texto); font-size: 13px; white-space: pre-line; }
 .appid { font-size: 11px; color: var(--suave); font-family: ui-monospace, monospace; }
 .acciones { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .opinion { margin-top: 8px; }
@@ -531,3 +531,4 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .chat-escribir { display: flex; gap: 8px; margin-top: 10px; position: sticky; bottom: 0; background: var(--panel, #1e293b); padding: 8px 0; }
 .chat-escribir textarea { flex: 1; resize: none; }
 #lista-lecciones li { padding: 4px 0; }
+#chat li { white-space: pre-line; }

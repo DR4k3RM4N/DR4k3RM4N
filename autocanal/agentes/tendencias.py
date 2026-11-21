@@ -75,11 +75,31 @@ def buscar(consultas: list[str] | None = None, dias: int = 30, cuantos: int = 10
             "titulo": v["snippet"]["title"], "canal": v["snippet"]["channelTitle"], "suscriptores": subs,
             "vistas": vistas, "dias": round(dias_vivo, 1), "vistas_por_dia": int(vistas / dias_vivo),
             "multiplicador": round(vistas / max(subs, 1000), 1), "minutos": round(dur / 60, 1),
-            "url": f"https://www.youtube.com/watch?v={v['id']}",
+            "url": f"https://www.youtube.com/watch?v={v['id']}", "id": v["id"],
+            "comentarios_n": int(v.get("statistics", {}).get("commentCount") or 0),
         })
     # lo que más pega: mucho más de lo que el canal suele tener, y que siga sumando vistas
     salida.sort(key=lambda x: (x["multiplicador"] >= 3, x["multiplicador"] * min(x["vistas_por_dia"], 50000)), reverse=True)
     return salida[:cuantos]
+
+
+def comentarios(video_id: str, n: int = 15) -> list[str]:
+    """Los comentarios más relevantes de un video (lo que la gente pregunta, se queja o pide). 1 unidad de cuota."""
+    if not disponible():
+        return []
+    from . import youtube
+    try:
+        r = youtube._servicio(abrir_navegador=False).commentThreads().list(
+            part="snippet", videoId=video_id, order="relevance", maxResults=n, textFormat="plainText").execute()
+    except Exception:  # noqa: BLE001 — comentarios apagados, etc.
+        return []
+    salida = []
+    for x in r.get("items", []):
+        c = x["snippet"]["topLevelComment"]["snippet"]
+        texto = " ".join((c.get("textDisplay") or "").split())[:220]
+        if texto:
+            salida.append(f"{texto} (👍{c.get('likeCount', 0)})")
+    return salida
 
 
 def para_paola(lista: list[dict]) -> str:

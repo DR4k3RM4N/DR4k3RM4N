@@ -5,6 +5,7 @@ Claves en .env: SERPER_API_KEY y/o TAVILY_API_KEY. Con las dos, se combinan.
 """
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -26,10 +27,12 @@ def proveedores() -> list[str]:
     return [n for n, k in (("serper", SERPER), ("tavily", TAVILY)) if k]
 
 
-def _serper(consulta: str, n: int) -> list[dict]:
+def _serper(consulta: str, n: int, reciente: str = "") -> list[dict]:
+    cuerpo = {"q": consulta, "gl": config.CANAL_PAIS, "hl": config.CANAL_IDIOMA, "num": n}
+    if reciente:  # "d" día, "w" semana, "m" mes, "y" año
+        cuerpo["tbs"] = f"qdr:{reciente}"
     r = requests.post("https://google.serper.dev/search", timeout=30,
-                      headers={"X-API-KEY": SERPER, "Content-Type": "application/json"},
-                      json={"q": consulta, "gl": config.CANAL_PAIS, "hl": config.CANAL_IDIOMA, "num": n})
+                      headers={"X-API-KEY": SERPER, "Content-Type": "application/json"}, json=cuerpo)
     r.raise_for_status()
     datos = r.json()
     salida = [{"titulo": x.get("title", ""), "url": x.get("link", ""), "texto": x.get("snippet", ""),
@@ -40,18 +43,25 @@ def _serper(consulta: str, n: int) -> list[dict]:
     return salida
 
 
-def _tavily(consulta: str, n: int) -> list[dict]:
+_RANGO_TAVILY = {"d": "day", "w": "week", "m": "month", "y": "year"}
+
+
+def _tavily(consulta: str, n: int, reciente: str = "") -> list[dict]:
+    cuerpo = {"query": consulta, "max_results": n, "search_depth": "basic", "include_answer": False}
+    if reciente in _RANGO_TAVILY:
+        cuerpo["time_range"] = _RANGO_TAVILY[reciente]
     r = requests.post("https://api.tavily.com/search", timeout=40,
-                      headers={"Authorization": f"Bearer {TAVILY}", "Content-Type": "application/json"},
-                      json={"query": consulta, "max_results": n, "search_depth": "basic", "include_answer": False})
+                      headers={"Authorization": f"Bearer {TAVILY}", "Content-Type": "application/json"}, json=cuerpo)
     r.raise_for_status()
     return [{"titulo": x.get("title", ""), "url": x.get("url", ""), "texto": x.get("content", ""),
              "fecha": x.get("published_date", ""), "de": "tavily"} for x in r.json().get("results", [])[:n]]
 
 
-def buscar(consultas: list[str], por_consulta: int = 6, max_texto: int = 700) -> tuple[list[dict], dict]:
+def buscar(consultas: list[str], por_consulta: int = 6, max_texto: int = 700,
+           reciente: str = "") -> tuple[list[dict], dict]:
     """Corre todas las consultas en paralelo con los proveedores que haya. Devuelve (resultados sin
-    repetir, cuántas búsquedas hizo cada proveedor). Un proveedor que falla no detiene a los demás."""
+    repetir, cuántas búsquedas hizo cada proveedor). Un proveedor que falla no detiene a los demás.
+    `reciente`: "d", "w", "m" o "y" para traer solo lo del último día/semana/mes/año."""
     trabajos = [(p, c) for c in consultas for p in proveedores()]
     conteo = {p: 0 for p in proveedores()}
     errores = []
@@ -59,7 +69,7 @@ def buscar(consultas: list[str], por_consulta: int = 6, max_texto: int = 700) ->
     def correr(trabajo):
         prov, consulta = trabajo
         try:
-            res = (_serper if prov == "serper" else _tavily)(consulta, por_consulta)
+            res = (_serper if prov == "serper" else _tavily)(consulta, por_consulta, reciente)
             conteo[prov] += 1
             for x in res:
                 x["consulta"] = consulta
@@ -84,6 +94,57 @@ def buscar(consultas: list[str], por_consulta: int = 6, max_texto: int = 700) ->
     for e in errores[:3]:
         print(f"    aviso búsqueda: {e}", flush=True)
     return salida, conteo
+
+
+def noticias(consultas: list[str], reciente: str = "m", n: int = 8) -> tuple[list[dict], dict]:
+    """Google Noticias (Serper) de la última semana/mes: lo que está pasando AHORA."""
+    if not SERPER:
+        return [], {}
+    salida, conteo, vistos = [], {"serper": 0}, set()
+    for q in consultas:
+        try:
+            r = requests.post("https://google.serper.dev/news", timeout=30,
+                              headers={"X-API-KEY": SERPER, "Content-Type": "application/json"},
+                              json={"q": q, "gl": config.CANAL_PAIS, "hl": config.CANAL_IDIOMA, "num": n,
+                                    "tbs": f"qdr:{reciente}"})
+            r.raise_for_status()
+            conteo["serper"] += 1
+        except (requests.RequestException, ValueError) as exc:
+            print(f"    aviso noticias: {exc}", flush=True)
+            continue
+        for x in r.json().get("news", [])[:n]:
+            url = x.get("link", "")
+            if url and url not in vistos:
+                vistos.add(url)
+                salida.append({"titulo": x.get("title", ""), "url": url, "texto": (x.get("snippet") or "")[:300],
+                               "fecha": x.get("date", ""), "fuente": x.get("source", ""), "consulta": q})
+    return salida, conteo
+
+
+def sugerencias(semillas: list[str]) -> dict:
+    """Lo que la gente está tecleando en Google y en YouTube (el autocompletado). Gratis, sin clave.
+    {"google": {semilla: [..]}, "youtube": {semilla: [..]}}"""
+    salida = {"google": {}, "youtube": {}}
+
+    def una(trabajo):
+        donde, semilla = trabajo
+        params = {"client": "firefox", "hl": config.CANAL_IDIOMA, "gl": config.CANAL_PAIS, "q": semilla}
+        if donde == "youtube":
+            params["ds"] = "yt"
+        try:
+            r = requests.get("https://suggestqueries.google.com/complete/search", params=params, timeout=10,
+                             headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            datos = json.loads(r.content.decode(r.encoding or "utf-8", errors="replace"))
+            return donde, semilla, [x for x in datos[1] if isinstance(x, str) and x.lower() != semilla.lower()][:10]
+        except (requests.RequestException, ValueError, IndexError, TypeError):
+            return donde, semilla, []
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for donde, semilla, lista in pool.map(una, [(d, s) for s in semillas[:6] for d in ("google", "youtube")]):
+            if lista:
+                salida[donde][semilla] = lista
+    return salida
 
 
 def seo(consulta: str) -> dict:

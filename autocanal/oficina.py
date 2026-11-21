@@ -626,6 +626,7 @@ class Oficina:
             if candidatas:
                 entendi = candidatas[0].pop("entendi", "")
                 regla = (candidatas[0].pop("regla_permanente", "") or "").strip()
+                analisis = candidatas[0].pop("analisis", "")
                 if canal != canales.PRINCIPAL and regla:
                     regla = f"[{canal}] {regla}"
                 if regla and regla not in self.reglas:
@@ -635,6 +636,8 @@ class Oficina:
                     self.decir("productora", f"📌 Anotado para siempre: {regla[:100]}")
                 if entendi:
                     self.decir("productora", f"Entendí: {entendi[:140]}")
+                if analisis:
+                    self.decir("productora", f"Esto vi antes de proponerte:\n{analisis[:900]}")
         except Exception as exc:  # noqa: BLE001
             self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
             self.poner("productora", estado="libre")

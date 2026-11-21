@@ -169,6 +169,15 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
 - `oficina.reglas` (📌, persistentes, se pueden quitar en la Bandeja) van en los gustos de cada pedido como
   "REGLA PERMANENTE". Paola dice "Entendí: …". Pedido vacío = apps nuevas de Play Store como antes.
 - Probado aquí con Claude real y resultados simulados: buena mezcla de temas y apps, regla bien detectada.
+- **Cerebro v2 (nov 2026)**: antes de proponer, Paola ESTUDIA señales recientes en paralelo (`_juntar_senales`):
+  Google del último mes (`buscar_web.buscar(reciente="m")`, tbs qdr:m / Tavily time_range), Google Noticias
+  (`buscar_web.noticias`), autocompletado de Google y YouTube (`buscar_web.sugerencias`, suggestqueries, gratis),
+  videos que pegan (45 días, vistas/día y multiplicador) + comentarios de los 4 que más jalan
+  (`tendencias.comentarios`, 1 unidad de cuota). Luego 1 llamada: análisis (qué pega, qué pide la gente, huecos)
+  + el doble de candidatas con evidencia etiquetada ([V3], [C2], [A], [N1], [G5]), puntaje 1-10 y nº de señales
+  distintas; solo pasan puntaje ≥ 6 y ≥ 2 señales (si ninguna, las 3 mejores). La tarjeta muestra ⭐ puntaje,
+  competencia, 📊 evidencia e 📈 inspiración; el análisis sale en el chat de la oficina. Sistema por canal
+  (`_sistema()` usa el nombre/nicho del canal del trabajo).
 
 ## 3i. Varios canales de YouTube (nov 2026)
 - El canal "Apps que sí pagan" perdió el acceso por la web pero sigue subiendo y monetizando por API: se queda como

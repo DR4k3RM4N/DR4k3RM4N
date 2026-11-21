@@ -240,6 +240,7 @@ def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
         else:
             if r["ideas"]:
                 r["ideas"][0]["entendi"], r["ideas"][0]["regla_permanente"] = r["entendi"], r["regla_permanente"]
+                r["ideas"][0]["analisis"] = r.get("analisis", "")
                 return r["ideas"]
     if tipo == "libre":  # cualquier tema: Paola propone varios enfoques con lo que se busca en Google
         from . import temas
