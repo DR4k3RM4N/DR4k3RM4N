@@ -253,6 +253,8 @@
       return `<article class="tarjeta">
         <div class="cabeza"><h4>${esc(p.titulo)}</h4><span class="chip chip-estado-${esc(p.estado)}">${esc(ESTADO_PROY[p.estado] || p.estado)}</span></div>
         <ol class="pasos">${pasos}</ol>${pub}
+        ${(estado.tareas || []).filter((t) => t.proyecto === p.id && t.estado === "trabajando" && t.paso).map((t) =>
+          `<p class="en-curso">${esc(agentes[t.agente]?.nombre || t.agente)}: ${esc(t.paso)}${t.avance ? ` · ${Math.round(t.avance * 100)}%` : ""}</p>`).join("")}
         ${p.estado === "publicado" && p.publicado?.programado_utc && !p.publicado.desprogramado && new Date(p.publicado.programado_utc) > new Date()
           ? `<div class="pendiente-blog">📅 Programado: sale <b>${esc(p.publicado.programado)}</b>
             <span class="fila"><button class="btn btn-mini" data-desprogramar="${esc(p.id)}">Sacar de la agenda</button></span></div>` : ""}

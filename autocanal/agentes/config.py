@@ -16,6 +16,8 @@ if load_dotenv:
 SALIDA = BASE / "salida"
 ENTRADA = BASE / "entrada"
 ASSETS = BASE / "assets"
+# Tu estilo (en la compu de la sala se apunta a la copia que manda el servidor)
+ESTILO_DIR = Path(os.environ.get("AUTOCANAL_ESTILO") or BASE / "estilo")
 HISTORIAL = BASE / "historial.json"
 
 

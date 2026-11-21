@@ -22,7 +22,7 @@ import requests
 
 from . import claude, config
 
-DIR = config.BASE / "estilo"
+DIR = config.ESTILO_DIR
 REFS = DIR / "miniaturas"
 ARCHIVO = DIR / "estilo.json"
 

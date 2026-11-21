@@ -29,7 +29,7 @@ COLOR_SELLO = {"NO PAGA": ROJO, "CUIDADO": NARANJA, "SÍ PAGA": VERDE, "¿PAGA?"
 
 def fuente(tam: int, negrita: bool = True) -> ImageFont.FreeTypeFont:
     nombre = "fuente_negrita.ttf" if negrita else "fuente.ttf"
-    candidatas = [config.BASE / "estilo" / nombre, config.BASE / "estilo" / "fuente_negrita.ttf", config.ASSETS / nombre,
+    candidatas = [config.ESTILO_DIR / nombre, config.ESTILO_DIR / "fuente_negrita.ttf", config.ASSETS / nombre,
                   Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if negrita
                        else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
                   Path("C:/Windows/Fonts/arialbd.ttf" if negrita else "C:/Windows/Fonts/arial.ttf"),
@@ -283,7 +283,7 @@ def miniatura(texto: str, sello: str, icono_ruta: str | None, captura_ruta: str 
     spec = {**ESTILO_DEFECTO, **(spec or {})}
     if cara_ruta is None:
         # sin tu cara, la mascota del canal sale en la miniatura
-        for c in (config.BASE / "estilo" / "cara.png", config.ASSETS / "cara.png", config.BASE / "estilo" / "mascota.png"):
+        for c in (config.ESTILO_DIR / "cara.png", config.ASSETS / "cara.png", config.ESTILO_DIR / "mascota.png"):
             if c.exists():
                 cara_ruta = str(c)
                 break

@@ -116,6 +116,8 @@ class Oficina:
             for a, n, r, c, p in AGENTES
         }
         self.turnos = {a: threading.Lock() for a in self.agentes}
+        # Edu puede llevar varios videos: los manda a las compus de la sala (el servidor edita uno a la vez)
+        self.turnos["editor"] = threading.BoundedSemaphore(5)
         datos = json.loads(ESTADO.read_text(encoding="utf-8")) if ESTADO.exists() else {}
         self.propuestas = datos.get("propuestas", [])
         self.proyectos = datos.get("proyectos", {})

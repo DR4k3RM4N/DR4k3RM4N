@@ -149,6 +149,18 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   directo a Carla (público, título 1) sin revisión del jefe. Lo pidió Miguel ("confío en que ya hace buen contenido").
 - Ojo: si la app de Google del canal no pasó la auditoría de YouTube, lo programado puede quedarse privado.
 
+## 3g. Edu edita en las compus de la sala (nov 2026)
+- Antes solo había un editor: Edu tenía candado de una tarea y el servidor edita uno a la vez (`cola_video`, RAM).
+- Ahora `Produccion.editar` llama `agentes/edicion_remota.editar_en_sala`: si la sala tiene compu con tipo "edu",
+  hace el plan de efectos en el servidor, junta todo (audios + .palabras.json, imágenes, grabaciones, estilo,
+  sfx, plan) en `salida/<id>/remota/envio` (hardlinks; la sala solo lee dentro de salida/) y crea el trabajo "edu".
+  La compu (`salaedicion/compu.py:editar_edu`) acomoda los archivos según `manifiesto["mapa"]` y corre
+  `python -m agentes.edicion_remota <mesa>` en el clon del repo con `AUTOCANAL_ESTILO` (= `config.ESTILO_DIR`) y
+  `AUTOCANAL_SIN_COLA=1`; sube video.mp4; el .srt se hace en el servidor. Si nadie lo agarra en 5 min o falla, el
+  servidor edita como siempre. `turnos["editor"]` es un semáforo de 5. Las tarjetas de Proyectos muestran
+  "Edu: 🖥️ <compu>: paso · %" o "☁️ Servidor: …"; la pestaña Sala muestra "🎬 Video de YouTube".
+- Probado aquí: paquete → runner → video.mp4 (sin la sala real ni Windows).
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

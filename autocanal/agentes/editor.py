@@ -307,6 +307,8 @@ def _normalizar(entrada: Path, destino: Path) -> Path:
 
 def editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> Path:
     """Edita el video, esperando su turno si Cris (TikTok Shop) está editando al mismo tiempo."""
+    if config.env("AUTOCANAL_SIN_COLA") == "1":  # en una compu de la sala: no comparte RAM con nadie
+        return _editar(escenas, ctx, carpeta, clips)
     from . import cola_video
     with cola_video.turno("Edu (YouTube)", lambda texto: _avance(texto, 0.0)):
         return _editar(escenas, ctx, carpeta, clips)
@@ -392,7 +394,7 @@ def _editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> 
     ass_filtro = ass.resolve().as_posix().replace(":", r"\:")
     vf = f"subtitles='{ass_filtro}'"
     if fuente_propia:
-        vf += f":fontsdir='{fuente_propia.parent.resolve().as_posix()}'"
+        vf += f":fontsdir='{fuente_propia.parent.resolve().as_posix().replace(':', chr(92) + ':')}'"
 
     entradas = ["-i", str(unido)]
     filtros, base_v = [], "[0:v]"

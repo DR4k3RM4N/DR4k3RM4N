@@ -104,7 +104,8 @@ class Sala(Aprendizaje, Proyectos):
                                                 "fin", "error", "paso", "avance")}
                         for t in sorted(self.trabajos.values(), key=lambda t: -t["creado"])[:15]]
             tareas = [{"id": t["id"], "agente": self.editor_id(t["compu"]), "etapa": "edicion",
-                       "accion": {"pensar": "Pensar", "claude_libre": "Editor IA", "probar_app": "📱 Probar app"}.get(t["tipo"], "Editar"),
+                       "accion": {"pensar": "Pensar", "claude_libre": "Editor IA", "probar_app": "📱 Probar app",
+                                "edu": "🎬 Video de YouTube"}.get(t["tipo"], "Editar"),
                        "titulo": t["etiqueta"], "estado": {"listo": "hecha", "error": "fallo", "cancelado": "cancelada"}.get(t["estado"], "trabajando"),
                        "inicio": t.get("inicio"), "fin": t.get("fin"), "error": t.get("error"), "paso": t.get("paso"),
                        "avance": t.get("avance")} for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])[-40:] if t.get("compu")]
@@ -256,7 +257,7 @@ class Sala(Aprendizaje, Proyectos):
             libre = d.get("libre", True)
             pendiente = next((t for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])
                               if t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])
-                              and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app"))),
+                              and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu"))),
                              None) if libre else None
             if pendiente:
                 pendiente.update(estado="asignado", compu=c["id"], slot=c["slot"], inicio=time.time(), paso="Bajando tus clips")

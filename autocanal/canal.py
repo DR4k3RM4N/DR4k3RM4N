@@ -190,10 +190,21 @@ class Produccion:
         self.mini = self.carpeta / "miniatura.jpg"
 
     def editar(self) -> None:
-        from agentes import editor
+        from agentes import edicion_remota, editor
 
         ctx = {"ficha": self.ficha, "expediente": self.expediente, "imagenes": self.imagenes}
-        self.video = editor.editar(self.guion["escenas"], ctx, self.carpeta, self.clips)
+        # 🖥️ si hay una compu de la sala libre, edita ella (más rápida); si no, el servidor
+        self.video = edicion_remota.editar_en_sala(self.guion["escenas"], ctx, self.carpeta, self.clips,
+                                                   avance=editor._avance)
+        if self.video:
+            return
+        original = getattr(editor.contexto, "al_avanzar", None)
+        if original:  # que se vea dónde se está editando
+            editor.contexto.al_avanzar = lambda paso, f: original(paso if paso.startswith("☁️") else f"☁️ Servidor: {paso}", f)
+        try:
+            self.video = editor.editar(self.guion["escenas"], ctx, self.carpeta, self.clips)
+        finally:
+            editor.contexto.al_avanzar = original
 
     def redactar(self) -> None:
         from agentes import blog

@@ -196,7 +196,7 @@ SONIDOS = {
 
 
 def sonido(nombre: str) -> Path:
-    carpeta = config.BASE / "estilo" / "sfx"
+    carpeta = config.ESTILO_DIR / "sfx"
     carpeta.mkdir(parents=True, exist_ok=True)
     propio = carpeta / f"{nombre}_propio.mp3"  # si algún día subes los tuyos
     if propio.exists():

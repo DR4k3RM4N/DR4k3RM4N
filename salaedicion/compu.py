@@ -735,6 +735,46 @@ def editar_libre(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     log(f"Editor IA «{nombre}»: {'v' + str(n) if video else 'sin video'} en {round(time.time() - inicio)} s.")
 
 
+def editar_edu(of: "Oficina", t: dict, temporal: Path, avance) -> None:
+    """🎬 Un video de YouTube de la oficina: esta compu lo edita con el mismo programa de Edu y lo regresa."""
+    tid, m = t["id"], t["parametros"]["manifiesto"]
+    mesa = temporal / "mesa"
+    mesa.mkdir(parents=True, exist_ok=True)
+    total = len(t["entradas"])
+    for e in t["entradas"]:  # bajar y acomodar cada archivo donde lo espera el editor
+        avance(f"Bajando materiales ({e['n'] + 1} de {total})", 0.05 * e["n"] / max(1, total))
+        relativa = m["mapa"].get(e["nombre"])
+        if not relativa or ".." in Path(relativa).parts:
+            continue
+        destino = mesa / relativa
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        of.bajar(tid, e["n"], destino)
+    (mesa / "manifiesto.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
+    entorno = {**os.environ, "AUTOCANAL_ESTILO": str(mesa / "estilo"), "AUTOCANAL_SIN_COLA": "1",
+               "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+    proceso = subprocess.Popen([sys.executable, "-m", "agentes.edicion_remota", str(mesa)], cwd=str(REPO / "autocanal"),
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                               errors="replace", env=entorno, creationflags=0x08000000 if WINDOWS else 0)
+    ultimas = []
+    for linea in proceso.stdout:
+        linea = linea.strip()
+        ultimas = (ultimas + [linea])[-15:]
+        if linea.startswith("AVANCE "):
+            _, fraccion, *paso = linea.split(" ")
+            try:
+                avance(" ".join(paso)[:60], 0.05 + 0.9 * float(fraccion))
+            except ValueError:
+                pass
+    proceso.wait()
+    video = mesa / "video.mp4"
+    if proceso.returncode or not video.exists():
+        raise RuntimeError("El editor falló: " + " | ".join(x for x in ultimas if x)[-260:])
+    avance("Subiendo el video a la oficina", 0.96)
+    of.subir(tid, video)
+    of.post(f"terminar/{tid}", {"ok": True, "resultado": {"video": "video.mp4"}})
+    log(f"Edu: edité «{t.get('etiqueta')}».")
+
+
 def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     """Un proyecto de la sala: los clips están en su carpeta de esta compu (lo que subiste al servidor se baja ahí)."""
     import editor_libre
@@ -799,6 +839,8 @@ def hacer(of: Oficina, t: dict) -> None:
             return pensar(of, t, carpeta, avance)
         if t["tipo"] == "claude_libre":
             return editar_libre(of, t, carpeta, avance)
+        if t["tipo"] == "edu":  # 🎬 un video de YouTube de la oficina
+            return editar_edu(of, t, carpeta, avance)
         if t["tipo"] == "probar_app":  # 📱 el robot prueba la app en tu Android
             import robot_cel
             return robot_cel.probar(of, t, carpeta, avance, claude_code(), log)
@@ -880,7 +922,7 @@ def trabajar() -> None:
         datos["claude_code"] = estado_claude()
         cel = robot_cel.celular()  # 📱 ¿tu Android viejo está conectado? Entonces también prueba apps
         datos["celular"] = cel.get("modelo") or ("falta autorizar" if cel.get("pendiente") else "")
-        datos["tipos"] = ["cris", "libre", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else []),
+        datos["tipos"] = ["cris", "libre", "edu", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else []),
                           *(["probar_app"] if datos["claude_code"] == "listo" and cel.get("serie") else [])]
         datos["motion"] = ESTADO_MOTION["texto"]
     cerebro()
