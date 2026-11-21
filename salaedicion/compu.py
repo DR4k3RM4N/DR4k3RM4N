@@ -937,10 +937,25 @@ def trabajar() -> None:
                                                   else robot_cel.MOTIVOS.get(cel.get("motivo"), ""))
         datos["tipos"] = ["cris", "libre", "edu", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else []),
                           *(["edu_ia"] if datos["claude_code"] == "listo" and ESTADO_MOTION["texto"] == "listo" else []),
-                          *(["probar_app"] if datos["claude_code"] == "listo" and cel.get("serie") else [])]
+                          # 📱 el robot paso a paso no necesita Claude Code aquí (lo piensa la oficina)
+                          *(["probar_app"] if cel.get("serie") and (os.environ.get("ROBOT_MODO") != "claude_code"
+                                                                    or datos["claude_code"] == "listo") else [])]
         datos["motion"] = ESTADO_MOTION["texto"]
     cerebro()
     listo = threading.Event()
+    # 📱 carril del cel: la prueba del robot corre aparte, así la compu sigue editando mientras graba
+    carril_cel = {"tid": None, "hilo": None}
+    of_cel = Oficina(cfg["servidor"], cfg["token"])
+
+    def cel_libre() -> bool:
+        return not (carril_cel["hilo"] and carril_cel["hilo"].is_alive())
+
+    def atender_cel(r: dict) -> None:
+        t = r.get("trabajo_cel")
+        if t and cel_libre() and carril_cel["tid"] != t["id"]:
+            carril_cel["tid"] = t["id"]
+            carril_cel["hilo"] = threading.Thread(target=hacer, args=(of_cel, t), daemon=True)
+            carril_cel["hilo"].start()
 
     def pulso():  # "sigo prendida" cada 10 s, aunque esté ocupada analizando o editando
         of2 = Oficina(cfg["servidor"], cfg["token"])
@@ -960,7 +975,8 @@ def trabajar() -> None:
                 except Exception:  # noqa: BLE001
                     pass
             try:
-                of2.post("latido", {**datos, "libre": False, "pulso": True, "estado": ESTADO_COMPU["texto"]}, timeout=20)
+                atender_cel(of2.post("latido", {**datos, "libre": False, "pulso": True, "libre_cel": cel_libre(),
+                                                "estado": ESTADO_COMPU["texto"]}, timeout=20))
             except (requests.RequestException, ValueError):
                 pass
             except SystemExit as exc:
@@ -1014,8 +1030,10 @@ def trabajar() -> None:
             revisado = time.time()
             actualizarme()
         try:
-            r = of.post("latido", {**datos, "libre": True, "oido_listo": listo.is_set(), "estado": ESTADO_COMPU["texto"]}, timeout=20)
+            r = of.post("latido", {**datos, "libre": True, "oido_listo": listo.is_set(), "libre_cel": cel_libre(),
+                                   "estado": ESTADO_COMPU["texto"]}, timeout=20)
             espera = 5
+            atender_cel(r)
             if r.get("pedir_carpeta"):  # «📂 Elegir carpeta…» desde la oficina
                 threading.Thread(target=elegir_carpeta, args=(r["pedir_carpeta"]["id"],), daemon=True).start()
             if "carpetas" in r and not pedido["evento"].is_set():

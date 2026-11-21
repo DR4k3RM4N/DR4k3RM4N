@@ -95,7 +95,7 @@ class Sala(Aprendizaje, Proyectos):
         with self.lock:
             compus = []
             for c in sorted(self.compus.values(), key=lambda c: c["slot"]):
-                t = self.trabajos.get(c.get("trabajo") or "")
+                t = self.trabajos.get(c.get("trabajo") or "") or self.trabajos.get(c.get("trabajo_cel") or "")
                 compus.append({k: c.get(k) for k in ("id", "nombre", "slot", "gpu", "sistema", "version", "ultimo",
                                                      "nvenc", "oido", "editados", "estado_texto", "claude_code", "motion",
                                                      "celular")}
@@ -168,9 +168,9 @@ class Sala(Aprendizaje, Proyectos):
             c = self.compus.pop(cid, None)
             if not c:
                 return {"error": "No encontré esa compu."}
-            t = self.trabajos.get(c.get("trabajo") or "")
-            if t and t["estado"] in ("asignado", "trabajando"):
-                t.update(estado="en_cola", compu=None, slot=None)
+            for t in (self.trabajos.get(c.get("trabajo") or ""), self.trabajos.get(c.get("trabajo_cel") or "")):
+                if t and t["estado"] in ("asignado", "trabajando"):
+                    t.update(estado="en_cola", compu=None, slot=None)
             self._tocar()
         return {"ok": True}
 
@@ -218,7 +218,7 @@ class Sala(Aprendizaje, Proyectos):
             if t["estado"] in ("asignado", "trabajando") and (not c or not self.viva(c)):
                 t.update(estado="error", error="La compu se apagó o perdió internet a medio trabajo.", fin=time.time())
                 if c:
-                    c["trabajo"] = None
+                    self._soltar(c, tid)
                 self._tocar()
             return {k: t.get(k) for k in ("id", "estado", "paso", "avance", "error", "resultado", "slot")} | {
                 "compu": c["nombre"] if c else None}
@@ -229,8 +229,8 @@ class Sala(Aprendizaje, Proyectos):
             if t and t["estado"] not in ("listo", "error"):
                 t.update(estado="cancelado", fin=time.time())
                 c = self.compus.get(t.get("compu") or "")
-                if c and c.get("trabajo") == tid:
-                    c["trabajo"] = None
+                if c:
+                    self._soltar(c, tid)
                 self._tocar()
         return {"ok": True}
 
@@ -251,6 +251,23 @@ class Sala(Aprendizaje, Proyectos):
                 if pedir:
                     self.pedidos_carpeta[pedir]["estado"] = "esperando"
                     extra = {"pedir_carpeta": {"id": pedir}}
+            activo = lambda t: bool(t) and t["estado"] in ("asignado", "trabajando")  # noqa: E731
+            dos_carriles = "libre_cel" in d  # compus nuevas: el robot del cel va aparte y no les quita la edición
+            cel_t = None
+            if dos_carriles:
+                cel_t = self.trabajos.get(c.get("trabajo_cel") or "")
+                if not activo(cel_t):
+                    c["trabajo_cel"], cel_t = None, None
+                    if d.get("libre_cel") and "probar_app" in c["tipos"]:
+                        cel_t = next((t for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])
+                                      if t["estado"] == "en_cola" and t["tipo"] == "probar_app"
+                                      and t.get("fija") in (None, c["id"])), None)
+                        if cel_t:
+                            cel_t.update(estado="asignado", compu=c["id"], slot=c["slot"], inicio=time.time(),
+                                         paso="Preparando el cel")
+                            c["trabajo_cel"] = cel_t["id"]
+                            self._tocar()
+                extra["trabajo_cel"] = self._para_compu(cel_t) if cel_t else None
             actual = self.trabajos.get(c.get("trabajo") or "")
             if actual and actual["estado"] in ("asignado", "trabajando"):
                 return {"trabajo": self._para_compu(actual), **extra}
@@ -258,6 +275,7 @@ class Sala(Aprendizaje, Proyectos):
             libre = d.get("libre", True)
             pendiente = next((t for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])
                               if t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])
+                              and not (dos_carriles and t["tipo"] == "probar_app")
                               and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia"))),
                              None) if libre else None
             if pendiente:
@@ -364,6 +382,14 @@ class Sala(Aprendizaje, Proyectos):
                  error=str(d.get("error") or "")[:200])
         return {"ok": True}
 
+    @staticmethod
+    def _soltar(c: dict, tid: str) -> None:
+        """La compu ya no trae ese trabajo (en su carril normal o en el del cel)."""
+        if c.get("trabajo") == tid:
+            c["trabajo"] = None
+        if c.get("trabajo_cel") == tid:
+            c["trabajo_cel"] = None
+
     def del_compu(self, c: dict, tid: str) -> dict | None:
         t = self.trabajos.get(tid)
         return t if t and t.get("compu") == c["id"] and t["estado"] in ("asignado", "trabajando") else None
@@ -414,7 +440,7 @@ class Sala(Aprendizaje, Proyectos):
                 c["editados"] = c.get("editados", 0) + 1
             else:
                 t.update(estado="error", error=str(d.get("error") or "Falló en la compu.")[:300], fin=time.time())
-            c["trabajo"] = None
+            self._soltar(c, tid)
             self._tocar()
         if t.get("proyecto"):
             self.termino_trabajo(t)

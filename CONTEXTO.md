@@ -518,3 +518,9 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   `cel.main()`. `ROBOT_MODO=claude_code` vuelve al modo anterior. Si el robot no hizo nada útil → error con motivo
   (`prueba.ULTIMO_ERROR` llega al mensaje del proyecto) y NO se entrega grabación vacía. Piloto no arranca videos de
   apps del canal principal sin cel listo.
+- **Carril del cel**: la compu anuncia `libre_cel` en sus latidos; la sala asigna `probar_app` en `c["trabajo_cel"]`
+  (aparte de `c["trabajo"]`), y la compu lo corre en otro hilo (`atender_cel`), así edita mientras el robot graba.
+  Compus viejas (sin `libre_cel`) siguen con un solo carril. `probar_app` ya no exige Claude Code en la compu.
+- **Robot más humano**: `robot_cerebro` regresa `luego` (hasta 4 acciones encadenadas sin nueva foto) y recibe
+  `misma_pantalla` (segundos sin cambio, por huella en grises). Reglas: videos máx. ~15 s y deslizar (copyright),
+  juegos se juegan de verdad, no quedarse parado >20 s, explorar secciones clave.

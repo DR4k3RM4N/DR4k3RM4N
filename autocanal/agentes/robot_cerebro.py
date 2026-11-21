@@ -23,8 +23,15 @@ SCHEMA = {
                                 "[paquete] · buscar_tienda: [nombre] · anuncio: [app anunciada, qué promete] · nota: "
                                 "[texto] · guardar_deseo: [nombre, qué promete] · terminar: [resumen de 3-5 frases] · "
                                 "atras/inicio: []"},
+        "luego": {"type": "array", "description": "Hasta 4 acciones más que se hacen enseguida SIN ver la "
+                                                                 "pantalla otra vez (para jugar: varios toques; para "
+                                                                 "videos: esperar 10 y deslizar). Vacío si hay que ver "
+                                                                 "qué pasa primero.",
+                  "items": {"type": "object", "properties": {"accion": {"type": "string", "enum": ACCIONES},
+                                                             "args": {"type": "array", "items": {"type": "string"}}},
+                            "required": ["accion", "args"], "additionalProperties": False}},
     },
-    "required": ["veo", "por_que", "accion", "args"],
+    "required": ["veo", "por_que", "accion", "args", "luego"],
     "additionalProperties": False,
 }
 
@@ -54,6 +61,18 @@ REGLAS DE SEGURIDAD (no se negocian):
 - Si pide iniciar sesión con Google/Facebook busca "invitado"/"saltar"; si no hay, `nota` y termina.
 - Captcha o verificación de cara: `nota` y termina.
 - Si llevas 3 intentos sin que algo cambie, haz otra cosa (atras, deslizar, otra sección).
+
+ÚSALA COMO UNA PERSONA (esto se ve en el video):
+- Videos (feeds tipo TikTok, dramas, series, películas, clips): cada video máximo ~15 segundos y desliza al siguiente
+  (por los derechos de autor no mostramos más). Nunca dejes correr un episodio completo. Ej.: acción esperar [10] y
+  luego [deslizar abajo].
+- Juegos: JUEGA de verdad, con varios toques o deslizamientos seguidos en `luego`, persiguiendo el objetivo del juego
+  (juntar, combinar, disparar, avanzar de nivel). Mira cómo cambia el saldo o las monedas.
+- No te quedes parado: si llevas más de ~20 s en la misma pantalla sin que sea un anuncio con contador o algo cargando,
+  haz algo. `esperar` solo para cargas o anuncios con contador (anuncios: máximo ~30 s y ciérralo).
+- Explora como alguien curioso: las secciones importantes (ganar, monedero/saldo, tareas, retiro), sin repetir lo
+  mismo una y otra vez.
+- Usa `luego` para encadenar lo obvio (tocar y esperar 2; varios toques de juego) y así no pierdes tiempo.
 - Prefiere `tocar` con el número de la lista; si lo que quieres no está en la lista (juegos, anuncios), usa
   coordenadas [x, y] de la foto en píxeles REALES del cel (te digo su tamaño)."""
 
@@ -71,6 +90,7 @@ def decidir(datos: dict) -> dict:
              + (" — YA CASI: ve al retiro/cobrar, anota el pago mínimo y termina." if trans >= minutos - 1 else "")
              + (" — SE ACABÓ EL TIEMPO: termina ya." if trans >= minutos + 3 else "")
              + f"\nCELULAR: {datos.get('ancho') or '?'}x{datos.get('alto') or '?'} px (coordenadas para tocar)"
+             + (f"\nLLEVAS {int(datos.get('misma_pantalla') or 0)} s EN ESTA MISMA PANTALLA" if (datos.get('misma_pantalla') or 0) >= 8 else "")
              + f"\nLO QUE LLEVAS ANOTADO: {datos.get('notas') or '(nada)'}"
              + "\nÚLTIMAS ACCIONES (de la más vieja a la más nueva):\n"
              + ("\n".join(f"- {h.get('accion')} {h.get('args') or ''} → {h.get('resultado', '')[:120]}"
@@ -85,4 +105,5 @@ def decidir(datos: dict) -> dict:
                                  que="robot: siguiente paso")
     if r["accion"] not in ACCIONES:
         r["accion"] = "esperar"
+    r["luego"] = [x for x in (r.get("luego") or []) if x.get("accion") in ACCIONES][:4]
     return r

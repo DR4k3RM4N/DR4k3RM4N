@@ -182,7 +182,8 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                  ("tocar_texto", ["Instalar"]), ("esperar", ["2"]), ("tocar", ["0"]),
                  ("anuncio", ["Cash Cat", "gana dinero"]), ("terminar", ["Prueba demo terminada."])]
         a, args = pasos[min(n, len(pasos) - 1)]
-        return {"veo": "(demo) pantalla", "por_que": f"(demo) paso {n + 1}: {a}", "accion": a, "args": args}
+        luego = [{"accion": "esperar", "args": ["1"]}, {"accion": "deslizar", "args": ["abajo"]}] if a == "tocar" else []
+        return {"veo": "(demo) pantalla", "por_que": f"(demo) paso {n + 1}: {a}", "accion": a, "args": args, "luego": luego}
     if "para_nuestro_canal" in props:  # 🎬 analizar un video
         return {"resumen": "(Demo) Un creador prueba una app que promete pagar y muestra que paga centavos.",
                 "estructura": [{"tiempo": "0:00", "que_pasa": "Gancho: promesa contra realidad"},

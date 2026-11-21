@@ -116,12 +116,18 @@ def _bucle(of, tid: str, mesa: Path, par: dict, avance, log, limite: float) -> d
     tam = cel.adb("shell", "wm", "size")
     medidas = [int(x) for x in __import__("re").findall(r"(\d+)x(\d+)", tam)[-1]] if "x" in tam else [1080, 1920]
     historial, fallos, pasos, inicio = [], 0, 0, time.time()
+    huella_ant, misma_desde = None, time.time()
     minutos = max(3, min(20, int(par.get("minutos") or 8)))
     while time.time() < limite:
         lista = _ejecutar("pantalla", [])
         b64 = ""
         try:
             img = Image.open(mesa / "pantalla.png").convert("RGB")
+            # ¿sigue en la misma pantalla? (huella chiquita en grises)
+            huella = list(img.convert("L").resize((12, 20)).getdata())
+            if huella_ant is None or sum(abs(a - b) for a, b in zip(huella, huella_ant)) / len(huella) > 6:
+                misma_desde = time.time()
+            huella_ant = huella
             img.thumbnail((720, 1280))
             buf = io.BytesIO()
             img.save(buf, "JPEG", quality=70)
@@ -136,7 +142,8 @@ def _bucle(of, tid: str, mesa: Path, par: dict, avance, log, limite: float) -> d
                 "app": par.get("nombre"), "paquete": par.get("paquete"), "minutos": minutos,
                 "transcurrido": round((time.time() - inicio) / 60, 1), "ya_instalada": bool(par.get("ya_instalada")),
                 "ancho": medidas[0], "alto": medidas[1], "pantalla": b64, "elementos": lista[:6000],
-                "historial": historial[-14:], "notas": resumen}, timeout=240)
+                "historial": historial[-14:], "notas": resumen,
+                "misma_pantalla": round(time.time() - misma_desde)}, timeout=240)
         except Exception as exc:  # noqa: BLE001
             r = {"error": f"sin conexión con la oficina ({exc.__class__.__name__})"}
         if r.get("error"):
@@ -153,6 +160,22 @@ def _bucle(of, tid: str, mesa: Path, par: dict, avance, log, limite: float) -> d
         resultado = _ejecutar(accion, args)
         pasos += 1
         historial.append({"accion": accion, "args": args, "resultado": resultado[:160], "por_que": str(r.get("por_que", ""))[:120]})
+        for extra in (r.get("luego") or [])[:4]:  # acciones encadenadas (jugar, ver un video y deslizar…)
+            if accion == "terminar" or time.time() > limite:
+                break
+            a2 = str(extra.get("accion") or "")
+            args2 = [str(x) for x in (extra.get("args") or [])][:4]
+            if a2 == "esperar":
+                args2 = [str(min(15, max(1, int(float(args2[0]))))) if args2 and args2[0].replace(".", "", 1).isdigit() else "2"]
+            if a2 == "pantalla" or not a2:
+                continue
+            res2 = _ejecutar(a2, args2)
+            pasos += 1
+            historial.append({"accion": a2, "args": args2, "resultado": res2[:120], "por_que": "(encadenada)"})
+            if a2 == "terminar":
+                accion = "terminar"
+                break
+            time.sleep(0.35)
         transcurrido = (time.time() - inicio) / 60
         avance(f"📱 {str(r.get('por_que') or accion)[:70]}", min(0.85, 0.05 + 0.8 * transcurrido / (minutos + 4)))
         if accion == "terminar":
