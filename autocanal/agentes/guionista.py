@@ -52,6 +52,10 @@ SCHEMA = {
         "textos_miniatura": {"type": "array", "items": {"type": "string"},
                              "description": "6 opciones distintas de texto para la miniatura, 2 a 5 palabras cada una, la mejor primero"},
         "sello_miniatura": {"type": "string", "enum": ["NO PAGA", "CUIDADO", "SÍ PAGA", "¿PAGA?"]},
+        "tipo_gancho": {"type": "string", "enum": ["historia", "dato_impactante", "pregunta_al_espectador",
+                                                   "promesa_vs_realidad", "prueba_en_vivo", "caso_de_usuario",
+                                                   "advertencia_directa", "contraintuitivo"],
+                        "description": "El tipo de gancho que usaste (el que te pido en VARIEDAD)"},
         "escenas": {"type": "array", "items": {
             "type": "object",
             "properties": {
@@ -68,7 +72,8 @@ SCHEMA = {
             "additionalProperties": False,
         }},
     },
-    "required": ["titulos", "descripcion", "etiquetas", "texto_miniatura", "textos_miniatura", "sello_miniatura", "escenas"],
+    "required": ["titulos", "descripcion", "etiquetas", "texto_miniatura", "textos_miniatura", "sello_miniatura",
+                 "tipo_gancho", "escenas"],
     "additionalProperties": False,
 }
 
@@ -182,8 +187,29 @@ def escribir(ficha: dict, expediente: dict, clips: list[dict], minutos: int = 6,
     if mini:
         pedido += (f"\n\nESTILO DE MINIATURAS DEL CANAL: {mini.get('descripcion', '')} "
                    f"Textos: {mini.get('consejos_texto', '')} Máximo {mini.get('palabras_max', 4)} palabras.")
+    from . import canales, empaque, variedad
+    canal = canales.actual()
+    try:  # 🎲 que no se parezca a los anteriores
+        pedido += variedad.para_guionista(canal)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  · aviso variedad: {exc}", flush=True)
+    base = SYSTEM_TEMA if es_tema else SYSTEM
+    nombre = canales.get(canal).get("nombre")
+    if canal != canales.PRINCIPAL and nombre:  # el guion es para el canal del video
+        base = base.replace(f'"{config.CANAL_NOMBRE}"', f'"{nombre}"')
+    sistema = (base + empaque.para_guionista(canal) + "\n\n" + manual.para_agente()
+               + lecciones.para("guionista", "disenadora"))
     if es_tema:
-        r = claude.json_estructurado(SYSTEM_TEMA + "\n\n" + manual.para_agente() + lecciones.para("guionista", "disenadora"), pedido, SCHEMA_TEMA, tarea="guion")
+        r = claude.json_estructurado(sistema, pedido, SCHEMA_TEMA, tarea="guion")
         r["sello_miniatura"] = (r.get("sello_miniatura") or "").upper()[:14]
-        return r
-    return claude.json_estructurado(SYSTEM + "\n\n" + manual.para_agente() + lecciones.para("guionista", "disenadora"), pedido, SCHEMA, tarea="guion")
+    else:
+        r = claude.json_estructurado(sistema, pedido, SCHEMA, tarea="guion")
+    # 🎁 el empaque: 3 paquetes de título + miniatura, calificados con la guía y con tus números
+    try:
+        resumen = (f"{'Tema' if es_tema else 'App'}: {ficha['title']}. Enfoque: {expediente.get('angulo', '')}. "
+                   f"Veredicto: {expediente.get('veredicto', '')}. "
+                   + " ".join(e.get("narracion", "") for e in r["escenas"][:6])[:1500])
+        r = empaque.empacar(r, resumen, canal, notas)
+    except Exception as exc:  # noqa: BLE001 — sin empaque se quedan los títulos de Gabi
+        print(f"  · aviso empaque: {exc}", flush=True)
+    return r

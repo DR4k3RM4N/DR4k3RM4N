@@ -54,6 +54,7 @@
     pintarIdeasAuto();
     pintarEquipo();
     pintarChat();
+    pintarResultados();
   }
 
   // ---------- bandeja ----------
@@ -99,6 +100,7 @@
           ${i.personalizada ? `<div class="tuya">💡 Tu idea</div>` : ""}
           <div class="cabeza"><h4>${i.num ? `<span class="num">${i.num}</span>` : ""}${esc(i.titulo)}${chipCanal(i.canal)}</h4><span class="chip chip-${esc(i.potencial_vistas)}">${esc(i.potencial_vistas)}</span></div>
           <p class="angulo">🎬 ${esc(i.angulo || "")}${i.formato ? ` <span class="chip chip-formato">${esc(i.formato)}</span>` : ""}</p>
+          ${i.miniatura_idea ? `<p class="pista">🖼️ Miniatura: ${esc(i.miniatura_idea)}</p>` : ""}
           ${(i.fuentes || []).length ? `<p class="pista">📎 ${i.fuentes.map((u, k) => `<a href="${esc(u)}" target="_blank" rel="noopener">fuente ${k + 1}</a>`).join(" · ")}</p>` : ""}
           ${i.inspiracion ? `<p class="pista">📈 Inspirada en <a href="${esc(i.inspiracion.url)}" target="_blank" rel="noopener">${esc(i.inspiracion.titulo)}</a> (x${esc(i.inspiracion.multiplicador)} vistas vs. suscriptores)</p>` : ""}
           <p class="porque">${esc(i.por_que)}</p>
@@ -366,6 +368,66 @@
     if (b) abrirRevision(b.dataset.revisar);
   });
 
+  // ---------- 📊 resultados ----------
+  const PASOS_PERMISO = (cid) => `<ol class="pasos">
+      <li>En <a href="https://console.cloud.google.com/apis/library/youtubeanalytics.googleapis.com" target="_blank" rel="noopener">Google Cloud</a>
+        (el mismo proyecto de ese canal) dale <b>Habilitar</b> a «YouTube Analytics API».</li>
+      <li>En el servidor corre: <code>cd /opt/canal/autocanal && sudo -u canal .venv/bin/python canal.py autorizar-youtube --canal ${esc(cid)} --de-nuevo --puerto 8090 --sin-navegador</code>
+        y autoriza como la primera vez.</li></ol>`;
+  const num = (n) => (n == null ? "—" : Number(n).toLocaleString("es-MX"));
+  function pintarResultados() {
+    const caja = $("#resultados");
+    if (!caja || $("#tab-resultados").hidden) return;
+    const res = estado.resultados || {};
+    let html = `<div class="fila-res"><p class="pista">Cada 6 horas la oficina revisa cómo le va a cada video publicado y el
+      equipo aprende de eso (lo que funcionó se repite, lo que no, se corrige). 🛟 Si un video casi no recibe clics,
+      le cambia el título solo, una vez.</p>
+      <button class="btn btn-mini" id="b-res-actualizar">🔄 Revisar ahora</button></div>`;
+    for (const [cid, c] of Object.entries(res)) {
+      if (cid.startsWith("_") || (!c.conectado && !c.videos.length)) continue;
+      html += `<h3 class="seccion">📺 ${esc(c.nombre || cid)} <span class="sub">${c.actualizado ? "revisado " + hora(c.actualizado) : ""}</span></h3>`;
+      if (!c.permiso) {
+        html += `<div class="aviso">📊 Falta darle permiso a la oficina para ver las estadísticas de este canal (una sola vez):${PASOS_PERMISO(cid)}</div>`;
+        continue;
+      }
+      const a = c.aprendizajes;
+      if (a) {
+        const bloque = (t, l) => (l && l.length ? `<p><b>${t}</b></p><ul>${l.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
+        html += `<details class="gustos" open><summary>🧠 Lo que aprendimos de ${a.videos} videos</summary>
+          <p>${esc(a.resumen)}</p>${bloque("Paola (temas)", a.productora)}${bloque("Gabi (gancho y retención)", a.guionista)}
+          ${bloque("Dani (títulos y miniaturas)", a.disenadora)}${bloque("Edu (ritmo)", a.editor)}</details>`;
+      } else {
+        html += `<p class="pista">🧠 Con 3 videos públicos de 2+ días el equipo empieza a sacar conclusiones (${c.videos.filter((v) => v.dias >= 2).length} de 3).</p>`;
+      }
+      if (!c.videos.length) {
+        html += `<p class="vacio">${c.publicados ? "Todavía no hay videos públicos con números." : "Aún no hay videos publicados por la oficina en este canal."}</p>`;
+        continue;
+      }
+      if (c.sin_ctr) html += `<p class="pista">YouTube no está dando el CTR por la API para este canal; se usan vistas por día.</p>`;
+      for (const v of c.videos) {
+        const r = v.retencion || {};
+        const caidas = (r.caidas || []).map((x) => `<li>en ${esc(x.minuto)} se fue el ${esc(x.se_fue)}% (escena ${esc(x.escena)}: «${esc(x.texto.slice(0, 80))}…»)</li>`).join("");
+        html += `<div class="res-video"><a href="https://youtu.be/${esc(v.id)}" target="_blank" rel="noopener"><b>${esc(v.titulo)}</b></a>
+          <div class="res-nums">
+            <span title="Vistas">👁️ ${num(v.vistas)}</span><span title="Vistas por día">📅 ${num(v.vistas_dia)}/día</span>
+            <span title="De cada 100 que ven la miniatura, cuántos le dan clic">🖱️ CTR ${v.ctr == null ? "—" : esc(v.ctr) + "%"}</span>
+            <span title="Cuánto del video ven en promedio">⏱️ ${esc(v.pct_visto)}% visto</span>
+            <span title="Cuánta gente seguía viendo a los 30 segundos">⚡ 30 s: ${r.a_los_30s == null ? "—" : esc(r.a_los_30s) + "%"}</span>
+            <span title="Suscriptores ganados">➕ ${num(v.subs)} subs</span><span>🗓️ ${num(v.dias)} días</span></div>
+          ${v.rescatado ? `<p class="pista">🛟 Le cambié el título; antes: «${esc(v.rescatado.antes)}» (CTR ${esc(v.rescatado.ctr_antes)}%)</p>` : ""}
+          ${caidas ? `<details><summary class="pista">📉 Dónde se va la gente</summary><ul class="pista">${caidas}</ul></details>` : ""}</div>`;
+      }
+    }
+    if (document.activeElement?.closest?.("#resultados")) return;
+    caja.innerHTML = html;
+  }
+  $("#resultados").addEventListener("click", async (e) => {
+    if (e.target.id !== "b-res-actualizar") return;
+    e.target.disabled = true;
+    e.target.textContent = "Revisando… (unos minutos)";
+    try { await api("/api/resultados/actualizar", {}); } catch (err) { alert(err.message); }
+  });
+
   // ---------- chat ----------
   function pintarChat() {
     pintarLecciones();
@@ -412,6 +474,7 @@
     if (nombre === "chat") $("#chat").scrollTop = $("#chat").scrollHeight;
     if (nombre === "equipo") pintarEquipo();
     if (nombre === "estilo") pintarEstilo();
+    if (nombre === "resultados") pintarResultados();
     if (nombre === "sala" && typeof pintarSala === "function") pintarSala();
   }
   document.querySelectorAll(".pestana").forEach((p) => p.addEventListener("click", () => abrirPestana(p.dataset.tab)));
@@ -445,6 +508,17 @@
           ${d.fuentes.length ? `<details><summary>Fuentes (${d.fuentes.length})</summary><ul>${d.fuentes.map((f) => `<li><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.titulo)}</a></li>`).join("")}</ul></details>` : ""}
           ${d.palabra_clave ? `<h3>SEO del blog</h3><p class="seo"><b>Palabra clave:</b> ${esc(d.palabra_clave)}<br>
             <b>Secundarias:</b> ${esc((d.palabras_secundarias || []).join(", "))}<br><b>Meta descripción:</b> ${esc(d.meta_descripcion || "")}</p>` : ""}
+          ${(d.paquetes || []).length ? `<h3>🎁 Empaque <small>3 paquetes distintos, el mejor primero</small></h3>
+            <div class="paquetes">${d.paquetes.map((x, k) => `<div class="paquete">
+              ${x.url ? `<a href="${esc(x.url)}" download><img src="${esc(x.url)}" alt="Miniatura del paquete ${k + 1}"></a>` : ""}
+              <p><b>${k + 1}. ${esc(x.titulo)}</b></p><p class="pista">🖼️ «${esc(x.texto_miniatura)}» · ${esc(x.angulo)} · ⭐ ${esc(x.puntaje)}/10</p>
+              <p class="pista">${esc(x.por_que)}</p></div>`).join("")}</div>
+            <details class="gustos"><summary>🧪 ¿Cómo hago la prueba A/B en YouTube?</summary><ol class="pasos">
+              <li>Ya publicado, abre el video en <b>YouTube Studio</b> (en la compu) → <b>Detalles</b>.</li>
+              <li>En la miniatura elige <b>Prueba A/B</b> (o «Probar y comparar») y sube las 3 miniaturas de arriba
+                (clic en cada una para bajarla); si te deja, pon también los 3 títulos.</li>
+              <li>YouTube muestra cada versión a distinta gente y en unos días deja la que hace que vean más tiempo.</li>
+              <li>Mientras corre la prueba, apaga el 🛟 rescate en Estilo para que la oficina no cambie el título.</li></ol></details>` : ""}
           <h3>Título</h3>
           <div class="titulos">${d.titulos.map((t, k) => `<label><input type="radio" name="titulo" value="${k + 1}" ${k ? "" : "checked"} ${editable ? "" : "disabled"}> ${esc(t)}</label>`).join("")}
             ${editable ? `<label class="titulo-libre"><input type="radio" name="titulo" value="libre"> ✍️ <b>Mi título</b></label>
@@ -808,7 +882,8 @@
         ${subida("mascota", e.archivos.mascota)}${subida("fondo", e.archivos.fondo)}
         <div class="ajustes">${chk("dos_voces", "Dos voces (una pregunta o reacciona, como en los videos que pegan)")}
           <label>Mascota en la esquina ${sel("mascota_lado", [["derecha", "Derecha"], ["izquierda", "Izquierda"]])}</label>
-          ${chk("probar_en_cel", "📱 Si mi Android está conectado a mi compu, que el robot pruebe la app antes de investigar")}</div>
+          ${chk("probar_en_cel", "📱 Si mi Android está conectado a mi compu, que el robot pruebe la app antes de investigar")}
+          ${chk("rescate_empaque", "🛟 Si un video casi no recibe clics, cambiarle solo el título y la miniatura por el paquete 2 (una vez)")}</div>
         ${subida("musica", e.archivos.musica)}${subida("whoosh", e.archivos.whoosh)}${subida("intro", e.archivos.intro)}${subida("outro", e.archivos.outro)}
         <p class="pista">Los colores de subtítulos y barra salen del estilo de tus miniaturas. Usa música sin copyright.</p>
       </section>

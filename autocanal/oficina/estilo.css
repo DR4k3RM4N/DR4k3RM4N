@@ -532,3 +532,19 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .chat-escribir textarea { flex: 1; resize: none; }
 #lista-lecciones li { padding: 4px 0; }
 #chat li { white-space: pre-line; }
+
+.tabla-scroll { overflow-x: auto; }
+.tabla-res td small { display: block; margin-top: 4px; }
+.fila-res { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.aviso .pasos { padding-left: 18px; font-size: 13px; }
+.aviso code { word-break: break-all; font-size: 12px; }
+.aviso { background: rgba(250, 204, 21, .1); border: 1px solid rgba(250, 204, 21, .35); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; margin: 8px 0; }
+.paquetes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.paquete { border: 1px solid rgba(255,255,255,.1); border-radius: 10px; padding: 8px; font-size: 13px; }
+.paquete img { width: 100%; border-radius: 6px; display: block; }
+.paquete p { margin: 6px 0 0; }
+.res-video { border: 1px solid rgba(255,255,255,.1); border-radius: 10px; padding: 9px 11px; margin: 8px 0; font-size: 13.5px; }
+.res-video a { color: inherit; }
+.res-nums { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.res-nums span { background: rgba(255,255,255,.06); border-radius: 999px; padding: 2px 8px; font-size: 12.5px; }
+.res-video ul { margin: 4px 0 0; padding-left: 18px; }

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 
-from . import buscar_web, claude, config, lecciones, manual
+from . import buscar_web, claude, config, empaque, lecciones, manual
 
 FORMATOS = ["analisis_app", "top", "guia", "noticias", "analisis", "opinion", "comparativa", "tutorial", "historia",
             "alerta_estafa"]
@@ -78,7 +78,11 @@ SCHEMA_IDEAS = {
             "properties": {
                 "tipo": {"type": "string", "enum": ["app", "tema"]},
                 "nombre": {"type": "string", "description": "app: nombre exacto de la app · tema: el tema en pocas palabras"},
-                "titulo_video": {"type": "string", "description": "Título tentativo del video (máx. 70 caracteres)"},
+                "titulo_video": {"type": "string", "description": "Título tentativo del video (máx. 60 caracteres), "
+                                                                  "siguiendo la guía de empaque"},
+                "miniatura": {"type": "string", "description": "El empaque desde ya: texto de miniatura (2-4 palabras) "
+                                                               "+ qué se ve (personaje/emoción/elemento clave). Si no "
+                                                               "se te ocurre uno que dé ganas de clic, baja el puntaje"},
                 "formato": {"type": "string", "enum": FORMATOS},
                 "por_que": {"type": "string", "description": "Por qué este video funcionaría AHORA, en 1-2 frases"},
                 "evidencia": {"type": "array", "items": {"type": "string"},
@@ -98,7 +102,7 @@ SCHEMA_IDEAS = {
                 "fuentes": {"type": "array", "items": {"type": "string"},
                             "description": "URLs de los resultados que lo respaldan"},
             },
-            "required": ["tipo", "nombre", "titulo_video", "formato", "por_que", "evidencia", "senales_distintas",
+            "required": ["tipo", "nombre", "titulo_video", "miniatura", "formato", "por_que", "evidencia", "senales_distintas",
                          "demanda", "competencia", "puntaje", "inspiracion", "fuentes"],
             "additionalProperties": False,
         }},
@@ -120,7 +124,9 @@ def _sistema() -> str:
             "ángulo. Eres tu propia crítica más dura: si una idea solo te suena bonita pero no tiene señales, la "
             "descartas. El jefe te da instrucciones en sus palabras: entiende lo que quiere de verdad (a veces es una "
             "búsqueda, a veces un criterio, a veces una regla para siempre). No inventes apps, cifras, videos ni "
-            "noticias: todo sale de los datos que te paso.")
+            "noticias: todo sale de los datos que te paso.\n"
+            "Piensas el EMPAQUE desde la idea (como los grandes de YouTube): si no puedes imaginar un título y una "
+            "miniatura que den ganas de clic y que el video cumpla, la idea no sirve." + empaque.para_guionista())
 
 
 def _gastar(conteo: dict, que: str) -> None:
@@ -262,7 +268,7 @@ def investigar(instruccion: str, guia: str = "", cuantas: int = 6, hechas: set |
         fuentes = [u for u in i["fuentes"] if u in urls][:4]  # nada de URLs inventadas
         evidencia = "\n".join(f"• {e}" for e in i["evidencia"][:4])
         base = {"angulo": i["titulo_video"][:90], "potencial_vistas": _potencial(i["puntaje"]), "personalizada": True,
-                "idea_jefe": instruccion, "fuentes": fuentes, "puntaje": i["puntaje"],
+                "idea_jefe": instruccion, "fuentes": fuentes, "puntaje": i["puntaje"], "miniatura_idea": i["miniatura"],
                 "por_que": f"🔎 {i['por_que']} (⭐ {i['puntaje']}/10 · competencia {i['competencia']})"
                            + (f"\n📊 {evidencia}" if evidencia else "")}
         if i["inspiracion"] in videos:
@@ -317,8 +323,11 @@ SCHEMA_APPS = {
             "type": "object",
             "properties": {
                 "nombre": {"type": "string", "description": "Igual que en [APP k]"},
-                "titulo_video": {"type": "string", "description": "Título del video (máx. 70 caracteres). Tan fuerte "
+                "titulo_video": {"type": "string", "description": "Título del video (máx. 60 caracteres). Tan fuerte "
                                                                   "como la evidencia lo permita"},
+                "miniatura": {"type": "string", "description": "El empaque desde ya: texto de miniatura (2-4 palabras) "
+                                                               "+ qué se ve (personaje/emoción/elemento clave). Si no "
+                                                               "se te ocurre uno que dé ganas de clic, baja el puntaje"},
                 "por_que": {"type": "string", "description": "Por qué esta app merece video ahora, en 1-2 frases"},
                 "evidencia": {"type": "array", "items": {"type": "string"},
                               "description": "Datos reales citando etiquetas: '[APP 2] 48 de 160 reseñas hablan de "
@@ -330,7 +339,7 @@ SCHEMA_APPS = {
                 "inspiracion": {"type": "string", "description": "URL de un video que pega relacionado, o vacío"},
                 "fuentes": {"type": "array", "items": {"type": "string"}, "description": "URLs de los datos"},
             },
-            "required": ["nombre", "titulo_video", "por_que", "evidencia", "nivel_evidencia", "gravedad",
+            "required": ["nombre", "titulo_video", "miniatura", "por_que", "evidencia", "nivel_evidencia", "gravedad",
                          "popularidad", "puntaje", "inspiracion", "fuentes"],
             "additionalProperties": False}},
     },
@@ -512,6 +521,7 @@ def _cazar_apps(instruccion: str, guia: str, cuantas: int, hechas: set, plan: di
                       else "📱 Ya no está en Play Store" if d["en_play"] is False else "📱 Fuera de Play Store")
         base = {"angulo": a["titulo_video"][:90], "potencial_vistas": _potencial(a["puntaje"]), "personalizada": True,
                 "idea_jefe": instruccion, "puntaje": a["puntaje"], "fuentes": [u for u in a["fuentes"] if u in urls][:4],
+                "miniatura_idea": a["miniatura"],
                 "por_que": f"🎯 #{k} · {a['por_que']} (⭐ {a['puntaje']}/10 · gravedad {a['gravedad']}/10 · "
                            f"evidencia {a['nivel_evidencia']})\n{datos_play}" + (f"\n📊 {evidencia}" if evidencia else "")
                            + ("\n🗣️ " + "\n🗣️ ".join(d["citas"][:2]) if d["citas"] else "")}

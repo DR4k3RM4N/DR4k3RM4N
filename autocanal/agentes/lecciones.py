@@ -52,7 +52,11 @@ def para(agente: str, *otros: str) -> str:
     canal = canales.actual()
     mias = [x["texto"] for x in todas()
             if x["agente"] in (agente, *otros, "todos") and x.get("canal") in ("", None, canal)][-25:]
-    if not mias:
-        return ""
-    return ("\n\nCORRECCIONES DEL JEFE (errores que ya cometiste; no los repitas nunca):\n"
-            + "\n".join(f"- {t}" for t in mias))
+    bloque = ("\n\nCORRECCIONES DEL JEFE (errores que ya cometiste; no los repitas nunca):\n"
+              + "\n".join(f"- {t}" for t in mias)) if mias else ""
+    try:  # 📊 y lo que dicen los números de los videos ya publicados
+        from . import analitica
+        bloque += analitica.para(agente, *otros, canal=canal)
+    except Exception:  # noqa: BLE001
+        pass
+    return bloque

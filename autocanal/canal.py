@@ -170,6 +170,7 @@ class Produccion:
                     elegida, razon = elegir_miniatura([self.carpeta / o["archivo"] for o in opciones], refs)
                 shutil.copyfile(self.carpeta / opciones[elegida]["archivo"], self.carpeta / "miniatura.jpg")
                 _guardar(self.carpeta / "miniaturas.json", {"opciones": opciones, "elegida": elegida, "razon": razon})
+                self._ligar_paquetes(opciones, elegida)
                 self.mini = self.carpeta / "miniatura.jpg"
                 return
         spec, n = datos.get("miniaturas"), int(datos["ajustes"].get("opciones_miniatura", 3))
@@ -193,7 +194,15 @@ class Produccion:
             elegida, razon = elegir_miniatura([self.carpeta / o["archivo"] for o in opciones], refs)
         shutil.copyfile(self.carpeta / opciones[elegida]["archivo"], self.carpeta / "miniatura.jpg")
         _guardar(self.carpeta / "miniaturas.json", {"opciones": opciones, "elegida": elegida, "razon": razon})
+        self._ligar_paquetes(opciones, elegida)
         self.mini = self.carpeta / "miniatura.jpg"
+
+    def _ligar_paquetes(self, opciones: list[dict], elegida: int) -> None:
+        """🎁 cada paquete de empaque con su miniatura; el título que se publica va con la miniatura elegida."""
+        from agentes import empaque
+        if self.guion and self.guion.get("paquetes"):
+            self.guion = empaque.ligar_miniaturas(self.guion, opciones, elegida)
+            _guardar(self.carpeta / "guion.json", self.guion)
 
     def editar(self) -> None:
         from agentes import edicion_remota, editor
@@ -507,6 +516,8 @@ def main() -> None:
                    help="id del canal (principal = el de siempre; otro nombre = canal extra en canales/<id>/)")
     s.add_argument("--nicho", choices=["apps", "fraudes", "libre"], default=None, help="de qué trata ese canal")
     s.add_argument("--sin-navegador", action="store_true", help="solo muestra el enlace (para servidores)")
+    s.add_argument("--de-nuevo", action="store_true",
+                   help="vuelve a pedir permiso aunque ya esté autorizado (para sumar las estadísticas)")
     a = p.parse_args()
 
     if a.cmd == "ideas":
@@ -535,13 +546,16 @@ def main() -> None:
         canales.carpeta(cid).mkdir(parents=True, exist_ok=True)
         if not canales.secreto(cid).exists():
             raise SystemExit(f"Falta {canales.secreto(cid)}: pon ahí el client_secret.json de ese canal.")
-        canal_info = youtube._servicio(a.puerto, not a.sin_navegador, canal=cid, autorizar=True) \
+        canal_info = youtube._servicio(a.puerto, not a.sin_navegador, canal=cid, autorizar=True, de_nuevo=a.de_nuevo) \
             .channels().list(part="snippet", mine=True).execute()
         nombre = (canal_info.get("items") or [{}])[0].get("snippet", {}).get("title", "?")
         if cid != canales.PRINCIPAL:
             canales.guardar(cid, nombre=nombre, nicho=a.nicho or canales.get(cid).get("nicho") or "libre",
                             blog=False)
         print(f"✔ Listo, autorizado el canal: {nombre} (id en la oficina: {cid}). Se creó {canales.token(cid)}")
+        print("📊 Estadísticas: " + ("conectadas, la oficina ya puede ver cómo le va a cada video."
+                                    if youtube.tiene_analitica(cid) else
+                                    "todavía no (vuelve a correr este comando con --de-nuevo)."))
 
 
 if __name__ == "__main__":

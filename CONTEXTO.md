@@ -442,3 +442,27 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
 - Nov 2026 (12): Miguel pidió apagar las ideas/guiones automáticos de la mañana. `oficina.ideas_auto` (en
   oficina_estado.json, apagado por defecto) manda sobre IDEAS_HORA; casilla «☀️ Que Paola busque ideas sola cada
   mañana» bajo "Pídele ideas a Paola" (POST /api/ideas/auto {activo}). Sin IDEAS_HORA en .env la casilla sale gris.
+
+## 3k. Resultados, variedad y empaque (nov 2026)
+- **📊 Resultados** (`agentes/analitica.py`): permiso nuevo `yt-analytics.readonly` (en `youtube.SCOPES_NUEVOS`;
+  los tokens viejos se cargan con SUS scopes para no romper el refresh). Alta por canal:
+  `canal.py autorizar-youtube --canal <id> --de-nuevo --puerto 8090 --sin-navegador` + habilitar «YouTube Analytics
+  API» en el proyecto de Google de ese canal. `youtube.tiene_analitica(canal)`.
+  Cada 6 h (`Oficina._ciclo_resultados`, botón «Revisar ahora» → `/api/resultados/actualizar`): `actualizar` (vistas,
+  minutos, duración media, % visto, subs, likes, comentarios, impresiones + CTR si la API los da, curva de retención →
+  `_caidas`: retención a 30 s y 3 caídas mapeadas a escenas del guion por palabras), `aprender` (≥3 videos de 2+ días,
+  1 vez al día: reglas para productora/guionista/disenadora/editor → se pegan en los prompts vía `lecciones.para`),
+  `rescatar` (🛟 2-14 días, ≥300 impresiones, CTR < 70% de la mediana del canal → título/miniatura del paquete 2, una
+  vez; ajuste `rescate_empaque`). Datos en `estilo/analitica.json` (demo: `analitica_demo.json`, números falsos).
+  Pestaña 📊 Resultados (tarjetas por video, aprendizajes, pasos de permiso si falta).
+- **🎲 Variedad** (`agentes/variedad.py`): Miguel quiere VOLUMEN; para no caer en «contenido repetitivo» (política
+  jul 2026) cada guion recibe: tipo de gancho que toca (el menos usado; `tipo_gancho` en el schema), cómo empezaron
+  los últimos 8 videos, orden de bloques reciente, muletillas (4-gramas en ≥3 guiones) prohibidas y "aporta algo propio".
+  El system del guion usa el nombre del canal del video.
+- **🎁 Empaque** (`agentes/empaque.py`): GUIA investigada (packaging-first, título+miniatura como unidad, ≤55 car.,
+  específico, curiosidad cumplida rápido porque A/B de YouTube gana por tiempo visto, caras con emoción, 2-4 palabras,
+  paquetes MUY distintos) + tips por nicho. Va en el system de Gabi y de Paola. Tras el guion, `empacar` (tarea guion):
+  10 conceptos → 3 paquetes (título, texto/escena de miniatura, ángulo, puntaje) usando títulos que más/menos jalaron
+  del canal y títulos recientes; reordena `titulos`/`textos_miniatura`. `ligar_miniaturas` une cada paquete con su
+  miniatura y pone primero el de la miniatura elegida. Revisión: bloque 🎁 Empaque + guía de Prueba A/B en Studio
+  (la API no crea pruebas A/B). Paola propone `miniatura_idea` con cada idea (tarjeta 🖼️) y va en las notas del proyecto.

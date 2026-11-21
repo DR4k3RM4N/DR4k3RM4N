@@ -6,10 +6,14 @@ from pathlib import Path
 from . import config
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube"]
+ANALITICA = "https://www.googleapis.com/auth/yt-analytics.readonly"  # 📊 para que la oficina vea cómo le fue a cada video
+SCOPES_NUEVOS = SCOPES + [ANALITICA]
 
 
-def _servicio(puerto: int = 0, abrir_navegador: bool = True, canal: str | None = None, autorizar: bool = False):
-    """El acceso a YouTube de un canal (cada canal tiene su permiso y su proyecto de Google)."""
+def _credenciales(puerto: int = 0, abrir_navegador: bool = True, canal: str | None = None, autorizar: bool = False,
+                  de_nuevo: bool = False):
+    """El permiso de un canal. Los permisos viejos se usan con lo que ya tenían (pedir uno nuevo al renovarlos los
+    rompería); `de_nuevo` vuelve a pedir permiso, ahora también para ver las estadísticas."""
     from . import canales
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
@@ -17,7 +21,7 @@ def _servicio(puerto: int = 0, abrir_navegador: bool = True, canal: str | None =
     from googleapiclient.discovery import build
 
     token = canales.token(canal)
-    creds = Credentials.from_authorized_user_file(str(token), SCOPES) if token.exists() else None
+    creds = Credentials.from_authorized_user_file(str(token)) if token.exists() and not de_nuevo else None
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -27,11 +31,37 @@ def _servicio(puerto: int = 0, abrir_navegador: bool = True, canal: str | None =
                 raise RuntimeError(f"Falta {secretos.name}: descárgalo de Google Cloud Console y ponlo en {secretos.parent}")
             if not autorizar:  # solo se pide permiso desde «canal.py autorizar-youtube», nunca a media publicación
                 raise RuntimeError(f"El canal «{canal or 'principal'}» no está autorizado (falta su youtube_token.json).")
-            creds = InstalledAppFlow.from_client_secrets_file(str(secretos), SCOPES).run_local_server(
+            creds = InstalledAppFlow.from_client_secrets_file(str(secretos), SCOPES_NUEVOS).run_local_server(
                 port=puerto, open_browser=abrir_navegador,
                 authorization_prompt_message="Abre este enlace en tu navegador y autoriza tu canal:\n{url}\n")
         token.write_text(creds.to_json(), encoding="utf-8")
-    return build("youtube", "v3", credentials=creds)
+    return creds
+
+
+def _servicio(puerto: int = 0, abrir_navegador: bool = True, canal: str | None = None, autorizar: bool = False,
+              de_nuevo: bool = False):
+    """El acceso a YouTube de un canal (cada canal tiene su permiso y su proyecto de Google)."""
+    from googleapiclient.discovery import build
+    return build("youtube", "v3", credentials=_credenciales(puerto, abrir_navegador, canal, autorizar, de_nuevo),
+                 cache_discovery=False)
+
+
+def tiene_analitica(canal: str | None = None) -> bool:
+    """¿El permiso de este canal ya incluye ver estadísticas?"""
+    import json
+    from . import canales
+    try:
+        datos = json.loads(canales.token(canal).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return ANALITICA in (datos.get("scopes") or [])
+
+
+def analitica(canal: str | None = None):
+    """El servicio de YouTube Analytics del canal (requiere tiene_analitica)."""
+    from googleapiclient.discovery import build
+    return build("youtubeAnalytics", "v2", credentials=_credenciales(abrir_navegador=False, canal=canal),
+                 cache_discovery=False)
 
 
 PRIVACIDADES = ("public", "unlisted", "private")

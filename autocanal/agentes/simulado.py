@@ -175,6 +175,17 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                     {"narracion": "Tiene más de diez millones de jugadores.", "visual": "dato", "indice": 0, "texto": "10 millones de jugadores"},
                     {"narracion": "¿Y tú, cuál es tu favorito? Déjamelo en los comentarios.", "visual": "cierre", "indice": 0, "texto": "¿Cuál es tu favorito?"},
                 ]}
+    if "paquetes" in props and "conceptos" in props:  # 🎁 empaque
+        return {"conceptos": [f"Concepto {k} (demo)" for k in range(1, 11)],
+                "paquetes": [{"titulo": f"{nombre}: lo probé 7 días y esto pasó", "texto_miniatura": "ME PAGÓ $3",
+                              "sello": "CUIDADO", "escena_miniatura": "cara de sorpresa con el saldo", "angulo": "prueba_cifra",
+                              "por_que": "Cifra concreta que el video muestra en los primeros 20 s (demo)", "puntaje": 8},
+                             {"titulo": f"No descargues {nombre} sin ver esto", "texto_miniatura": "TE ROBA TIEMPO",
+                              "sello": "NO PAGA", "escena_miniatura": "personaje enojado", "angulo": "emocion",
+                              "por_que": "Advertencia con emoción (demo)", "puntaje": 7},
+                             {"titulo": f"{nombre} promete $500… y paga centavos", "texto_miniatura": "$500 vs $0.03",
+                              "sello": "¿PAGA?", "escena_miniatura": "contraste de cifras", "angulo": "contraste",
+                              "por_que": "Promesa contra realidad (demo)", "puntaje": 7}]}
     if "plan" in props:  # Edu: motion graphics por escena
         return {"plan": [
             {"escena": 1, "efectos": [{"tipo": "contador", "palabra": "quinientos", "texto": "$500", "sonido": True},
@@ -304,6 +315,9 @@ def activar() -> None:
     from . import temas
     temas.recolectar = recolectar_tema
 
+    from . import analitica
+    analitica.DEMO = True
+    analitica.ARCHIVO = config.ESTILO_DIR / "analitica_demo.json"
     os.environ["VOZ_MOTOR"] = "silencio"
     config.HISTORIAL = config.BASE / "historial_demo.json"
     buscador.ideas = ideas

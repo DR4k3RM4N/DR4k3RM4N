@@ -159,6 +159,7 @@ class Oficina:
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
         threading.Thread(target=self._ciclo_deseos, daemon=True).start()
+        threading.Thread(target=self._ciclo_resultados, daemon=True).start()
         if self.por_reanudar:
             threading.Thread(target=self._reanudar, daemon=True).start()
         ia.antes_de_llamar = self._revisar_tope
@@ -190,6 +191,7 @@ class Oficina:
                     "agenda": self._agenda_cache(),
                     "canales": self._canales(),
                     "lecciones": self._lecciones(),
+                    "resultados": self._resultados(),
                     "publicar_solo": bool(estilo.cargar()["ajustes"].get("publicar_solo")),
                     "a_la_vez": self.a_la_vez(),
                     "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
@@ -854,6 +856,52 @@ class Oficina:
             except Exception as exc:  # noqa: BLE001 — el ciclo nunca debe morir
                 print(f"aviso: ciclo de deseos: {exc}")
 
+    # ---------- 📊 resultados de tus videos ----------
+    def _resultados(self) -> dict:
+        from agentes import analitica
+        ahora = time.time()
+        if ahora - getattr(self, "_resultados_t", 0) > 60:  # se lee del disco una vez por minuto
+            try:
+                self._resultados_cache = analitica.resumen()
+            except Exception as exc:  # noqa: BLE001
+                self._resultados_cache = {"_error": str(exc)[:200]}
+            self._resultados_t = ahora
+        return self._resultados_cache
+
+    def revisar_resultados(self, forzar: bool = False) -> None:
+        """Trae los números de YouTube de cada canal, aprende y rescata empaques flojos."""
+        from agentes import analitica, canales
+
+        if getattr(self, "_revisando", False):
+            return
+        self._revisando = True
+        try:
+            for c in canales.lista():
+                if not canales.conectado(c["id"]) and not self.demo:
+                    continue
+                ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "resultados", None
+                ia.contexto.canal = c["id"]
+                try:
+                    r = analitica.ciclo(c["id"], avisar=lambda m: self.decir("productora", m))
+                    if forzar and r.get("videos"):
+                        analitica.aprender(c["id"], forzar=True)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"aviso: resultados {c['id']}: {exc}", flush=True)
+        finally:
+            self._revisando = False
+            self._resultados_t = 0
+            self._tocar()
+
+    def _ciclo_resultados(self) -> None:
+        """📊 Cada 6 horas: cómo les va a los videos publicados (el primero, 2 min después de prender)."""
+        time.sleep(120)
+        while True:
+            try:
+                self.revisar_resultados()
+            except Exception as exc:  # noqa: BLE001 — el ciclo nunca debe morir
+                print(f"aviso: ciclo de resultados: {exc}")
+            time.sleep(6 * 3600)
+
     def _lecciones(self) -> list:
         from agentes import lecciones
         return lecciones.todas()[-80:]
@@ -968,6 +1016,9 @@ class Oficina:
     # ---------- proyectos ----------
     def iniciar_proyecto(self, propuesta: dict, notas: str = "") -> None:
         app_id = propuesta["app_id"]
+        if propuesta.get("miniatura_idea"):  # 🎁 el empaque que Paola pensó desde la idea
+            notas = (notas + f"\nEmpaque que propuso Paola: título «{propuesta.get('angulo', '')}», miniatura: "
+                             f"{propuesta['miniatura_idea']}").strip()
         with self.lock:
             # otro video de una app que ya tiene proyecto: carpeta nueva (com.app~2) para no pisar el anterior
             n = 2
@@ -1490,6 +1541,10 @@ class Oficina:
             "miniaturas": [{"url": base + o["archivo"], "texto": o["texto"]} for o in (leer("miniaturas.json") or {}).get("opciones", [])],
             "miniatura_elegida": (leer("miniaturas.json") or {}).get("elegida", 0),
             "miniatura_razon": (leer("miniaturas.json") or {}).get("razon", ""),
+            "paquetes": [{**{k: x.get(k) for k in ("titulo", "texto_miniatura", "escena_miniatura", "angulo", "por_que",
+                                                   "puntaje")},
+                          "url": base + x["archivo"] if x.get("archivo") and (carpeta / x["archivo"]).exists() else None}
+                         for x in guion.get("paquetes") or []],
         }
 
 
@@ -2103,6 +2158,9 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 texto = str(datos.get("texto", "")).strip()[:1500]
                 if texto:
                     threading.Thread(target=oficina.chat_oficina, args=(texto,), daemon=True).start()
+                return self._json({"ok": True})
+            if ruta == "/api/resultados/actualizar":  # 📊 traer los números ahora
+                threading.Thread(target=oficina.revisar_resultados, args=(True,), daemon=True).start()
                 return self._json({"ok": True})
             if ruta == "/api/leccion/quitar":
                 from agentes import lecciones
