@@ -66,6 +66,19 @@ def subir(video: Path, miniatura: Path | None, titulo: str, descripcion: str, et
     return f"https://youtu.be/{video_id}"
 
 
+def desprogramar(url_video: str) -> None:
+    """Saca un video de la agenda: queda privado y ya no se publica solo."""
+    video_id = url_video.rstrip("/").rsplit("/", 1)[-1].split("=")[-1]
+    yt = _servicio()
+    actual = yt.videos().list(part="status", id=video_id).execute().get("items", [])
+    if not actual:
+        raise RuntimeError("Ese video ya no está en YouTube.")
+    estado = actual[0]["status"]
+    estado.pop("publishAt", None)
+    estado["privacyStatus"] = "private"
+    yt.videos().update(part="status", body={"id": video_id, "status": estado}).execute()
+
+
 def poner_miniatura(url_video: str, miniatura: Path) -> None:
     """Pone la miniatura. YouTube solo lo permite si el canal verificó su teléfono (youtube.com/verify)."""
     from googleapiclient.errors import HttpError

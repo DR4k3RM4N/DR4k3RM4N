@@ -182,6 +182,9 @@ class Oficina:
                     "ideas_auto": {"activo": self.ideas_auto, "hora": IDEAS_HORA or ""}, "piloto": self.piloto,
                     "deseos": [d for d in self.deseos if d["estado"] == "pendiente"][-60:],
                     "deseos_por_dia": int(config.env("DESEOS_POR_DIA", "2") or 0),
+                    "agenda": self._agenda_cache(),
+                    "publicar_solo": bool(estilo.cargar()["ajustes"].get("publicar_solo")),
+                    "a_la_vez": self.a_la_vez(),
                     "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
                               + [t for t in self.tareas[-250:] if t["estado"] not in ACTIVAS][-120:]}
 
@@ -701,18 +704,28 @@ class Oficina:
             self._tocar()
 
     def _ciclo_deseos(self) -> None:
-        """🔁 Con el piloto automático prendido y el cel conectado, se prueba la siguiente app de la lista de deseos
-        (una a la vez y con tope diario: DESEOS_POR_DIA, 2 por defecto). Cada prueba trae nuevos anuncios → más deseos."""
+        """🔁 Con el piloto automático prendido, cada 5 min: si hay lugar («videos a la vez»), arranca las mejores ideas
+        de la bandeja; si no hay ideas y el cel está conectado, prueba la siguiente app de la lista de deseos (con tope
+        diario: DESEOS_POR_DIA, 2 por defecto). Cada prueba trae nuevos anuncios → más deseos."""
         from agentes import prueba as prueba_mod
 
         tope = int(config.env("DESEOS_POR_DIA", "2") or 0)
         while True:
             time.sleep(300)
             try:
-                if not (self.piloto and tope):
+                if not self.piloto:
+                    continue
+                # 🎬 varios a la vez: si hay lugar, primero las buenas ideas que esperan en la bandeja
+                if self.en_produccion() < self.a_la_vez():
+                    with self.lock:
+                        pendientes = [p for p in self.propuestas if p["estado"] == "pendiente"]
+                    if pendientes and self._arrancar_mejor(pendientes):
+                        continue
+                if not tope:
                     continue
                 with self.lock:
-                    ocupado = any(p["estado"] in ("produccion", "publicando") for p in self.proyectos.values())
+                    ocupado = sum(1 for p in self.proyectos.values()
+                                  if p["estado"] in ("produccion", "publicando")) >= self.a_la_vez()
                     hoy = self._hoy()
                     hechos_hoy = sum(1 for d in self.deseos if d.get("iniciado") and
                                      dt.datetime.fromtimestamp(d["iniciado"], ZoneInfo(IDEAS_ZONA)).date().isoformat() == hoy)
@@ -724,25 +737,61 @@ class Oficina:
             except Exception as exc:  # noqa: BLE001 — el ciclo nunca debe morir
                 print(f"aviso: ciclo de deseos: {exc}")
 
+    def _agenda_cache(self) -> list:
+        from agentes import agenda
+        ahora = time.time()
+        if ahora - getattr(self, "_agenda_t", 0) > 20:
+            try:
+                self._agenda_lista = agenda.proximos()
+            except Exception as exc:  # noqa: BLE001
+                print(f"aviso: agenda: {exc}")
+                self._agenda_lista = []
+            self._agenda_t = ahora
+        return self._agenda_lista
+
+    def a_la_vez(self) -> int:
+        return int(estilo.cargar()["ajustes"].get("videos_a_la_vez", 3) or 1)
+
+    def en_produccion(self) -> int:
+        with self.lock:
+            return sum(1 for p in self.proyectos.values() if p["estado"] in ("produccion", "publicando"))
+
     def _arrancar_mejor(self, candidatas: list[dict]) -> bool:
-        """Piloto automático: Paola escoge la mejor idea y la arranca sin esperar tu 👍 (las demás se quedan en la
-        bandeja). La mejor: la que pediste tú; si no, la de más potencial, y entre esas la inspirada en un video que pega."""
+        """Piloto automático: Paola arranca las mejores ideas sin esperar tu 👍, hasta «videos a la vez» (las demás se
+        quedan en la bandeja). Primero las que pediste tú; luego las de más potencial, y las inspiradas en un video
+        que pega."""
         orden = {"alto": 0, "medio": 1, "bajo": 2}
-        mejor = sorted(candidatas, key=lambda c: (not c.get("idea_jefe"), orden.get(c.get("potencial_vistas"), 3),
-                                                  not c.get("inspiracion")))[0]
-        with self.lock:
-            p = next((x for x in reversed(self.propuestas)
-                      if x["app_id"] == mejor["app_id"] and x["estado"] == "pendiente"), None)
-        if not p:
+        lugares = max(0, self.a_la_vez() - self.en_produccion())
+        if not lugares:
             return False
-        with self.lock:
-            self.log.append({"t": time.time(), "quien": "productora",
-                             "texto": f"🚀 Piloto automático: arranqué «{p.get('angulo') or p['titulo']}»"})
-        r = self.responder_idea(p["id"], "aprobar")
-        if r.get("error"):
+        mejores = sorted(candidatas, key=lambda c: (not c.get("idea_jefe"), orden.get(c.get("potencial_vistas"), 3),
+                                                    not c.get("inspiracion")))
+        arrancadas, vistas = [], set()
+        for mejor in mejores:
+            if len(arrancadas) >= lugares:
+                break
+            base = mejor["app_id"].split("~")[0]
+            if base in vistas:  # nada de dos videos de la misma app a la vez
+                continue
+            with self.lock:
+                p = next((x for x in reversed(self.propuestas)
+                          if x["app_id"] == mejor["app_id"] and x["estado"] == "pendiente"), None)
+            if not p:
+                continue
+            with self.lock:
+                self.log.append({"t": time.time(), "quien": "productora",
+                                 "texto": f"🚀 Piloto automático: arranqué «{p.get('angulo') or p['titulo']}»"})
+            if self.responder_idea(p["id"], "aprobar").get("error"):
+                continue
+            vistas.add(base)
+            arrancadas.append(p.get("angulo") or p["titulo"])
+        if not arrancadas:
             return False
-        self.avisar_jefe(f"🚀 Piloto automático: ya arranqué «{p.get('angulo') or p['titulo']}» ({p.get('por_que', '')[:120]}). "
-                         "Te aviso cuando esté listo para que lo revises y lo publiques. Las otras ideas siguen en tu bandeja.")
+        solo = estilo.cargar()["ajustes"].get("publicar_solo")
+        self.avisar_jefe(f"🚀 Piloto automático: arranqué {len(arrancadas)} video(s): "
+                         + "; ".join(f"«{a}»" for a in arrancadas) + ". "
+                         + ("Cuando estén, Carla los programa solos en la 📅 agenda." if solo else
+                            "Te aviso cuando estén para que los revises.") + " Las otras ideas siguen en tu bandeja.")
         return True
 
     def limpiar_tareas(self, agente: str | None = None) -> dict:
@@ -872,7 +921,14 @@ class Oficina:
             p = self.proyectos[app_id]
             p["estado"], p["etapa"] = "revision", "revision"
             p["reanudado"] = 0
+            solo = estilo.cargar()["ajustes"].get("publicar_solo")
+            if solo:  # 🚀 confías en el equipo: Carla lo programa en el siguiente horario libre de la agenda
+                p["estado"], p["privacidad"], p["titulo_n"] = "publicando", "public", 1
             self._tocar()
+        if solo:
+            self.decir("productora", f"{titulo} quedó listo: Carla, prográmalo en la agenda 📅")
+            threading.Thread(target=self._publicar, args=(app_id, 1), daemon=True).start()
+            return
         self.avisar_jefe(f"¡Jefe! El video de {titulo} está listo. ¿Lo revisas?")
 
     def _trabajar(self, prod, etapa: str, t: dict, listas: dict, fallo: dict) -> None:
@@ -985,6 +1041,8 @@ class Oficina:
                 p["estado"], p["error"] = "publicando", None
                 self._tocar()
                 threading.Thread(target=self._publicar, args=(app_id, p.get("titulo_n", 1)), daemon=True).start()
+            elif accion == "desprogramar" and p["estado"] == "publicado" and (p.get("publicado") or {}).get("programado_utc"):
+                threading.Thread(target=self._desprogramar, args=(app_id,), daemon=True).start()
             elif accion == "poner_miniatura" and p["estado"] == "publicado":  # volver a intentar poner la miniatura
                 threading.Thread(target=self._reintentar_miniatura, args=(app_id,), daemon=True).start()
             elif accion == "cambios" and p["estado"] in ("revision", "error"):
@@ -1062,6 +1120,23 @@ class Oficina:
             return {"error": str(exc)}
         opciones = [" ".join(o.split())[:100] for o in r.get("opciones", []) if o.strip()][:3]
         return {"ok": True, "opciones": opciones, "costo": round(p.get("costo", 0) - antes, 5)}
+
+    def _desprogramar(self, app_id: str) -> None:
+        """📅 Sacar un video de la agenda: queda privado en YouTube y su horario se libera."""
+        from agentes import youtube
+
+        f = config.SALIDA / app_id / "publicado.json"
+        pub = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+        try:
+            youtube.desprogramar(pub["youtube"])
+        except Exception as exc:  # noqa: BLE001
+            return self.avisar_jefe(f"No pude sacarlo de la agenda: {str(exc)[:200]}")
+        pub["desprogramado"] = True
+        f.write_text(json.dumps(pub, ensure_ascii=False, indent=2), encoding="utf-8")
+        with self.lock:
+            self.proyectos[app_id]["publicado"] = pub
+            self._tocar()
+        self.avisar_jefe(f"Listo: saqué de la agenda {self.proyectos[app_id]['titulo']}. Quedó privado en YouTube.")
 
     def _reintentar_miniatura(self, app_id: str) -> None:
         from agentes import youtube

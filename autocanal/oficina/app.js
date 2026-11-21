@@ -202,9 +202,18 @@
     try { await api("/api/piloto", { activo: e.target.checked }); }
     catch (err) { alert(err.message); e.target.checked = !e.target.checked; }
   });
+  $("#publicar-solo").addEventListener("change", async (e) => {
+    if (e.target.checked && !confirm("Los videos se van a programar en YouTube sin que los revises. ¿Seguro? (Siempre puedes sacarlos de la agenda en Proyectos antes de su hora)")) { e.target.checked = false; return; }
+    try { await api("/api/estilo/ajustes", { publicar_solo: e.target.checked }); } catch (err) { alert(err.message); }
+  });
+  $("#a-la-vez").addEventListener("change", async (e) => {
+    try { await api("/api/estilo/ajustes", { videos_a_la_vez: Number(e.target.value) }); } catch (err) { alert(err.message); }
+  });
   function pintarIdeasAuto() {
     const piloto = $("#piloto");
     if (document.activeElement !== piloto) piloto.checked = !!estado.piloto;
+    if (document.activeElement !== $("#publicar-solo")) $("#publicar-solo").checked = !!estado.publicar_solo;
+    if (document.activeElement !== $("#a-la-vez")) $("#a-la-vez").value = String(estado.a_la_vez || 3);
     const c = estado.ideas_auto || {};
     const caja = $("#ideas-auto");
     if (document.activeElement !== caja) caja.checked = !!c.activo;
@@ -223,7 +232,11 @@
     if (!lista.length) { $("#proyectos").innerHTML = `<p class="vacio">Aún no hay proyectos. Aprueba una idea para arrancar.</p>${ayudaBlog}`; return; }
     const agentes = {};
     estado.agentes.forEach((a) => (agentes[a.id] = a));
-    $("#proyectos").innerHTML = lista.map((p) => {
+    const agenda = estado.agenda || [];
+    const htmlAgenda = agenda.length ? `<section class="tarjeta agenda"><h4>📅 Agenda de publicación</h4><ol>${agenda.map((a) =>
+      `<li class="${a.ya_salio ? "salio" : ""}"><b>${esc(a.cuando)}</b> ${a.tipo === "grabacion" ? "📱" : "🔎"} ${esc(a.titulo || a.proyecto)}${a.ya_salio ? " ✔" : ""}</li>`).join("")}</ol>
+      <p class="pista">🔎 investigación (3 h entre ellos) · 📱 con grabación de pantalla (1 h)</p></section>` : "";
+    $("#proyectos").innerHTML = htmlAgenda + lista.map((p) => {
       const pasos = estado.etapas.map((et) => {
         const a = agentes[AGENTE_ETAPA[et]];
         let clase = "";
@@ -240,6 +253,9 @@
       return `<article class="tarjeta">
         <div class="cabeza"><h4>${esc(p.titulo)}</h4><span class="chip chip-estado-${esc(p.estado)}">${esc(ESTADO_PROY[p.estado] || p.estado)}</span></div>
         <ol class="pasos">${pasos}</ol>${pub}
+        ${p.estado === "publicado" && p.publicado?.programado_utc && !p.publicado.desprogramado && new Date(p.publicado.programado_utc) > new Date()
+          ? `<div class="pendiente-blog">📅 Programado: sale <b>${esc(p.publicado.programado)}</b>.
+            <span class="fila"><button class="btn btn-mini" data-desprogramar="${esc(p.id)}">Sacar de la agenda</button></span></div>` : ""}
         ${p.estado === "publicado" && p.publicado?.miniatura_error ? `<div class="pendiente-blog">🖼️ La miniatura no entró a YouTube.
           YouTube solo deja poner miniaturas propias si tu canal verificó tu teléfono: entra a <a href="https://www.youtube.com/verify" target="_blank" rel="noopener">youtube.com/verify</a>.
           <span class="fila"><button class="btn btn-mini btn-primario" data-poner-miniatura="${esc(p.id)}">Poner miniatura</button>
@@ -296,6 +312,14 @@
     boton.textContent = "📱 Hacer video con mi prueba";
   });
   $("#proyectos").addEventListener("click", async (e) => {
+    const dp = e.target.closest("[data-desprogramar]");
+    if (dp) {
+      if (!confirm("¿Sacarlo de la agenda? Queda privado en YouTube y ya no se publica solo.")) return;
+      dp.disabled = true;
+      try { await api(`/api/proyecto/${encodeURIComponent(dp.dataset.desprogramar)}`, { accion: "desprogramar" }); dp.textContent = "Sacándolo…"; }
+      catch (err) { alert(err.message); dp.disabled = false; }
+      return;
+    }
     const pm = e.target.closest("[data-poner-miniatura]");
     if (pm) {
       pm.disabled = true;
@@ -745,8 +769,16 @@
         <p>${e.youtube.conectado ? "✅ Tu canal está conectado." : e.youtube.secreto ? "⬜ Falta autorizar tu canal (ver la guía)." : "⬜ Aún no está conectado (ver la guía)."}
           Los videos se suben como <b>${esc({ private: "privados", unlisted: "ocultos", public: "públicos" }[e.youtube.privacidad] || e.youtube.privacidad)}</b>.</p>
         <p class="pista">Carla sube el video cuando le das <b>Publicar</b> en la revisión, con título, descripción, etiquetas, miniatura y el enlace al blog.</p>
-        <div class="ajustes"><label>Hora de publicar (cuando lo pides público) ${sel("publicar_hora", [["", "Al momento"], ["12:00", "12:00 pm"], ["14:00", "2:00 pm"], ["16:00", "4:00 pm"], ["18:00", "6:00 pm"], ["19:00", "7:00 pm"], ["20:00", "8:00 pm"], ["21:00", "9:00 pm"]])}</label></div>
-        <p class="pista">Si eliges hora, Carla lo sube privado y YouTube lo hace público solo a esa hora (la de más gente conectada en tu canal; en YouTube Studio → Estadísticas → Público lo ves).</p>
+        <h4>📅 Agenda de publicación</h4>
+        <div class="ajustes">
+          ${chk("agenda", "Repartir los videos públicos en el día (nunca dos juntos)")}
+          <label>Desde ${sel("agenda_inicio", [5, 6, 7, 8, 9, 10, 11, 12].map((h) => [h, `${h}:00`]))}</label>
+          <label>Hasta ${sel("agenda_fin", [17, 18, 19, 20, 21, 22, 23].map((h) => [h, `${h}:00`]))}</label>
+          <label>Entre videos de investigación ${sel("sep_investigacion", [[1, "1 hora"], [2, "2 horas"], [3, "3 horas"], [4, "4 horas"], [6, "6 horas"]])}</label>
+          <label>Si es de grabación de pantalla ${sel("sep_grabacion", [[1, "1 hora"], [2, "2 horas"], [3, "3 horas"]])}</label>
+        </div>
+        <p class="pista">Carla sube el video privado y YouTube lo hace público solo en su horario. Máximo 5 al día (la API
+          de YouTube solo regala cuota para eso) y nunca dos de la misma app el mismo día.</p>
       </section>`;
   }
 
@@ -766,7 +798,8 @@
       return pintarEstilo();
     }
     if (el.dataset.ajuste) {
-      const numericos = ["opciones_miniatura", "palabras_subtitulo", "corte_cada"];
+      const numericos = ["opciones_miniatura", "palabras_subtitulo", "corte_cada", "agenda_inicio", "agenda_fin",
+        "sep_investigacion", "sep_grabacion", "videos_a_la_vez"];
       const v = el.type === "checkbox" ? el.checked : numericos.includes(el.dataset.ajuste) ? Number(el.value) : el.value;
       try { await api("/api/estilo/ajustes", { [el.dataset.ajuste]: v }); } catch (err) { alert(err.message); }
     }

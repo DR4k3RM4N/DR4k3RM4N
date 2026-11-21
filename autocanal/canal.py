@@ -295,12 +295,17 @@ def _reporte(carpeta, ficha, exp, guion, entrada, video, mini) -> None:
     (carpeta / "REVISAR.md").write_text("\n".join(l), encoding="utf-8")
 
 
-def _hora_programada(privacidad: str) -> tuple[str | None, str]:
-    """Si pediste público y tienes hora de publicar (pestaña Estilo), devuelve (UTC para YouTube, texto para ti)."""
+def _hora_programada(privacidad: str, app_id: str = "") -> tuple[str | None, str]:
+    """Si pediste público, el horario en que sale: el 📅 gestor de horarios (si está prendido) o la hora fija de la
+    pestaña Estilo. Devuelve (UTC para YouTube, texto para ti)."""
     import datetime as dt
     from zoneinfo import ZoneInfo
 
-    from agentes import estilo
+    from agentes import agenda, estilo
+
+    if privacidad == "public" and app_id and agenda.reglas()["activa"]:
+        t = agenda.siguiente(app_id, agenda.tipo_de(app_id))
+        return t.strftime("%Y-%m-%dT%H:%M:%SZ"), agenda.texto(t)
 
     hora = estilo.cargar()["ajustes"].get("publicar_hora") or ""
     if privacidad != "public" or not hora:
@@ -352,12 +357,14 @@ def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> d
         else:
             desc = "\n".join(l for l in guion["descripcion"].splitlines() if "{{BLOG_URL}}" not in l)
         sintetico = config.env("VOZ_MOTOR", "edge") != "propia"
-        publicar_en, programado = _hora_programada(privacidad or config.env("YT_PRIVACIDAD", "private"))
+        publicar_en, programado = _hora_programada(privacidad or config.env("YT_PRIVACIDAD", "private"), app_id)
         pub["youtube"] = youtube.subir(carpeta / "video.mp4", carpeta / "miniatura.jpg",
                                        guion["titulos"][titulo_n - 1], desc, guion["etiquetas"], sintetico, privacidad,
                                        publicar_en)
         if programado:
-            pub["programado"] = programado
+            from agentes import agenda
+            pub["programado"], pub["programado_utc"] = programado, publicar_en
+            pub["tipo_video"], pub["titulo"] = agenda.tipo_de(app_id), guion["titulos"][titulo_n - 1]
             print(f"  · programado para hacerse público: {programado}")
         pub["privacidad_pedida"] = privacidad or config.env("YT_PRIVACIDAD", "private")
         try:

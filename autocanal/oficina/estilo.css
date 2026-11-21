@@ -519,3 +519,7 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .probe .fila { flex-wrap: wrap; }
 .probe #probe-nombre { flex: 1 1 100%; }
 .probe #probe-archivo { flex: 1 1 auto; min-width: 0; }
+
+.agenda ol { margin: 6px 0 0; padding-left: 20px; }
+.agenda li { padding: 3px 0; }
+.agenda li.salio { opacity: .55; }

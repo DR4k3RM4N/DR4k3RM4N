@@ -136,6 +136,19 @@ Sonnet con el plan, ~75 s y ~$0.12–0.17 equivalentes por dibujo) escribe la es
 mitad izquierda libre, monedas y billetes obligatorios) y `cairosvg` (libcairo2) la convierte. Probado aquí con
 Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`MINIATURA_MOTOR=gemini`), sin probar.
 
+## 3f. Varios videos a la vez y 📅 agenda (nov 2026)
+- **Videos a la vez** (ajuste `videos_a_la_vez`, 3; selector en Bandeja): el piloto arranca hasta N ideas (nunca dos
+  de la misma app) y cada 5 min (`_ciclo_deseos`) rellena lugares libres con las mejores ideas pendientes; si no
+  hay ideas, prueba la lista de deseos con el cel.
+- **📅 Gestor de horarios** (`agentes/agenda.py`): al publicar en público, Carla sube privado con `publishAt` en el
+  primer horario libre: ventana 8–21 h (`agenda_inicio`/`agenda_fin`), 3 h entre dos de investigación, 1 h si alguno
+  lleva grabación (`prueba.json` existe), nunca dos de la misma app el mismo día, máximo `AGENDA_MAX_DIA` (5) al día
+  por la cuota de YouTube (10,000 unidades/día, 1,600 por subida). Se arma con `salida/*/publicado.json`
+  (`programado_utc`, `tipo_video`). Lista en Proyectos; "Sacar de la agenda" (`youtube.desprogramar`).
+- **📅 Publicar solo** (ajuste `publicar_solo`, casilla en Bandeja con confirmación): al quedar listo, el video pasa
+  directo a Carla (público, título 1) sin revisión del jefe. Lo pidió Miguel ("confío en que ya hace buen contenido").
+- Ojo: si la app de Google del canal no pasó la auditoría de YouTube, lo programado puede quedarse privado.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

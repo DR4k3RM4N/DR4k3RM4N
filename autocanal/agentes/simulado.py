@@ -243,6 +243,11 @@ def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> d
         pub = {"blog": {"id": 1, "link": f"https://tublog.com/{app_id.split('.')[-1]}", "estado": "draft"},
                "youtube": f"https://youtu.be/demo-{app_id.split('.')[-1]}", "video_en_blog": True, "demo": True}
     pub.update(privacidad_pedida=pedida, privacidad=real)
+    from . import agenda
+    if pedida == "public" and agenda.reglas()["activa"]:  # 📅 también en demo: el horario que le toca
+        t = agenda.siguiente(app_id, agenda.tipo_de(app_id))
+        pub.update(programado=agenda.texto(t), programado_utc=t.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                   tipo_video=agenda.tipo_de(app_id), titulo=app_id.split(".")[-1], privacidad="private")
     (config.SALIDA / app_id / "publicado.json").write_text(json.dumps(pub, indent=2), encoding="utf-8")
     b.marcar_hecha(app_id)
     return pub

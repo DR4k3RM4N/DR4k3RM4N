@@ -174,7 +174,7 @@ def pedir_al_celular(app_id: str, nombre: str, paquete: str, minutos: int = 8, a
         return False
     if not tid:
         return False
-    limite = time.time() + (minutos + 25) * 60  # instalar + probar + subir la grabación
+    limite = time.time() + (minutos + 50) * 60  # puede esperar su turno (un solo cel) + instalar + probar + subir
     while time.time() < limite:
         time.sleep(5)
         try:
