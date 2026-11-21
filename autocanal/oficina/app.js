@@ -823,6 +823,8 @@
     let man = { texto: "", propio: false };
     const canalManual = (window.__canalManual = window.__canalManual || "principal");
     try { man = await api(`/api/manual?canal=${encodeURIComponent(canalManual)}`); } catch {}
+    let ide = null;
+    try { ide = await api(`/api/identidad?canal=${encodeURIComponent(canalManual)}`); } catch {}
     const canalesLista = estado?.canales || [{ id: "principal", nombre: "Canal principal" }];
     const a = e.ajustes, m = e.miniaturas, b = e.blog;
     const sel = (k, ops) => `<select data-ajuste="${k}">${ops.map(([v, t]) => `<option value="${v}" ${String(a[k]) === String(v) ? "selected" : ""}>${t}</option>`).join("")}</select>`;
@@ -843,6 +845,24 @@
           <div class="acciones"><button class="btn" data-manual="guardar">💾 Guardar cambios</button></div>
         </details>
       </section>
+      ${ide ? `<section class="tarjeta estilo-sec" style="--c:#f59e0b">
+        <h4>🪪 Portada, foto de perfil y descripción · ${esc(ide.nombre || canalManual)}</h4>
+        <p class="pista">La oficina hace la portada, la foto de perfil y la descripción del canal (con el selector de arriba
+          eliges el canal). La portada y la descripción se ponen solas en YouTube; la foto de perfil YouTube no deja
+          ponerla por programa: bájala y súbela tú (3 clics).</p>
+        ${ide.portada ? `<img class="ide-portada" src="/estilo/identidad_${esc(canalManual)}/portada.jpg?v=${Date.now()}" alt="Portada del canal">` : ""}
+        ${ide.perfil ? `<div class="ide-fila"><img class="ide-perfil" src="/estilo/identidad_${esc(canalManual)}/perfil.png?v=${Date.now()}" alt="Foto de perfil">
+          <div><a class="btn" href="/estilo/identidad_${esc(canalManual)}/perfil.png" download="perfil.png">⬇ Bajar foto de perfil</a>
+          <p class="pista">Para ponerla: <a href="https://studio.youtube.com" target="_blank" rel="noopener">YouTube Studio</a> →
+            <b>Personalización</b> → <b>Marca</b> → Foto de perfil → <b>Cambiar</b> → elige este archivo → <b>Publicar</b>.</p></div></div>` : ""}
+        ${ide.portada ? `<label>Descripción <textarea id="ide-desc" rows="10" maxlength="4900">${esc(ide.descripcion)}</textarea></label>` : ""}
+        <div class="acciones">
+          <button class="btn" data-identidad="generar">${ide.portada ? "🔄 Hacerlas de nuevo" : "✨ Hacer portada, foto y descripción"}</button>
+          ${ide.portada ? `<button class="btn btn-primario" data-identidad="aplicar" ${ide.conectado ? "" : "disabled title='Este canal no está conectado'"}>📤 Poner portada y descripción en YouTube</button>` : ""}
+        </div>
+        ${ide.aplicado && ide.aplicado.t ? `<p class="pista">✔ Puesto en YouTube ${esc(new Date(ide.aplicado.t * 1000).toLocaleString("es-MX"))}
+          ${ide.url_canal ? `· <a href="${esc(ide.url_canal)}" target="_blank" rel="noopener">ver canal</a>` : ""}</p>` : ""}
+      </section>` : ""}
       <section class="tarjeta estilo-sec" style="--c:#10b981">
         <h4>🎨 Miniaturas · Dani</h4>
         <p class="pista">Sube de 3 a 10 miniaturas que te gusten (tuyas o de canales que admiras). Dani aprende el estilo y lo usa en cada video.</p>
@@ -945,6 +965,16 @@
     if (b.dataset.borrar) {
       if (!confirm("¿Quitar este archivo?")) return;
       await api("/api/estilo/borrar", { tipo: b.dataset.borrar, nombre: b.dataset.nombre || "" }).catch((e) => alert(e.message));
+      return pintarEstilo();
+    }
+    if (b.dataset.identidad) {
+      const canal = window.__canalManual || "principal";
+      b.disabled = true;
+      b.textContent = b.dataset.identidad === "aplicar" ? "Subiendo a YouTube…" : "Haciéndolas…";
+      try {
+        await api("/api/identidad", { canal, accion: b.dataset.identidad, descripcion: $("#ide-desc")?.value });
+        if (b.dataset.identidad === "aplicar") alert("¡Listo! Ya están la portada y la descripción en tu canal. Puede tardar unos minutos en verse.");
+      } catch (err) { alert(err.message); }
       return pintarEstilo();
     }
     if (b.dataset.manual === "guardar") {

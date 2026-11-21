@@ -466,3 +466,8 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   del canal y títulos recientes; reordena `titulos`/`textos_miniatura`. `ligar_miniaturas` une cada paquete con su
   miniatura y pone primero el de la miniatura elegida. Revisión: bloque 🎁 Empaque + guía de Prueba A/B en Studio
   (la API no crea pruebas A/B). Paola propone `miniatura_idea` con cada idea (tarjeta 🖼️) y va en las notas del proyecto.
+- **🪪 Identidad del canal** (`agentes/identidad.py`, Estilo → sección por canal del selector del manual): genera
+  portada 2560×1440 (todo en la zona segura 1546×423; mascota del canal), foto de perfil 800×800 y descripción (fija
+  y revisada para «fraudes»; con Claude para los demás). «Poner en YouTube» = `channelBanners.insert` +
+  `channels.update(brandingSettings)` conservando keywords/idioma/país/tráiler. La foto de perfil NO se puede por API:
+  se baja y se sube en Studio. Archivos en `estilo/identidad_<canal>/`. Rutas GET/POST `/api/identidad`.

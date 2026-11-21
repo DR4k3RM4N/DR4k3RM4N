@@ -548,3 +548,7 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .res-nums { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .res-nums span { background: rgba(255,255,255,.06); border-radius: 999px; padding: 2px 8px; font-size: 12.5px; }
 .res-video ul { margin: 4px 0 0; padding-left: 18px; }
+.ide-portada { width: 100%; border-radius: 8px; display: block; margin: 8px 0; }
+.ide-fila { display: flex; gap: 12px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+.ide-perfil { width: 110px; height: 110px; border-radius: 50%; }
+#ide-desc { width: 100%; }

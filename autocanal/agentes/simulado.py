@@ -175,6 +175,9 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                     {"narracion": "Tiene más de diez millones de jugadores.", "visual": "dato", "indice": 0, "texto": "10 millones de jugadores"},
                     {"narracion": "¿Y tú, cuál es tu favorito? Déjamelo en los comentarios.", "visual": "cierre", "indice": 0, "texto": "¿Cuál es tu favorito?"},
                 ]}
+    if list(props) == ["descripcion"]:  # 🪪 descripción del canal
+        return {"descripcion": "(Demo) Aquí pruebo apps que prometen pagar y te digo si pagan o son estafa. "
+                               "Suscríbete para no perder tu tiempo. #Apps #GanarDinero"}
     if "paquetes" in props and "conceptos" in props:  # 🎁 empaque
         return {"conceptos": [f"Concepto {k} (demo)" for k in range(1, 11)],
                 "paquetes": [{"titulo": f"{nombre}: lo probé 7 días y esto pasó", "texto_miniatura": "ME PAGÓ $3",

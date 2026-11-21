@@ -2029,6 +2029,14 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._archivo(config.SALIDA / ruta[len("/salida/"):], config.SALIDA)
             if ruta.startswith("/estilo/"):
                 return self._archivo(estilo.DIR / ruta[len("/estilo/"):], estilo.DIR)
+            if ruta == "/api/identidad":  # 🪪 portada, foto de perfil y descripción del canal
+                from agentes import canales as canales_mod, identidad
+                cid = parse_qs(urlparse(self.path).query).get("canal", ["principal"])[0]
+                if not canales_mod.existe(cid):
+                    return self._json({"error": "Ese canal no existe"}, 404)
+                info = canales_mod.get(cid)
+                return self._json({**identidad.estado(cid), "nombre": info.get("nombre"),
+                                   "conectado": canales_mod.conectado(cid) and not oficina.demo})
             if ruta == "/api/manual":
                 cid = parse_qs(urlparse(self.path).query).get("canal", ["principal"])[0]
                 return self._json({"texto": manual_canal.leer(cid), "propio": manual_canal.archivo(cid).exists()})
@@ -2159,6 +2167,23 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 if texto:
                     threading.Thread(target=oficina.chat_oficina, args=(texto,), daemon=True).start()
                 return self._json({"ok": True})
+            if ruta == "/api/identidad":
+                from agentes import canales as canales_mod, identidad
+                cid = str(datos.get("canal") or "principal")
+                if not canales_mod.existe(cid):
+                    return self._json({"error": "Ese canal no existe"}, 404)
+                try:
+                    ia.contexto.canal = cid
+                    if datos.get("accion") == "aplicar":
+                        if oficina.demo:
+                            return self._json({"error": "En modo demo no se sube nada a YouTube."}, 400)
+                        r = identidad.aplicar(cid, datos.get("descripcion"))
+                        oficina.decir("community", f"🪪 Le puse portada y descripción nuevas a {canales_mod.get(cid).get('nombre')}")
+                    else:
+                        r = identidad.generar(cid)
+                except Exception as exc:  # noqa: BLE001
+                    return self._json({"error": f"No se pudo: {str(exc)[:300]}"}, 500)
+                return self._json(r)
             if ruta == "/api/resultados/actualizar":  # 📊 traer los números ahora
                 threading.Thread(target=oficina.revisar_resultados, args=(True,), daemon=True).start()
                 return self._json({"ok": True})
