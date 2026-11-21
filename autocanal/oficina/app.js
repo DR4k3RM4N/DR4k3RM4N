@@ -254,13 +254,13 @@
         <div class="cabeza"><h4>${esc(p.titulo)}</h4><span class="chip chip-estado-${esc(p.estado)}">${esc(ESTADO_PROY[p.estado] || p.estado)}</span></div>
         <ol class="pasos">${pasos}</ol>${pub}
         ${p.estado === "publicado" && p.publicado?.programado_utc && !p.publicado.desprogramado && new Date(p.publicado.programado_utc) > new Date()
-          ? `<div class="pendiente-blog">📅 Programado: sale <b>${esc(p.publicado.programado)}</b>.
+          ? `<div class="pendiente-blog">📅 Programado: sale <b>${esc(p.publicado.programado)}</b>
             <span class="fila"><button class="btn btn-mini" data-desprogramar="${esc(p.id)}">Sacar de la agenda</button></span></div>` : ""}
         ${p.estado === "publicado" && p.publicado?.miniatura_error ? `<div class="pendiente-blog">🖼️ La miniatura no entró a YouTube.
           YouTube solo deja poner miniaturas propias si tu canal verificó tu teléfono: entra a <a href="https://www.youtube.com/verify" target="_blank" rel="noopener">youtube.com/verify</a>.
           <span class="fila"><button class="btn btn-mini btn-primario" data-poner-miniatura="${esc(p.id)}">Poner miniatura</button>
           <a class="btn btn-mini" href="/salida/${encodeURIComponent(p.id)}/miniatura.jpg" download>⬇ Bajar miniatura</a></span></div>` : ""}
-        ${p.publicado?.privacidad === "private" ? `<div class="pendiente-blog"><span>🔒 En YouTube quedó en <b>privado</b>${p.publicado.privacidad_pedida !== "private"
+        ${p.publicado?.privacidad === "private" && !(p.publicado.programado_utc && !p.publicado.desprogramado && new Date(p.publicado.programado_utc) > new Date()) ? `<div class="pendiente-blog"><span>🔒 En YouTube quedó en <b>privado</b>${p.publicado.privacidad_pedida !== "private"
             ? " aunque pediste público (YouTube lo hace con las apps de Google que no han pasado su auditoría)" : ""}. Ábrelo en YouTube Studio → Visibilidad → Público.</span></div>` : ""}
         ${p.blog_pendiente ? `<div class="pendiente-blog">📝 El blog quedó pendiente${p.publicado?.blog_error ? `: ${esc(p.publicado.blog_error.slice(0, 160))}` : ""}
           <span class="fila"><button class="btn btn-mini btn-primario" data-subir-blog="${esc(p.id)}">Subir blog</button>
