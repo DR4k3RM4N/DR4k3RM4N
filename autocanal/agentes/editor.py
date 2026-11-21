@@ -430,7 +430,7 @@ def _editar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> 
         filtros.append(f"[vs][barra]overlay=x='-w+w*t/{duracion:.3f}':y=H-h:shortest=1[vb]")
         v_final = "[vb]"
     mezcla = ["[0:a]"]
-    musica = estilo.archivo("musica")
+    musica = (carpeta / "musica.mp3") if (carpeta / "musica.mp3").exists() else estilo.archivo("musica")
     if musica:
         entradas += ["-stream_loop", "-1", "-i", str(musica)]
         filtros.append(f"[{entradas.count('-i') - 1}:a]volume=0.07[m]")

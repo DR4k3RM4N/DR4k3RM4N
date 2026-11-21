@@ -153,6 +153,18 @@ GUION EN TABLA (así trabaja el canal):
   y la siguiente escena le contesta. Nunca dos escenas seguidas de la segunda voz. Sin DOS VOCES: todo "principal".
 """
 
+SOLO_GRABACION = """FORMATO 100% GRABACIÓN DE PANTALLA (así es este canal; manda sobre todo lo demás):
+- TODAS las escenas son visual "grabacion" (nada de capturas, tarjetas ni imágenes externas). El video ES la
+  grabación del celular de principio a fin; la voz es de fondo y va contando lo que pasa en pantalla.
+- Recorre la grabación EN ORDEN: cada escena pone en "desde" el segundo donde empieza lo que narra, y la siguiente
+  sigue más o menos donde terminó la anterior (≈2.5 palabras por segundo). Sáltate solo tramos aburridos o repetidos.
+- El gancho puede usar el momento más fuerte de la grabación (su segundo en "desde") y luego regresas al inicio:
+  la página de Play Store (nombre, estrellas, descargas, lo que promete).
+- Narra en primera persona y en presente, como si estuvieras usándola: "aquí me pide ver un anuncio…", "mira, ya
+  llevo 300 monedas, que son 3 centavos…". Explica cómo se usa, lo que promete contra lo que de verdad pasa, cada
+  cuánto salen anuncios, y el retiro (pago mínimo, qué pide).
+- "texto" de cada escena: 2-5 palabras que resumen lo que se ve (sirven para un rótulo chico), o vacío."""
+
 SYSTEM += REGLAS_TABLA
 SYSTEM_TEMA += REGLAS_TABLA
 

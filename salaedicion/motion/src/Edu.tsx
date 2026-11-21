@@ -102,10 +102,24 @@ const FondoEscena: React.FC<{ fondo?: Fondo; dur: number; acento: string }> = ({
   }
   const transform = `scale(${escala}) translateX(${dx}px)`;
   if (fo.tipo === "video") {
+    const inicio = Math.round((fo.desde || 0) * fps);
+    if (fo.ajuste === "contener") {  // grabación vertical del cel: completa al centro, sobre su versión desenfocada
+      return (
+        <AbsoluteFill style={{ background: "#000" }}>
+          <OffthreadVideo src={src(fo.archivo)} muted startFrom={inicio}
+            style={{ position: "absolute", width: "100%", height: "100%", objectFit: "cover", filter: "blur(36px) brightness(.5)",
+              transform: "scale(1.15)" }} />
+          <OffthreadVideo src={src(fo.archivo)} muted startFrom={inicio}
+            style={{ position: "absolute", width: "100%", height: "100%", objectFit: "contain", transform,
+              filter: "drop-shadow(0 20px 40px rgba(0,0,0,.6))" }} />
+          {capaOscura}
+        </AbsoluteFill>
+      );
+    }
     return (
       <AbsoluteFill>
-        <OffthreadVideo src={src(fo.archivo)} muted startFrom={Math.round((fo.desde || 0) * fps)}
-          style={{ width: "100%", height: "100%", objectFit: fo.ajuste === "contener" ? "contain" : "cover", transform }} />
+        <OffthreadVideo src={src(fo.archivo)} muted startFrom={inicio}
+          style={{ width: "100%", height: "100%", objectFit: "cover", transform }} />
         {capaOscura}
       </AbsoluteFill>
     );

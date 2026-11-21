@@ -30,6 +30,18 @@ def compus_libres(tipo: str = "edu") -> int:
         return 0
 
 
+SOLO_GRABACION_EDICION = """FORMATO 100% GRABACIÓN DEL CEL (lo más importante de este video):
+- El protagonista es la grabación de pantalla de principio a fin. Cada escena lleva de fondo la grabación
+  (`fondo.tipo: "video"`, `archivo` = la grabación, `desde` = el segundo que dice el guion, `ajuste: "contener"`,
+  `movimiento: "fijo"` o un `acercar` muy suave): se ve completa, al centro, sobre su versión desenfocada.
+- NADA de fondos degradados, imágenes externas, chats inventados ni comparativas que tapen el cel. Las capas solo
+  ayudan a entender lo que se ve y van a los lados: `circulo`/`flecha` a lo que se toca o al saldo, `cintillo` con lo
+  que pasa ("Me pide ver 30 anuncios"), `dato` chiquito para cifras (pago mínimo, saldo), `sello` al final con el
+  veredicto. 1 capa a la vez, breve.
+- Música de fondo bajita (la de estilo/musica.mp3, volumen 0.05-0.07) y pocos efectos de sonido.
+- La escena 1 (gancho) puede abrir con `texto` golpe corto encima de la grabación."""
+
+
 def _direccion() -> str:
     """Lo que Claude (el editor de tu compu) debe respetar: manual del canal, tus correcciones y tus números."""
     from . import lecciones, manual
@@ -77,7 +89,9 @@ def _preparar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -
     clips_r = [r for r in (poner(c, f"clips/clip_{k}{Path(c).suffix}") for k, c in enumerate(clips, 1)) if r]
     from . import canales
     for nombre in ESTILO_ARCHIVOS:
-        if nombre != "mascota.png":
+        if nombre == "musica.mp3" and (carpeta / "musica.mp3").exists():
+            poner(carpeta / "musica.mp3", "estilo/musica.mp3")  # la música libre de este video
+        elif nombre != "mascota.png":
             poner(config.ESTILO_DIR / nombre, f"estilo/{nombre}")
     masc = canales.mascota(canales.actual())
     poner(masc, "estilo/mascota.png")  # la del canal del video
@@ -107,7 +121,10 @@ def _preparar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -
                   "canal_nombre": info_canal.get("nombre"), "acento": acento, "direccion": _direccion(),
                   "datos": json.dumps({k: v for k, v in exp.items() if k not in ("informe_web", "fuentes_web")},
                                       ensure_ascii=False, default=str)[:8000],
-                  "prueba": {"momentos": prueba.get("momentos") or []}}
+                  "prueba": {"momentos": prueba.get("momentos") or []},
+                  "solo_grabacion": bool(ctx.get("solo_grabacion"))}
+    if manifiesto["solo_grabacion"]:
+        manifiesto["direccion"] = SOLO_GRABACION_EDICION + "\n\n" + manifiesto["direccion"]
     return entradas, manifiesto
 
 

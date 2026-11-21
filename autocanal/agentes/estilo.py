@@ -67,7 +67,8 @@ AJUSTES_DEFECTO = {
     "publicar_solo": False,      # 🚀 cuando un video queda listo, Carla lo programa sin esperar tu revisión       # videos de apps: miniaturas ilustradas con IA (si hay GEMINI_API_KEY)       # si tu Android está conectado a tu compu, el robot prueba la app antes de investigar           # una segunda voz pregunta o reacciona de vez en cuando (como en los videos que pegan)
     "mascota_lado": "derecha",
     "rescate_empaque": True,
-    "editor_claude": True,       # 🎬 si tu compu tiene Claude Code + Remotion, Claude dirige la edición de YouTube     # 🛟 si un video tiene muy pocos clics, le cambia título/miniatura por el paquete 2
+    "editor_claude": True,
+    "solo_grabacion": True,      # 📱 Apps que sí pagan: los videos de apps son 100% la grabación del cel narrada       # 🎬 si tu compu tiene Claude Code + Remotion, Claude dirige la edición de YouTube     # 🛟 si un video tiene muy pocos clics, le cambia título/miniatura por el paquete 2
     "publicar_hora": "",         # "18:00" = Carla lo deja programado para esa hora (cuando pides público); vacío = al momento   # esquina donde vive la mascota del canal (si subiste mascota.png)          # motion graphics de Edu por escena: nada · poco · normal · mucho
 }
 
@@ -454,7 +455,7 @@ def ajustar(cambios: dict) -> dict:
         "dos_voces": (True, False), "probar_en_cel": (True, False), "miniaturas_ia": (True, False),
         "agenda": (True, False), "agenda_inicio": tuple(range(5, 13)), "agenda_fin": tuple(range(17, 24)),
         "sep_investigacion": (1, 2, 3, 4, 6), "sep_grabacion": (1, 2, 3), "videos_a_la_vez": (1, 2, 3, 4, 5),
-        "publicar_solo": (True, False), "mascota_lado": ("izquierda", "derecha"), "rescate_empaque": (True, False), "editor_claude": (True, False),
+        "publicar_solo": (True, False), "mascota_lado": ("izquierda", "derecha"), "rescate_empaque": (True, False), "editor_claude": (True, False), "solo_grabacion": (True, False),
         "palabras_subtitulo": (0, 1, 2, 3, 4, 5, 6, 7), "mayusculas_subtitulo": (True, False),
         "posicion_subtitulo": ("abajo", "centro"), "zoom": ("suave", "medio", "fuerte"),
         "corte_cada": (0, 1.5, 2, 2.5, 3, 4, 5, 6, 8), "karaoke": (True, False),

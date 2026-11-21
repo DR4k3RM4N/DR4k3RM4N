@@ -99,14 +99,19 @@ class Produccion:
             from agentes import editor, estilo, prueba
 
             nombre = (self.ficha or {}).get("title") or self.app_id
+            solo = self.solo_grabacion()
             if (not prueba.grabaciones(c.name)
-                    and (estilo.cargar()["ajustes"].get("probar_en_cel") or origen.get("grabar_cel"))
+                    and (estilo.cargar()["ajustes"].get("probar_en_cel") or origen.get("grabar_cel") or solo)
                     and prueba.celular_disponible()):
                 print("  · le pido al celular que la pruebe")
                 paquete = "" if self.app_id.startswith("web:") else self.app_id.split("~")[0]
                 prueba.pedir_al_celular(c.name, origen.get("nombre") if origen.get("ya_instalada") else nombre, paquete,
                                         avance=editor._avance, ya_instalada=bool(origen.get("ya_instalada")))
             self.clips = [str(p) for p in prueba.grabaciones(c.name)] or self.clips
+            if solo and not self.clips:  # 📱 este canal es 100% grabación: sin grabación no hay video
+                raise RuntimeError("Este canal es 100% grabación del cel y no pude grabar la app: revisa en la pestaña "
+                                   "Sala que tu cel salga 📱 (desbloqueado) y dale Reintentar, o sube tu grabación "
+                                   "con «📱 Subir mi grabación».")
             if self.clips:
                 print(f"  · viendo {len(self.clips)} grabación(es) de la prueba")
                 self.prueba = prueba.analizar(c.name, c, nombre)
@@ -120,6 +125,40 @@ class Produccion:
                                else investigador.analizar(datos, c, con_web=self.con_web))
         print(f"    veredicto: {self.expediente['veredicto']}" if not es_tema
               else f"    tema: {self.ficha['title']} — {self.ficha.get('angulo', '')}")
+
+    def _musica_libre(self) -> None:
+        """🎵 Música de fondo sin copyright para este video (si no subiste la tuya en Estilo): una pista de dominio
+        público (CC0) de Openverse, para no tener que dar crédito. Si no se puede, el video va sin música."""
+        import subprocess
+        import sys
+
+        from agentes import estilo
+        destino = self.carpeta / "musica.mp3"
+        if destino.exists() or estilo.archivo("musica"):
+            return
+        try:
+            sys.path.insert(0, str(config.BASE.parent / "salaedicion"))
+            import musica_libre
+            for consulta in ("lofi chill", "background calm beat", "upbeat instrumental"):
+                pistas = [o for o in musica_libre.buscar(consulta, 120, 10) if o["licencia"] in ("cc0", "pdm")]
+                if pistas:
+                    nombre = musica_libre.descargar(pistas[0], self.carpeta / "_musica")
+                    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(self.carpeta / "_musica" / nombre),
+                                    "-vn", "-ac", "2", "-ar", "44100", "-b:a", "160k", str(destino)], check=True)
+                    print(f"  · música libre (dominio público): «{pistas[0]['titulo']}» de {pistas[0]['autor']}", flush=True)
+                    return
+        except Exception as exc:  # noqa: BLE001 — sin música el video sale igual
+            print(f"  · no conseguí música libre ({exc}); va sin música", flush=True)
+
+    def solo_grabacion(self) -> bool:
+        """📱 Videos de apps de «Apps que sí pagan»: 100% la grabación del cel, narrada (ajuste en Estilo)."""
+        import os
+
+        from agentes import estilo
+        if os.environ.get("AUTOCANAL_DEMO"):  # en la demo no hay cel
+            return False
+        return (not self.app_id.startswith("tema:") and _canal_de(self.carpeta.name) == "principal"
+                and bool(estilo.cargar()["ajustes"].get("solo_grabacion", True)))
 
     def guionizar(self) -> None:
         from agentes import guionista
@@ -136,7 +175,13 @@ class Produccion:
                     g["momentos"] = [{"segundo": m["segundo"], "que_se_ve": m["que_se_ve"]}
                                      for m in prueba.get("momentos", []) if m.get("grabacion") == d["indice"]]
                 info.append(g)
-            self.guion = guionista.escribir(self.ficha, self.expediente, info, self.minutos, self.notas)
+            notas, minutos = self.notas, self.minutos
+            if self.solo_grabacion() and info:  # 📱 la voz narra la grabación de principio a fin
+                largo = sum(float(g.get("segundos") or 0) for g in info)
+                if largo:
+                    minutos = max(3, min(8, round(largo / 60)))
+                notas = (notas + "\n\n" + guionista.SOLO_GRABACION).strip()
+            self.guion = guionista.escribir(self.ficha, self.expediente, info, minutos, notas)
             _guardar(self.carpeta / "guion.json", self.guion)
 
     def narrar(self) -> None:
@@ -209,7 +254,10 @@ class Produccion:
     def editar(self) -> None:
         from agentes import edicion_remota, editor
 
-        ctx = {"ficha": self.ficha, "expediente": self.expediente, "imagenes": self.imagenes}
+        ctx = {"ficha": self.ficha, "expediente": self.expediente, "imagenes": self.imagenes,
+               "solo_grabacion": self.solo_grabacion()}
+        if ctx["solo_grabacion"]:
+            self._musica_libre()
         # 🖥️ si hay una compu de la sala libre, edita ella (más rápida); si no, el servidor
         self.video = edicion_remota.editar_en_sala(self.guion["escenas"], ctx, self.carpeta, self.clips,
                                                    avance=editor._avance)

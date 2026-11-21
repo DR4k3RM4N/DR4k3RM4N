@@ -329,6 +329,7 @@ def activar() -> None:
     analitica.DEMO = True
     analitica.ARCHIVO = config.ESTILO_DIR / "analitica_demo.json"
     os.environ["VOZ_MOTOR"] = "silencio"
+    os.environ["AUTOCANAL_DEMO"] = "1"
     config.HISTORIAL = config.BASE / "historial_demo.json"
     buscador.ideas = ideas
     buscador.encontrar_app = encontrar_app

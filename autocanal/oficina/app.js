@@ -931,6 +931,7 @@
         <div class="ajustes">${chk("dos_voces", "Dos voces (una pregunta o reacciona, como en los videos que pegan)")}
           <label>Mascota en la esquina ${sel("mascota_lado", [["derecha", "Derecha"], ["izquierda", "Izquierda"]])}</label>
           ${chk("probar_en_cel", "📱 Si mi Android está conectado a mi compu, que el robot pruebe la app antes de investigar")}
+          ${chk("solo_grabacion", "📱 Apps que sí pagan: videos de apps 100% grabación del cel narrada (sin imágenes externas; con música libre si no subí la mía)")}
           ${chk("rescate_empaque", "🛟 Si un video casi no recibe clics, cambiarle solo el título y la miniatura por el paquete 2 (una vez)")}</div>
         ${subida("musica", e.archivos.musica)}${subida("whoosh", e.archivos.whoosh)}${subida("intro", e.archivos.intro)}${subida("outro", e.archivos.outro)}
         <p class="pista">Los colores de subtítulos y barra salen del estilo de tus miniaturas. Usa música sin copyright.</p>

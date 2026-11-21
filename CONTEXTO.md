@@ -500,3 +500,11 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   SALIDA [DESDE HASTA]` y revisa. Si `video_final.mp4` falta o no dura lo de la narración → plantilla en la misma compu.
 - El servidor manda además: todas las caras de la mascota (`mascota/*.png`), `canal_nombre`, `acento`, `direccion`,
   `datos` y `prueba.momentos`.
+- **📱 Formato 100% grabación (Apps que sí pagan)**: ajuste `solo_grabacion` (prendido). `Produccion.solo_grabacion()`
+  = video de app + canal principal (+ no demo: `AUTOCANAL_DEMO`). Fuerza la prueba del robot; si no hay grabación →
+  error claro ("revisa el cel / sube tu grabación"). Guion con `guionista.SOLO_GRABACION` (todas las escenas
+  "grabacion", en orden, narración en 1a persona y presente, gancho con el momento más fuerte, minutos ≈ largo de la
+  grabación, 3-8). Edición: `SOLO_GRABACION_EDICION` al inicio de la dirección del editor IA (fondo video
+  `ajuste: contener` = grabación completa al centro sobre su versión desenfocada; capas solo a los lados). Música:
+  si no hay `estilo/musica.mp3`, `_musica_libre` baja una pista CC0/dominio público de Openverse a `salida/<id>/musica.mp3`
+  (el editor y el paquete de la sala la usan).
