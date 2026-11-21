@@ -54,7 +54,9 @@ SALA_URL = config.env("SALA_URL", "http://127.0.0.1:8767").rstrip("/")
 LIMPIAR_DIAS = int(config.env("LIMPIAR_DIAS", "30") or 30)
 # Tope de gasto en Claude por día (USD). Al llegar, los agentes paran y Paola te avisa. 0 = sin tope.
 LIMITE_DIARIO = float(config.env("LIMITE_DIARIO", "1") or 0)
-REANUDAR_MAX = 2  # veces seguidas que la oficina retoma sola un video interrumpido
+REANUDAR_MAX = 2
+ESTADO_TEXTO = {"produccion": "en producción", "publicando": "publicándose", "publicado": "publicado",
+                "descartado": "descartado"}  # veces seguidas que la oficina retoma sola un video interrumpido
 
 AGENTES = [
     # id, nombre, rol, color de ropa, peinado
@@ -187,6 +189,7 @@ class Oficina:
                     "deseos_por_dia": int(config.env("DESEOS_POR_DIA", "2") or 0),
                     "agenda": self._agenda_cache(),
                     "canales": self._canales(),
+                    "lecciones": self._lecciones(),
                     "publicar_solo": bool(estilo.cargar()["ajustes"].get("publicar_solo")),
                     "a_la_vez": self.a_la_vez(),
                     "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
@@ -253,6 +256,11 @@ class Oficina:
                 self._tocar()
 
     def _responder(self, canal: str, texto: str, botones=None, teclado: bool = False) -> None:
+        if canal == "oficina":  # 💻 el chat de la oficina: Paola contesta ahí mismo
+            with self.lock:
+                self.log.append({"t": time.time(), "quien": "productora", "texto": texto.replace("*", "")})
+                self._tocar()
+            return
         if canal == "telegram":
             self._tg_enviar(texto, botones, teclado)
         else:
@@ -329,7 +337,7 @@ class Oficina:
 
     def _atender(self, canal: str, mensaje: dict) -> None:
         """Lo que escribes por chat: se entiende (comandos o Haiku) y se ejecuta."""
-        icono = "✈️" if canal == "telegram" else "📱"
+        icono = {"telegram": "✈️", "oficina": "💻"}.get(canal, "📱")
         with self.lock:
             self.log.append({"t": time.time(), "quien": "jefe", "texto": f"{icono} {mensaje['texto'] or '(' + str(mensaje['tipo']) + ')'}"})
             self._tocar()
@@ -341,7 +349,9 @@ class Oficina:
         ideas = self._pendientes()
         ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "whatsapp", None
         try:
-            plan = chat_jefe.interpretar(texto_jefe, ideas, sorted(self.proyectos.values(), key=lambda p: -p["creado"]))
+            from agentes import canales as canales_mod
+            videos = sorted(self.proyectos.values(), key=lambda p: -p["creado"])
+            plan = chat_jefe.interpretar(texto_jefe, ideas, videos, canales_mod.lista())
         except Exception as exc:  # noqa: BLE001
             return self._responder(canal, f"No te entendí bien ({exc}). Escribe *ayuda* para ver qué puedo hacer.")
         partes = [plan["respuesta"]] if plan.get("respuesta") else []
@@ -360,6 +370,27 @@ class Oficina:
             elif tipo == "pedir_ideas":
                 self.pedir_ideas(texto)
                 partes.append("🔍 Voy a buscar ideas" + (f" de {texto}" if texto else "") + ". Te escribo cuando las tenga.")
+            elif tipo == "corregir" and texto:  # 📚 que el error no se repita
+                from agentes import lecciones
+                agente = acc.get("agente") or "todos"
+                l = lecciones.agregar(agente, texto, acc.get("canal") or "")
+                quien = lecciones.AGENTES.get(l["agente"], "El equipo")
+                partes.append(f"📚 Anotado para {quien}: «{l['texto']}». Ya no se repite.")
+                with self.lock:
+                    self.log.append({"t": time.time(), "quien": l["agente"] if l["agente"] in self.agentes else "productora",
+                                     "texto": f"📚 Aprendí: {l['texto']}"})
+                    self._tocar()
+            elif tipo == "cambios" and texto:  # rehacer un video con tu cambio
+                video = videos[n - 1] if 0 < n <= len(videos) else None
+                if not video:
+                    partes.append(f"No encontré el video {n}.")
+                elif video["estado"] in ("revision", "error"):
+                    r = self.accion_proyecto(video["id"], "cambios", texto)
+                    partes.append(f"✏️ Rehago *{video['titulo']}* con tu cambio." if "error" not in r
+                                  else f"{video['titulo']}: {r['error']}")
+                else:
+                    partes.append(f"*{video['titulo']}* ya está {ESTADO_TEXTO.get(video['estado'], video['estado'])}: "
+                                  "no lo puedo rehacer, pero anoté la corrección para los que siguen.")
             elif tipo == "estado":
                 partes.append(self._resumen_estado())
             elif tipo == "pendientes":
@@ -372,6 +403,10 @@ class Oficina:
             texto += f"\n\n👉 {URL_PUBLICA}"
         botones = tg.botones_ideas(self._pendientes()) if canal == "telegram" and pidio_lista and self._pendientes() else None
         self._responder(canal, texto, botones)
+
+    def chat_oficina(self, texto: str) -> None:
+        """💻 Lo que escribes en el chat de la oficina (igual que por Telegram/WhatsApp)."""
+        self._atender("oficina", {"id": uuid.uuid4().hex, "texto": texto, "tipo": "text"})
 
     def _reanudar(self) -> None:
         """Al prender la oficina: sigue los videos que se quedaron a medias, sin repetir lo ya hecho."""
@@ -778,6 +813,10 @@ class Oficina:
                 self.accion_deseo(siguiente["id"], "probar")
             except Exception as exc:  # noqa: BLE001 — el ciclo nunca debe morir
                 print(f"aviso: ciclo de deseos: {exc}")
+
+    def _lecciones(self) -> list:
+        from agentes import lecciones
+        return lecciones.todas()[-80:]
 
     def _canales(self) -> list:
         from agentes import canales
@@ -1978,6 +2017,16 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     if 0 <= n < len(oficina.reglas):
                         oficina.reglas.pop(n)
                         oficina._tocar()
+                return self._json({"ok": True})
+            if ruta == "/api/chat":  # 💻 chat con el equipo desde la oficina
+                texto = str(datos.get("texto", "")).strip()[:1500]
+                if texto:
+                    threading.Thread(target=oficina.chat_oficina, args=(texto,), daemon=True).start()
+                return self._json({"ok": True})
+            if ruta == "/api/leccion/quitar":
+                from agentes import lecciones
+                lecciones.quitar(str(datos.get("id", "")))
+                oficina._tocar()
                 return self._json({"ok": True})
             if ruta == "/api/piloto":  # 🚀 piloto automático: prender / apagar
                 with oficina.lock:

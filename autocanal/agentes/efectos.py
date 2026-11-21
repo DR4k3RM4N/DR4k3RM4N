@@ -16,6 +16,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from . import claude, config, estilo, graficos, manual, voz
+from . import lecciones
 
 FPS = 30
 W, H = 1920, 1080
@@ -175,7 +176,7 @@ def planear(escenas: list[dict], carpeta: Path) -> list[list[dict]]:
     pedido = (f"Intensidad pedida: {intensidad} (máximo {maximo} efecto(s) por escena).{referencia}\n\n"
               "Guion:\n" + "\n".join(lineas) + "\n\nArma el plan de motion graphics, escena por escena.")
     try:
-        r = claude.json_estructurado(SISTEMA + "\n\n" + manual.para_agente(), pedido, SCHEMA_PLAN, tarea="edicion", que="plan de motion graphics")
+        r = claude.json_estructurado(SISTEMA + "\n\n" + manual.para_agente() + lecciones.para("editor"), pedido, SCHEMA_PLAN, tarea="edicion", que="plan de motion graphics")
         efectos = _validar(r.get("plan"), escenas, maximo)
     except Exception as exc:  # noqa: BLE001 — sin plan el video sale igual, solo sin efectos
         print(f"  · no pude armar el plan de efectos ({exc}); el video sale sin motion graphics", flush=True)

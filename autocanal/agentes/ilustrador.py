@@ -22,6 +22,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from . import claude, config, estilo
+from . import lecciones
 
 W, H = 1920, 1080
 FUENTE = config.BASE / "assets" / "fuentes" / "LuckiestGuy-Regular.ttf"
@@ -94,7 +95,7 @@ def conceptos(ficha: dict, expediente: dict, guion: dict) -> list[dict]:
               f"MECÁNICA VISTA EN LA PRUEBA: {(expediente.get('prueba_propia') or {}).get('como_funciona', '')}\n"
               f"IDEAS DE TEXTO DEL GUIONISTA: {', '.join(guion.get('textos_miniatura') or [])}\n"
               f"TÍTULOS DEL VIDEO: {' | '.join((guion.get('titulos') or [])[:3])}\n\nHaz los 3 conceptos.")
-    r = claude.json_estructurado(SISTEMA, pedido, SCHEMA, tarea="miniatura_ia", que="conceptos de miniatura")
+    r = claude.json_estructurado(SISTEMA + lecciones.para("disenadora"), pedido, SCHEMA, tarea="miniatura_ia", que="conceptos de miniatura")
     return r["conceptos"][:3]
 
 
@@ -213,7 +214,7 @@ def dibujar_svg(escena: str, referencias: list[str], destino: Path) -> Path:
     contenido.append({"type": "text", "text": f"Dibuja esta escena en SVG:\n{escena}"})
     ultimo = None
     for _ in range(2):  # si el SVG sale roto, una segunda vuelta
-        r = claude.json_estructurado(SISTEMA_SVG, contenido, SCHEMA_SVG, tarea="miniatura_dibujo", que="dibujar miniatura")
+        r = claude.json_estructurado(SISTEMA_SVG + lecciones.para("disenadora"), contenido, SCHEMA_SVG, tarea="miniatura_dibujo", que="dibujar miniatura")
         svg = _limpiar_svg(r.get("svg", ""))
         try:
             png = cairosvg.svg2png(bytestring=svg.encode("utf-8"), output_width=W, output_height=H, unsafe=False)

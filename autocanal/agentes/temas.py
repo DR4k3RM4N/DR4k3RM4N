@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from . import buscar_web, claude, config, manual, playstore
+from . import lecciones
 
 FORMATOS = ["top", "guia", "noticias", "analisis", "opinion", "curiosidades", "comparativa", "tutorial", "historia"]
 
@@ -92,7 +93,7 @@ def ideas(tema: str, angulo: str = "", pedido: str = "", guia: str = "", cuantas
                     "\n(No hay búsqueda en Google disponible: usa lo que sabes y marca las ideas como para verificar.)\n")
                  + (f"\n{tendencias.para_paola(pegando)}\n" if pegando else "")
                  + f"\nPropón {cuantas} ideas de video.")
-    r = claude.json_estructurado(SISTEMA_IDEAS + "\n\n" + manual.para_agente(), pedido_ia, SCHEMA_IDEAS, tarea="ideas", que="ideas de un tema")
+    r = claude.json_estructurado(SISTEMA_IDEAS + "\n\n" + manual.para_agente() + lecciones.para("productora"), pedido_ia, SCHEMA_IDEAS, tarea="ideas", que="ideas de un tema")
     nombre = (r.get("tema") or tema).strip()[:60]
     salida = []
     for k, i in enumerate(r.get("ideas", [])[:cuantas]):
@@ -204,7 +205,7 @@ def analizar(datos: dict, carpeta: Path, con_web: bool = True) -> dict:
                          for i, r in enumerate(resultados[:60]))
     print("  · armando expediente del tema")
     leido = claude.json_estructurado(
-        SISTEMA_LEER,
+        SISTEMA_LEER + lecciones.para("investigador"),
         f"TEMA: {tema}\nENFOQUE DEL VIDEO: {angulo}\nFORMATO: {ficha.get('formato', '')}\n\n"
         + (f"RESULTADOS DE BÚSQUEDA:\n{lista}" if lista else
            "No hubo búsqueda en internet: usa solo lo que sepas con seguridad, url vacía, y pon en por_verificar "

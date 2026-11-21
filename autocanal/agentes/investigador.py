@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from . import buscar_web, claude, config, playstore
+from . import lecciones
 
 SYSTEM_WEB = """Eres investigador de fraudes en apps móviles para un canal de YouTube en español.
 Busca en internet información verificable sobre la app que te pidan: reportes de usuarios \
@@ -85,7 +86,7 @@ def investigar_google(ficha: dict) -> tuple[str, list[dict], int]:
     lista = "\n\n".join(f"[{i}] {r['titulo']} — {r['url']}\n{r.get('fecha', '')} {r['texto']}"
                          for i, r in enumerate(resultados[:60]))
     leido = claude.json_estructurado(
-        SYSTEM_LEER_WEB,
+        SYSTEM_LEER_WEB + lecciones.para("investigador"),
         f"APP: {ficha['title']} ({ficha['appId']}) de {ficha.get('developer')}\n"
         f"Qué promete: {ficha.get('summary')}\n\nRESULTADOS DE BÚSQUEDA:\n{lista}",
         SCHEMA_WEB, tarea="leer_web", que="leer resultados")
@@ -330,7 +331,7 @@ def analizar(datos: dict, carpeta: Path, con_web: bool = True) -> dict:
                                   "directa y vale más que las reseñas):\n" + json.dumps(
             {k: prueba.get(k) for k in ("resumen", "como_funciona", "promesa", "pago_minimo", "intento_de_retiro",
                                          "senales", "anuncios_por_minuto", "minutos_probados")}, ensure_ascii=False))
-    exp = claude.json_estructurado(SYSTEM_EXPEDIENTE, contenido, SCHEMA, tarea="investigar", que="expediente")
+    exp = claude.json_estructurado(SYSTEM_EXPEDIENTE + lecciones.para("investigador"), contenido, SCHEMA, tarea="investigar", que="expediente")
     exp["resenas_citadas"] = [muestra[i] for i in exp["resenas_destacadas"] if 0 <= i < len(muestra)][:6]
     exp["fuentes_web"] = fuentes
     if prueba:

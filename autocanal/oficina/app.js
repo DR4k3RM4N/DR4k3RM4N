@@ -368,6 +368,7 @@
 
   // ---------- chat ----------
   function pintarChat() {
+    pintarLecciones();
     const agentes = {};
     estado.agentes.forEach((a) => (agentes[a.id] = a));
     const lista = $("#chat");
@@ -378,6 +379,32 @@
     }).join("");
     if (abajo) lista.scrollTop = lista.scrollHeight;
   }
+
+  const NOMBRE_AGENTE = { productora: "Paola", investigador: "Iván", guionista: "Gabi", locutor: "Leo", disenadora: "Dani",
+    editor: "Edu", redactora: "Rosa", community: "Carla", todos: "Todo el equipo" };
+  function pintarLecciones() {
+    const lista = estado.lecciones || [];
+    $("#lecciones").hidden = !lista.length;
+    if (document.activeElement?.closest?.("#lecciones")) return;
+    $("#lista-lecciones").innerHTML = lista.slice().reverse().map((l) => `<li><b>${esc(NOMBRE_AGENTE[l.agente] || l.agente)}:</b> ${esc(l.texto)}
+      ${l.canal ? chipCanal(l.canal) : ""} <button class="btn btn-mini" data-quitar-leccion="${esc(l.id)}" aria-label="Quitar">✕</button></li>`).join("");
+    $("#lecciones summary").textContent = `📚 Lo que el equipo aprendió de tus correcciones (${lista.length})`;
+  }
+  $("#form-chat").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const caja = $("#chat-texto"), texto = caja.value.trim();
+    if (!texto) return;
+    caja.value = "";
+    try { await api("/api/chat", { texto }); } catch (err) { alert(err.message); caja.value = texto; }
+  });
+  $("#chat-texto").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form-chat").requestSubmit(); }
+  });
+  $("#lecciones").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-quitar-leccion]");
+    if (!b || !confirm("¿Quitar esta lección? El equipo la va a olvidar.")) return;
+    try { await api("/api/leccion/quitar", { id: b.dataset.quitarLeccion }); } catch (err) { alert(err.message); }
+  });
 
   function abrirPestana(nombre) {
     document.querySelectorAll(".pestana").forEach((x) => x.classList.toggle("activa", x.dataset.tab === nombre));

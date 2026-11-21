@@ -185,6 +185,16 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   manual de inicio con reglas de datos/fuentes), selector en Estilo. Agenda por canal (cuota propia por proyecto).
   Miniaturas ilustradas solo en el principal. El robot nunca pide préstamos.
 
+## 3j. Chat en la oficina y 📚 lecciones (nov 2026)
+- Pestaña Chat con caja para escribir (`/api/chat` → `_atender("oficina", …)`; Paola contesta en el log). Mismo
+  cerebro que Telegram/WhatsApp (`chat_jefe.interpretar`, con lista numerada de videos y los canales).
+- Acciones nuevas: "corregir" (agente + lección general + canal opcional) → `agentes/lecciones.py`
+  (`estilo/lecciones.json`), que se pega en las instrucciones del agente (`lecciones.para(agente)`): Paola
+  (buscador/temas/investigadora), Iván (leer web/expediente/temas), Gabi (+ las de Dani: escribe los textos de
+  miniatura), Dani (ilustrador), Edu (plan de efectos), Rosa (blog). "cambios" → rehace el video N (en revisión o
+  con error) con `accion_proyecto("cambios")`. Lista "📚 Lo que el equipo aprendió" con ✕ en el chat.
+- Probado aquí con Claude real: entiende correcciones por agente y por canal, y cambios a un video.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

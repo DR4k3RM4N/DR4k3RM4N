@@ -5,6 +5,7 @@ import json
 import re
 
 from . import buscar_web, claude, config, manual, playstore
+from . import lecciones
 
 CONSULTAS = [
     "ganar dinero", "gana dinero jugando", "ganar dinero rapido", "apps que pagan",
@@ -284,7 +285,7 @@ def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
     pegando = tendencias.buscar([texto, f"{texto} app", f"{texto} paga o es estafa"] if tipo == "tema" else None)
     print(f"  · tendencias de YouTube: {len(pegando)} videos que están pegando", flush=True)
     res = claude.json_estructurado(
-        SYSTEM + "\n\n" + manual.para_agente(),
+        SYSTEM + "\n\n" + manual.para_agente() + lecciones.para("productora"),
         f"Apps encontradas:\n{datos}\n\n"
         + (f"Indicaciones y gustos del jefe (respétalos):\n{guia}\n\n" if guia else "")
         + (tendencias.para_paola(pegando) + "\n\n" if pegando else "")

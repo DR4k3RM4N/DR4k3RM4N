@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 
 from . import buscar_web, claude, config, manual
+from . import lecciones
 
 FORMATOS = ["analisis_app", "top", "guia", "noticias", "analisis", "opinion", "comparativa", "tutorial", "historia",
             "alerta_estafa"]
@@ -75,7 +76,7 @@ def investigar(instruccion: str, guia: str = "", cuantas: int = 6, hechas: set |
     from . import buscador, tendencias
 
     plan = claude.json_estructurado(
-        SISTEMA + "\n\n" + manual.para_agente(),
+        SISTEMA + "\n\n" + manual.para_agente() + lecciones.para("productora"),
         f"INSTRUCCIÓN DEL JEFE: {instruccion}\n" + (f"\nGUSTOS Y REGLAS DEL JEFE:\n{guia}\n" if guia else "")
         + "\nArma tu plan de búsqueda (en español de México, y alguna en inglés si ayuda).",
         SCHEMA_PLAN, tarea="ideas", que="plan de investigación")
@@ -89,7 +90,7 @@ def investigar(instruccion: str, guia: str = "", cuantas: int = 6, hechas: set |
                          for i, r in enumerate(resultados[:60]))
     ya = ", ".join(sorted(hechas or set())[:80])
     r = claude.json_estructurado(
-        SISTEMA + "\n\n" + manual.para_agente(),
+        SISTEMA + "\n\n" + manual.para_agente() + lecciones.para("productora"),
         f"INSTRUCCIÓN DEL JEFE: {instruccion}\nLO QUE ENTENDISTE: {plan['entendi']}\n"
         f"TIPOS QUE QUIERE: {'apps' if plan['quiere_apps'] else ''} {'temas' if plan['quiere_temas'] else ''}\n"
         + (f"\nGUSTOS Y REGLAS DEL JEFE:\n{guia}\n" if guia else "")

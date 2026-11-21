@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 from . import claude, config, manual
+from . import lecciones
 
 SYSTEM = f"""Eres el guionista del canal de YouTube "{config.CANAL_NOMBRE}", que investiga apps \
 que prometen pagar dinero. Escribes el texto que se leerá en voz alta y decides qué se ve en \
@@ -182,7 +183,7 @@ def escribir(ficha: dict, expediente: dict, clips: list[dict], minutos: int = 6,
         pedido += (f"\n\nESTILO DE MINIATURAS DEL CANAL: {mini.get('descripcion', '')} "
                    f"Textos: {mini.get('consejos_texto', '')} Máximo {mini.get('palabras_max', 4)} palabras.")
     if es_tema:
-        r = claude.json_estructurado(SYSTEM_TEMA + "\n\n" + manual.para_agente(), pedido, SCHEMA_TEMA, tarea="guion")
+        r = claude.json_estructurado(SYSTEM_TEMA + "\n\n" + manual.para_agente() + lecciones.para("guionista", "disenadora"), pedido, SCHEMA_TEMA, tarea="guion")
         r["sello_miniatura"] = (r.get("sello_miniatura") or "").upper()[:14]
         return r
-    return claude.json_estructurado(SYSTEM + "\n\n" + manual.para_agente(), pedido, SCHEMA, tarea="guion")
+    return claude.json_estructurado(SYSTEM + "\n\n" + manual.para_agente() + lecciones.para("guionista", "disenadora"), pedido, SCHEMA, tarea="guion")
