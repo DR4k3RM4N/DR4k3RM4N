@@ -122,6 +122,7 @@ class Oficina:
         self.propuestas = datos.get("propuestas", [])
         self.proyectos = datos.get("proyectos", {})
         self.preferencias = datos.get("preferencias", [])
+        self.reglas = datos.get("reglas", [])  # 📌 lo que pediste "de ahora en adelante": Paola lo aplica siempre
         self.log = datos.get("log", [])
         for i, p in enumerate(sorted([p for p in self.propuestas if p["estado"] == "pendiente"], key=lambda p: p["creado"]), 1):
             p.setdefault("num", i)
@@ -167,7 +168,7 @@ class Oficina:
             self.cambio.notify_all()
             ESTADO.write_text(json.dumps({
                 "propuestas": self.propuestas[-200:], "proyectos": self.proyectos,
-                "preferencias": self.preferencias[-30:], "log": self.log[-300:],
+                "preferencias": self.preferencias[-30:], "reglas": self.reglas[-40:], "log": self.log[-300:],
                 "ultima_busqueda": self.ultima_busqueda, "ideas_auto": self.ideas_auto, "piloto": self.piloto,
                 "deseos": self.deseos[-300:], "tareas": self.tareas[-300:],
                 "gasto": dict(sorted(self.gasto.items())[-120:]),
@@ -179,7 +180,7 @@ class Oficina:
             return {"version": self.version, "demo": self.demo, "agentes": list(self.agentes.values()),
                     "propuestas": [p for p in self.propuestas if p["estado"] == "pendiente"],
                     "proyectos": sorted(self.proyectos.values(), key=lambda p: -p["creado"]),
-                    "preferencias": self.preferencias[-10:], "log": self.log[-60:],
+                    "preferencias": self.preferencias[-10:], "reglas": self.reglas[-40:], "log": self.log[-60:],
                     "etapas": ETAPAS_PROYECTO, "ahora": time.time(), "gasto": self._resumen_gasto(),
                     "ideas_auto": {"activo": self.ideas_auto, "hora": IDEAS_HORA or ""}, "piloto": self.piloto,
                     "deseos": [d for d in self.deseos if d["estado"] == "pendiente"][-60:],
@@ -522,8 +523,19 @@ class Oficina:
         self.poner("productora", estado="trabajando")
         self.decir("productora", f"¡Voy con tu pedido! «{guia[:80]}»" if guia else "¡Voy! Busco apps nuevas en Play Store")
         try:
-            gustos = "\n".join(f"- {p}" for p in self.preferencias[-15:])
+            gustos = "\n".join([*(f"- REGLA PERMANENTE: {r}" for r in self.reglas[-20:]),
+                                 *(f"- {p}" for p in self.preferencias[-15:])])
             candidatas = buscador.ideas(5, gustos, pedido=guia)
+            if candidatas:
+                entendi = candidatas[0].pop("entendi", "")
+                regla = (candidatas[0].pop("regla_permanente", "") or "").strip()
+                if regla and regla not in self.reglas:
+                    with self.lock:
+                        self.reglas.append(regla[:200])
+                        self._tocar()
+                    self.decir("productora", f"📌 Anotado para siempre: {regla[:100]}")
+                if entendi:
+                    self.decir("productora", f"Entendí: {entendi[:140]}")
         except Exception as exc:  # noqa: BLE001
             self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
             self.poner("productora", estado="libre")
@@ -1922,6 +1934,13 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     return self._json({"error": "¿qué hago?"}, 400)
                 r = oficina.accion_deseo(ruta.rsplit("/", 1)[-1], accion)
                 return self._json(r, 400 if "error" in r else 200)
+            if ruta == "/api/regla/quitar":  # 📌 quitar una regla permanente de Paola
+                with oficina.lock:
+                    n = int(datos.get("n", -1))
+                    if 0 <= n < len(oficina.reglas):
+                        oficina.reglas.pop(n)
+                        oficina._tocar()
+                return self._json({"ok": True})
             if ruta == "/api/piloto":  # 🚀 piloto automático: prender / apagar
                 with oficina.lock:
                     oficina.piloto = bool(datos.get("activo"))

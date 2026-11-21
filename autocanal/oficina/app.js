@@ -99,6 +99,7 @@
           ${i.personalizada ? `<div class="tuya">💡 Tu idea</div>` : ""}
           <div class="cabeza"><h4>${i.num ? `<span class="num">${i.num}</span>` : ""}${esc(i.titulo)}</h4><span class="chip chip-${esc(i.potencial_vistas)}">${esc(i.potencial_vistas)}</span></div>
           <p class="angulo">🎬 ${esc(i.angulo || "")}${i.formato ? ` <span class="chip chip-formato">${esc(i.formato)}</span>` : ""}</p>
+          ${(i.fuentes || []).length ? `<p class="pista">📎 ${i.fuentes.map((u, k) => `<a href="${esc(u)}" target="_blank" rel="noopener">fuente ${k + 1}</a>`).join(" · ")}</p>` : ""}
           ${i.inspiracion ? `<p class="pista">📈 Inspirada en <a href="${esc(i.inspiracion.url)}" target="_blank" rel="noopener">${esc(i.inspiracion.titulo)}</a> (x${esc(i.inspiracion.multiplicador)} vistas vs. suscriptores)</p>` : ""}
           <p class="porque">${esc(i.por_que)}</p>
           <p class="appid">${esc(i.app_id)}</p>
@@ -128,6 +129,10 @@
           <span class="fila"><button class="btn btn-mini btn-primario" data-deseo="${esc(d.id)}" data-deseo-accion="probar">📱 Probar ahora</button>
           <button class="btn btn-mini" data-deseo="${esc(d.id)}" data-deseo-accion="quitar">Quitar</button></span></li>`).join("")}</ul></details>`;
     }
+    if (estado.reglas?.length) {
+      html += `<details class="gustos"><summary>📌 Reglas que Paola aplica siempre (${estado.reglas.length})</summary>
+        <ul>${estado.reglas.map((r, k) => `<li>${esc(r)} <button class="btn btn-mini" data-quitar-regla="${k}" aria-label="Quitar regla">✕</button></li>`).join("")}</ul></details>`;
+    }
     if (estado.preferencias?.length) {
       html += `<details class="gustos"><summary>Lo que Paola aprendió de ti (${estado.preferencias.length})</summary>
         <ul>${estado.preferencias.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></details>`;
@@ -142,6 +147,10 @@
   $("#bandeja").addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b) return;
+    if (b.dataset.quitarRegla !== undefined) {
+      try { await api("/api/regla/quitar", { n: Number(b.dataset.quitarRegla) }); } catch (err) { alert(err.message); }
+      return;
+    }
     if (b.dataset.deseo) {
       b.disabled = true;
       try {

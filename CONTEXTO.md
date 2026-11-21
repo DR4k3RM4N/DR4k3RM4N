@@ -161,6 +161,15 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   "Edu: 🖥️ <compu>: paso · %" o "☁️ Servidor: …"; la pestaña Sala muestra "🎬 Video de YouTube".
 - Probado aquí: paquete → runner → video.mp4 (sin la sala real ni Windows).
 
+## 3h. Paola investigadora (nov 2026)
+- Pedido tipo "investigar" (o "tema") → `agentes/investigadora.py`: Claude (plan) arma su plan (6–8 búsquedas de
+  Google + 2–4 de YouTube, si quiere apps/temas, y `regla_permanente` si dijo "de ahora en adelante…"), investiga
+  (Serper/Tavily + tendencias de YouTube) y propone ideas mixtas: APP (se resuelve con `encontrar_app`/`fuera_de_play`)
+  o TEMA (`tema:` → pipeline de temas). Solo fuentes que salieron en los resultados (`fuentes` en la tarjeta).
+- `oficina.reglas` (📌, persistentes, se pueden quitar en la Bandeja) van en los gustos de cada pedido como
+  "REGLA PERMANENTE". Paola dice "Entendí: …". Pedido vacío = apps nuevas de Play Store como antes.
+- Probado aquí con Claude real y resultados simulados: buena mezcla de temas y apps, regla bien detectada.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

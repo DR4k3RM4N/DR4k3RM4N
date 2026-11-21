@@ -62,10 +62,11 @@ def marcar_hecha(app_id: str) -> None:
 PEDIDO = {
     "type": "object",
     "properties": {
-        "tipo": {"type": "string", "enum": ["idea", "app", "tema", "libre"],
+        "tipo": {"type": "string", "enum": ["idea", "app", "tema", "libre", "investigar"],
                  "description": "idea = propone un video concreto sobre una app o servicio, con un enfoque; "
                                 "app = solo nombra una app para investigar; tema = un tipo de apps o un asunto de dinero; "
-                                "libre = cualquier otro tema (videojuego, película, serie, tecnología, noticia, deporte…)"},
+                                "libre = cualquier otro tema (videojuego, película, serie, tecnología, noticia, deporte…); "
+                                "investigar = una instrucción para que Paola investigue y proponga (tendencias, varios temas, criterios)"},
         "texto": {"type": "string", "description": "El nombre de la app o servicio (idea/app), o el tema en pocas palabras"},
         "angulo": {"type": "string", "description": "Si es idea o libre y dio un enfoque: el enfoque en sus palabras, como título tentativo; si no, vacío"},
     },
@@ -84,7 +85,11 @@ por referidos" → texto "Temu", angulo "¿Temu sí paga por referidos?".
 series, tecnología, celulares, noticias, deportes, tutoriales… Ej.: "hazme un video de Marvel Rivals" → texto \
 "Marvel Rivals", angulo ""; "un video de los mejores personajes de Marvel Rivals para principiantes" → texto \
 "Marvel Rivals", angulo "Los mejores personajes de Marvel Rivals para principiantes". OJO: una app de juegos que \
-promete pagar dinero NO es libre (es app o idea)."""
+promete pagar dinero NO es libre (es app o idea).
+- "investigar": una instrucción para que Paola investigue y proponga varias ideas, con criterios o en varias \
+direcciones, sobre todo de dinero. Ej.: "investígame temas en tendencia sobre ganar dinero", "búscame qué estafas \
+están pegando este mes", "quiero ideas de formas de ganar dinero que no sean apps", "dame temas de dinero que \
+estén creciendo en TikTok". Si dice "de ahora en adelante…" o pone reglas, también es "investigar"."""
 
 ELEGIR_APP = {
     "type": "object",
@@ -223,6 +228,18 @@ def ideas(cuantas: int = 5, guia: str = "", pedido: str = "") -> list[dict]:
     hechas = set(historial())
     tipo, texto, angulo = entender_pedido(pedido)
     print(f"  · pedido: {tipo}" + (f" ({texto})" if texto else "") + (f" — {angulo}" if angulo else ""))
+    if tipo in ("investigar", "tema"):  # 🔎 Paola investiga en Google y YouTube: apps y temas que no son apps
+        from . import investigadora
+        try:
+            r = investigadora.investigar(pedido, guia, max(cuantas, 6), hechas)
+        except claude.ErrorIA:
+            raise
+        except Exception as exc:  # noqa: BLE001 — si falla la investigación, se sigue con Play Store
+            print(f"  · la investigación falló ({exc}); busco en Play Store", flush=True)
+        else:
+            if r["ideas"]:
+                r["ideas"][0]["entendi"], r["ideas"][0]["regla_permanente"] = r["entendi"], r["regla_permanente"]
+                return r["ideas"]
     if tipo == "libre":  # cualquier tema: Paola propone varios enfoques con lo que se busca en Google
         from . import temas
         return temas.ideas(texto, angulo, pedido, guia, cuantas)

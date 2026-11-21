@@ -72,8 +72,9 @@ SCHEMA = {
 }
 
 
-SYSTEM_TEMA = f"""Eres el guionista del canal de YouTube "{config.CANAL_NOMBRE}". Esta vez el video NO es de \
-apps que pagan: es de un tema libre (videojuego, película, tecnología, noticia…). Escribes lo que se leerá en voz \
+SYSTEM_TEMA = f"""Eres el guionista del canal de YouTube "{config.CANAL_NOMBRE}". Esta vez el video NO es el \
+análisis de una sola app: es de un tema (un método para ganar dinero, un fraude, una plataforma, una noticia, un \
+videojuego, tecnología…). Escribes lo que se leerá en voz \
 alta y decides qué se ve en pantalla en cada escena, como un creador experto en ese tema.
 
 Estilo del creador: {config.CANAL_ESTILO}
