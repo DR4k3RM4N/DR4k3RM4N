@@ -23,8 +23,9 @@ AYUDA = (
     "• *al video 2 quítale la parte del final* → se rehace ese video con tu cambio\n"
     "• *publica el 3* / *publica todos* → Carla los sube (y los programa en la agenda)\n"
     "• *reintenta los que fallaron* · *descarta el 4* · *prende el piloto* / *apaga el piloto*\n"
-    "• pega el *enlace de un video* (YouTube, TikTok, Instagram…) → lo veo, lo transcribo y te digo por qué funciona; "
-    "puedes agregar una pregunta, ej. *¿qué gancho usa?*"
+    "• pega el *enlace de un video* (YouTube, TikTok, Instagram…) → te digo de qué trata y por qué funciona; "
+    "puedes agregar una pregunta, ej. *¿qué gancho usa?* (de YouTube veo miniatura, título, descripción y comentarios)\n"
+    "• en la oficina, súbeme el *archivo del video* con el 📎 → lo veo completo: transcripción e imágenes"
 )
 
 SYSTEM = """Eres Paola, la productora de un canal de YouTube que investiga apps que prometen pagar dinero.

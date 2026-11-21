@@ -552,3 +552,5 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .ide-fila { display: flex; gap: 12px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
 .ide-perfil { width: 110px; height: 110px; border-radius: 50%; }
 #ide-desc { width: 100%; }
+.chat-botones { display: flex; gap: 6px; align-items: stretch; }
+.chat-botones label.btn { cursor: pointer; display: grid; place-items: center; min-width: 44px; }

@@ -462,6 +462,25 @@
     caja.value = "";
     try { await api("/api/chat", { texto }); } catch (err) { alert(err.message); caja.value = texto; }
   });
+  // 📎 un video para que Paola lo analice completo (lo escrito en la caja va como pregunta)
+  $("#chat-video").addEventListener("change", (e) => {
+    const archivo = e.target.files[0];
+    e.target.value = "";
+    if (!archivo) return;
+    const caja = $("#chat-texto"), pregunta = caja.value.trim();
+    const boton = e.target.closest("label");
+    caja.value = "";
+    const x = new XMLHttpRequest();
+    x.open("POST", `/api/chat/video?${new URLSearchParams({ nombre: archivo.name, pregunta })}`);
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.upload.onprogress = (ev) => { if (ev.lengthComputable) boton.firstChild.textContent = `${Math.round(ev.loaded / ev.total * 100)}%`; };
+    x.onload = () => {
+      boton.firstChild.textContent = "📎";
+      if (x.status !== 200) { let j = {}; try { j = JSON.parse(x.responseText); } catch {} alert(j.error || "No se pudo subir"); caja.value = pregunta; }
+    };
+    x.onerror = () => { boton.firstChild.textContent = "📎"; alert("Se cortó la conexión"); caja.value = pregunta; };
+    x.send(archivo);
+  });
   $("#chat-texto").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form-chat").requestSubmit(); }
   });

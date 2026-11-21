@@ -105,7 +105,10 @@
       <ol id="chat" class="chat"></ol>
       <form id="form-chat" class="chat-escribir">
         <textarea id="chat-texto" rows="2" maxlength="1500" placeholder="Escríbele al equipo. Ej.: «Gabi, deja de empezar los guiones con un saludo» o «al video 2 quítale el final»"></textarea>
-        <button class="btn btn-primario" type="submit">Enviar</button>
+        <div class="chat-botones">
+          <label class="btn" title="Súbele un video a Paola para que lo analice completo (lo que escribas va como pregunta)">📎<input type="file" id="chat-video" accept="video/*" hidden></label>
+          <button class="btn btn-primario" type="submit">Enviar</button>
+        </div>
       </form>
     </div>
   </aside>

@@ -175,6 +175,13 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                     {"narracion": "Tiene más de diez millones de jugadores.", "visual": "dato", "indice": 0, "texto": "10 millones de jugadores"},
                     {"narracion": "¿Y tú, cuál es tu favorito? Déjamelo en los comentarios.", "visual": "cierre", "indice": 0, "texto": "¿Cuál es tu favorito?"},
                 ]}
+    if "para_nuestro_canal" in props:  # 🎬 analizar un video
+        return {"resumen": "(Demo) Un creador prueba una app que promete pagar y muestra que paga centavos.",
+                "estructura": [{"tiempo": "0:00", "que_pasa": "Gancho: promesa contra realidad"},
+                               {"tiempo": "0:20", "que_pasa": "Prueba en vivo"}],
+                "gancho": "(Demo) Abre con la cifra que promete la app.", "por_que_funciona": ["(Demo) Cumple rápido lo que promete"],
+                "visual": "(Demo) Textos grandes y cortes cada 3 s.", "empaque": "(Demo) Cifra concreta en la miniatura.",
+                "para_nuestro_canal": ["(Demo) Abrir con la cifra en pantalla"], "respuesta": "(Demo) Usa promesa contra realidad."}
     if list(props) == ["descripcion"]:  # 🪪 descripción del canal
         return {"descripcion": "(Demo) Aquí pruebo apps que prometen pagar y te digo si pagan o son estafa. "
                                "Suscríbete para no perder tu tiempo. #Apps #GanarDinero"}

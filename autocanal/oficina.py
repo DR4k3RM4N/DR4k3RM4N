@@ -455,14 +455,26 @@ class Oficina:
         botones = tg.botones_ideas(self._pendientes()) if canal == "telegram" and pidio_lista and self._pendientes() else None
         self._responder(canal, texto, botones)
 
-    def _analizar_video(self, canal: str, url: str, pregunta: str) -> None:
+    def analizar_archivo(self, archivo: Path, pregunta: str) -> None:
+        """📎 Le subiste un video al chat: Paola lo ve completo."""
+        with self.lock:
+            self.log.append({"t": time.time(), "quien": "jefe",
+                             "texto": f"📎 {re.sub(r'^\d{8}_\d{6}_', '', archivo.name)}" + (f" — {pregunta}" if pregunta else "")})
+            self._tocar()
+        self._responder("oficina", "🎬 Voy a ver tu video: lo transcribo y reviso sus imágenes. Tardo unos minutos.")
+        try:
+            self._analizar_video("oficina", "", pregunta, archivo)
+        finally:
+            archivo.unlink(missing_ok=True)
+
+    def _analizar_video(self, canal: str, url: str, pregunta: str, archivo: Path | None = None) -> None:
         from agentes import analizar_video
-        t = self.nueva_tarea("productora", "analisis", titulo=f"Ver video: {url[:60]}")
+        t = self.nueva_tarea("productora", "analisis", titulo=f"Ver video: {(url or archivo.name)[:60]}")
         ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "analisis", t
         self.tarea(t, estado="trabajando", inicio=time.time())
         self.poner("productora", estado="trabajando")
         try:
-            r = analizar_video.analizar(url, pregunta)
+            r = analizar_video.analizar(url, pregunta, archivo=archivo)
         except Exception as exc:  # noqa: BLE001
             self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
             self.poner("productora", estado="libre")
@@ -1914,6 +1926,42 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"error": str(exc)}, 400)
             return self._json({"ok": True, "archivo": p.name})
 
+        def _subir_video_chat(self):
+            """📎 Un video para que Paola lo analice (va en trozos directo al disco)."""
+            if "application/octet-stream" not in self.headers.get("Content-Type", ""):
+                return self._json({"error": "tipo no permitido"}, 403)
+            origen = self.headers.get("Origin")
+            if origen and urlparse(origen).netloc != self.headers.get("Host"):
+                return self._json({"error": "origen no permitido"}, 403)
+            q = parse_qs(urlparse(self.path).query)
+            nombre = Path(q.get("nombre", ["video.mp4"])[0]).name
+            ext = Path(nombre).suffix.lower()
+            pregunta = q.get("pregunta", [""])[0].strip()[:600]
+            largo = int(self.headers.get("Content-Length") or 0)
+            if ext not in (".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"):
+                return self._json({"error": "Sube un video (.mp4, .mov, .mkv o .webm)."}, 400)
+            if largo <= 0 or largo > 2 * 1024 ** 3:
+                return self._json({"error": "El video debe pesar menos de 2 GB."}, 400)
+            carpeta = config.ENTRADA / "_analizar"
+            carpeta.mkdir(parents=True, exist_ok=True)
+            limpio = re.sub(r"[^\w.-]+", "_", Path(nombre).stem)[:60] or "video"
+            destino = carpeta / f"{time.strftime('%Y%m%d_%H%M%S')}_{limpio}{ext}"
+            temporal = destino.with_name(destino.name + ".subiendo")
+            restante = largo
+            with open(temporal, "wb") as f:
+                while restante > 0:
+                    trozo = self.rfile.read(min(1024 * 1024, restante))
+                    if not trozo:
+                        break
+                    f.write(trozo)
+                    restante -= len(trozo)
+            if restante:
+                temporal.unlink(missing_ok=True)
+                return self._json({"error": "La subida se cortó; inténtalo otra vez."}, 400)
+            temporal.rename(destino)
+            threading.Thread(target=oficina.analizar_archivo, args=(destino, pregunta), daemon=True).start()
+            return self._json({"ok": True})
+
         def _subir_grabacion(self):
             """📱 Tu grabación de pantalla probando una app: a un proyecto (?proyecto=id) o para uno nuevo (?app=nombre).
             Va en trozos directo al disco (puede pesar cientos de MB)."""
@@ -2140,6 +2188,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._subir()
             if urlparse(self.path).path == "/api/grabacion":
                 return self._subir_grabacion()
+            if urlparse(self.path).path == "/api/chat/video":
+                return self._subir_video_chat()
             if urlparse(self.path).path in ("/tiktok/api/subir", "/sala/api/subir"):
                 return self._tienda_subir()
             if not self._mismo_origen():

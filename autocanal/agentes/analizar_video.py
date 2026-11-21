@@ -110,6 +110,15 @@ def _whisper(video: Path, segundos: int) -> str:
         return "\n".join(f"[{_mmss(p.start)}] {p.text.strip()}" for p in partes)
 
 
+class Frenado(ValueError):
+    """El sitio no dejó bajar el video desde el servidor (YouTube: «confirma que no eres un bot»)."""
+
+
+def _id_youtube(url: str) -> str:
+    m = re.search(r"(?:youtu\.be/|[?&]v=|/shorts/|/live/|/embed/)([\w-]{11})", url or "")
+    return m.group(1) if m and "youtu" in url else ""
+
+
 def bajar(url: str, carpeta: Path) -> dict:
     """Baja el video (máx. 30 min, ≤480p), sus subtítulos y la miniatura. Regresa los datos del video."""
     import yt_dlp
@@ -130,22 +139,34 @@ def bajar(url: str, carpeta: Path) -> dict:
         if "Unable to connect" in texto or "timed out" in texto or "Failed to establish" in texto or "proxy" in texto:
             raise ValueError("No pude conectarme a ese sitio desde el servidor. Intenta otra vez en un rato.") from exc
         if "Sign in" in texto or "not a bot" in texto or "403" in texto or "429" in texto or "login" in texto.lower():
-            raise ValueError("Ese sitio no dejó bajar el video desde el servidor (pide iniciar sesión, es privado o "
-                             "nos frenó por bot). Prueba con otro enlace o más tarde.") from exc
+            raise Frenado("Ese sitio no dejó bajar el video desde el servidor (pide iniciar sesión o es privado). "
+                          "Para verlo completo, súbeme el archivo del video con el 📎 del chat.") from exc
         raise ValueError(f"No pude bajar ese video: {texto[-200:]}") from exc
     return info
 
 
-def analizar(url: str, pregunta: str = "", canal: str | None = None) -> dict:
-    """Regresa {"titulo", "texto" (para el chat), "transcripcion" (ruta web), "segundos"}."""
+def analizar(url: str, pregunta: str = "", canal: str | None = None, archivo: Path | None = None) -> dict:
+    """Regresa {"titulo", "texto" (para el chat), "transcripcion" (ruta web), "segundos"}.
+    `archivo`: un video que subiste al chat (📎) en lugar de un enlace."""
     from . import canales, estilo
 
-    if not re.match(r"https?://", url or ""):
+    if archivo is None and not re.match(r"https?://", url or ""):
         raise ValueError("Pásame un enlace que empiece con https://")
     CARPETA.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        info = bajar(url, tmp)
+        if archivo is not None:
+            import shutil
+            shutil.copyfile(archivo, tmp / f"video{archivo.suffix.lower()}")
+            nombre_original = re.sub(r"^\d{8}_\d{6}_", "", archivo.stem)  # sin la fecha con que se guardó
+            info, url = {"title": nombre_original.replace("_", " ")}, url or "(archivo que subiste)"
+        else:
+            try:
+                info = bajar(url, tmp)
+            except Frenado:
+                if _id_youtube(url):  # YouTube no deja bajarlo: lo que sí deja ver su API oficial
+                    return _sin_video(url, pregunta, canal)
+                raise
         videos = [p for p in tmp.iterdir() if p.name.startswith("video.") and p.suffix in (".mp4", ".mkv", ".webm", ".mov")]
         if not videos:
             raise ValueError("No pude bajar ese video.")
@@ -224,3 +245,65 @@ def analizar(url: str, pregunta: str = "", canal: str | None = None) -> dict:
     (CARPETA / (archivo.stem + ".analisis.json")).write_text(json.dumps({"url": url, **r}, ensure_ascii=False, indent=1),
                                                              encoding="utf-8")
     return {"titulo": titulo, "texto": "\n\n".join(partes), "transcripcion": web if dicho else "", "segundos": dur}
+
+
+def _sin_video(url: str, pregunta: str, canal: str | None) -> dict:
+    """YouTube no deja bajar videos al servidor: con su API oficial (la de tus canales) se ve el título, la
+    descripción (a veces con capítulos), los números, la miniatura y los comentarios. Sin transcripción ni cuadros."""
+    import requests
+
+    from . import canales, estilo, tendencias, youtube
+
+    vid = _id_youtube(url)
+    try:
+        yt = youtube._servicio(abrir_navegador=False)
+        items = yt.videos().list(part="snippet,statistics,contentDetails", id=vid).execute().get("items") or []
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("YouTube no deja bajar videos al servidor y no pude usar su API "
+                         f"({str(exc)[:100]}). Súbeme el archivo con el 📎 del chat.") from exc
+    if not items:
+        raise ValueError("No encontré ese video en YouTube (¿es privado?).")
+    v = items[0]
+    sn, st = v["snippet"], v.get("statistics", {})
+    comentarios = tendencias.comentarios(vid, 25)
+    dur = tendencias._segundos(v.get("contentDetails", {}).get("duration", ""))
+    contenido = [{"type": "text", "text": (
+        f"VIDEO: «{sn['title']}» de {sn.get('channelTitle')} · {st.get('viewCount', '?')} vistas · "
+        f"{st.get('likeCount', '?')} likes · {st.get('commentCount', '?')} comentarios · publicado "
+        f"{sn.get('publishedAt', '')[:10]} · dura {_mmss(dur)}\nEnlace: {url}")}]
+    miniaturas = sn.get("thumbnails") or {}
+    mini_url = next((miniaturas[k]["url"] for k in ("maxres", "standard", "high", "medium") if k in miniaturas), "")
+    with tempfile.TemporaryDirectory() as tmp:
+        if mini_url:
+            try:
+                ruta = Path(tmp) / "mini.jpg"
+                ruta.write_bytes(requests.get(mini_url, timeout=20).content)
+                contenido += [{"type": "text", "text": "MINIATURA del video:"}, estilo.imagen_bloque(ruta, 640)]
+            except (requests.RequestException, OSError, ValueError):
+                pass
+        info_canal = canales.get(canal or canales.actual())
+        contenido.append({"type": "text", "text": (
+            f"DESCRIPCIÓN:\n{(sn.get('description') or '')[:3000]}\n\nCOMENTARIOS MÁS RELEVANTES:\n"
+            + ("\n".join(f"- {c}" for c in comentarios) or "(sin comentarios)")
+            + f"\n\nEL CANAL DEL JEFE: «{info_canal.get('nombre')}» — {canales.NICHOS.get(info_canal.get('nicho'), '')}"
+            + (f"\n\nLO QUE PREGUNTA EL JEFE: {pregunta}" if pregunta.strip() else "")
+            + "\n\nNO tienes el video ni lo que se dice: solo título, miniatura, descripción y comentarios. Analiza "
+              "el empaque, de qué trata según eso y lo que dice la gente. En 'estructura' pon solo los capítulos de la "
+              "descripción si los hay; en 'gancho' y 'visual', lo que se pueda deducir de la miniatura o di que no lo "
+              "viste. Nada inventado.")})
+        r = claude.json_estructurado(
+            "Eres Paola, productora de YouTube con 30 años de experiencia. Explicas claro, en español de México.",
+            contenido, SCHEMA, tarea="estilo", que="analizar video (con la API de YouTube)")
+    vistas = int(st.get("viewCount") or 0)
+    partes = [f"🎬 «{sn['title']}»" + (f" — {vistas:,} vistas" if vistas else ""),
+              "ℹ️ YouTube no deja bajar sus videos al servidor, así que vi su miniatura, título, descripción y "
+              "comentarios. Para verlo completo (transcripción e imágenes), súbeme el archivo con el 📎 del chat.",
+              f"📝 {r['resumen']}"]
+    if r["respuesta"].strip():
+        partes.append(f"💬 {r['respuesta']}")
+    if r["estructura"]:
+        partes.append("🧱 Capítulos:\n" + "\n".join(f"• {e['tiempo']} — {e['que_pasa']}" for e in r["estructura"][:12]))
+    partes.append(f"🖼️ Título y miniatura: {r['empaque']}")
+    partes.append("✅ Lo que se nota:\n" + "\n".join(f"• {x}" for x in r["por_que_funciona"][:6]))
+    partes.append("📌 Para tu canal:\n" + "\n".join(f"• {x}" for x in r["para_nuestro_canal"][:6]))
+    return {"titulo": sn["title"], "texto": "\n\n".join(partes), "transcripcion": "", "segundos": 0}

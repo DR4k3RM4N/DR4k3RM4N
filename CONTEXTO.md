@@ -479,3 +479,7 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   + miniatura a Claude (tarea estilo): resumen, estructura con tiempos, gancho, por qué funciona, visual, empaque,
   qué copiar para el canal y respuesta a la pregunta. Transcripción completa en `estilo/analisis/*.txt` (enlace
   📄 en el chat). Aquí no se pudo probar con YouTube real (red bloqueada); probado con video y subtítulos locales.
+  YouTube frena las descargas desde el servidor («not a bot»): NO se le da la vuelta (se intentó bajar en las compus
+  de la sala y se descartó por ir contra el bloqueo de YouTube). Con enlace de YouTube bloqueado → `_sin_video`: API
+  oficial (título, descripción/capítulos, números, miniatura, comentarios). Análisis completo: 📎 en el chat sube
+  el archivo (`/api/chat/video` → `entrada/_analizar/`, se borra al terminar) → `analizar(archivo=…)`.
