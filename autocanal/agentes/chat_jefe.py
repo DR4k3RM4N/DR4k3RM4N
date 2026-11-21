@@ -45,7 +45,13 @@ Reglas:
   del canal si la corrección es solo para ese canal; vacío si aplica a todos.
 - "cambios" = quiere cambiar UN video que está en revisión o con problema (usa su número de la lista de videos en
   "numero" y el cambio en "texto"). Si además es algo que no debe repetirse, agrega también un "corregir".
+- "miniaturas" = quiere que Carla vuelva a poner en YouTube las miniaturas de los videos ya subidos que no la
+  tienen (todos los canales). Si nombra un solo video, pon su número en "numero"; si no, 0.
 - Publicar un video NO se hace por chat: dile que entre a la oficina para revisarlo.
+- MUY IMPORTANTE: solo puedes hacer las acciones de esta lista. Si pide algo que no está aquí (editar o
+  borrar un video ya publicado, cambiar su título en YouTube, etc.), NO digas que lo vas a hacer ni que le avisas
+  a alguien: dile con honestidad que eso todavía no lo puede hacer el equipo, y sugiere que se lo pida a quien
+  programa la oficina. Nunca inventes resultados ni cifras.
 - Si solo saluda o platica, contesta breve y amable, sin acciones.
 - "respuesta": 1 o 2 frases en español de México, cálida y directa, como compañera de trabajo."""
 
@@ -57,7 +63,7 @@ SCHEMA = {
             "type": "object",
             "properties": {
                 "tipo": {"type": "string", "enum": ["aprobar", "rechazar", "comentar", "pedir_ideas", "estado",
-                                                     "pendientes", "corregir", "cambios"]},
+                                                     "pendientes", "corregir", "cambios", "miniaturas"]},
                 "numero": {"type": "integer", "description": "Número de la idea o del video; 0 si no aplica"},
                 "texto": {"type": "string"},
                 "agente": {"type": "string", "enum": ["", "productora", "investigador", "guionista", "locutor",

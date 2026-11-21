@@ -359,6 +359,8 @@ class Oficina:
             tipo, n, texto = acc["tipo"], acc.get("numero", 0), acc.get("texto", "")
             idea = next((p for p in ideas if p.get("num") == n), None)
             if tipo in ("aprobar", "rechazar", "comentar"):
+                if not n:  # sin número no es sobre una idea (Paola ya contestó en su respuesta)
+                    continue
                 if not idea:
                     partes.append(f"No encontré la idea {n}. Escribe *pendientes* para ver la lista.")
                     continue
@@ -391,6 +393,11 @@ class Oficina:
                 else:
                     partes.append(f"*{video['titulo']}* ya está {ESTADO_TEXTO.get(video['estado'], video['estado'])}: "
                                   "no lo puedo rehacer, pero anoté la corrección para los que siguen.")
+            elif tipo == "miniaturas":  # 🖼️ Carla vuelve a poner las miniaturas que faltan en YouTube
+                video = videos[n - 1] if 0 < n <= len(videos) else None
+                threading.Thread(target=self.poner_miniaturas_faltantes, args=(canal, video["id"] if video else None),
+                                 daemon=True).start()
+                partes.append("🖼️ Carla ya está poniendo las miniaturas que faltan; te digo cómo le fue.")
             elif tipo == "estado":
                 partes.append(self._resumen_estado())
             elif tipo == "pendientes":
@@ -1225,6 +1232,47 @@ class Oficina:
             self.proyectos[app_id]["publicado"] = pub
             self._tocar()
         self.avisar_jefe(f"Listo: saqué de la agenda {self.proyectos[app_id]['titulo']}. Quedó privado en YouTube.")
+
+    def poner_miniaturas_faltantes(self, canal_chat: str = "oficina", solo: str | None = None) -> dict:
+        """🖼️ Videos ya subidos a YouTube sin miniatura (en cualquier canal): Carla se la pone ahora."""
+        from agentes import youtube
+
+        with self.lock:
+            pendientes = [p for p in self.proyectos.values()
+                          if p["estado"] == "publicado" and (p.get("publicado") or {}).get("youtube")
+                          and not (p.get("publicado") or {}).get("miniatura_puesta") and (not solo or p["id"] == solo)]
+        if not pendientes:
+            self._responder(canal_chat, "🖼️ No encontré videos subidos sin miniatura.")
+            return {"puestas": 0}
+        self.decir("community", f"Pongo {len(pendientes)} miniatura(s) que faltan 🖼️")
+        bien, mal = [], {}
+        for p in pendientes:
+            carpeta = config.SALIDA / p["id"]
+            f = carpeta / "publicado.json"
+            pub = json.loads(f.read_text(encoding="utf-8")) if f.exists() else dict(p["publicado"])
+            if not (carpeta / "miniatura.jpg").exists():
+                mal[p["titulo"]] = "no tiene miniatura guardada"
+                continue
+            try:
+                youtube.poner_miniatura(pub["youtube"], carpeta / "miniatura.jpg", canal=pub.get("canal") or p.get("canal"))
+                pub["miniatura_puesta"], pub["miniatura_error"] = True, None
+                bien.append(p["titulo"])
+            except Exception as exc:  # noqa: BLE001
+                pub["miniatura_error"] = str(exc)[:300]
+                mal[p["titulo"]] = str(exc)[:160]
+            f.write_text(json.dumps(pub, ensure_ascii=False, indent=2), encoding="utf-8")
+            with self.lock:
+                self.proyectos[p["id"]]["publicado"] = pub
+                self._tocar()
+        texto = (f"🖼️ Listo: puse {len(bien)} miniatura(s)." if bien else "🖼️ No pude poner ninguna miniatura.")
+        if mal:
+            motivos = set(mal.values())
+            texto += f" Fallaron {len(mal)}: " + "; ".join(list(motivos)[:2])
+            if any("verificar" in m or "verify" in m for m in motivos):
+                texto += (" (YouTube solo deja miniaturas propias si ese canal verificó su teléfono en youtube.com/verify; "
+                          "en un canal al que ya no entras por la web eso no se puede hacer, solo en los que sí).")
+        self._responder(canal_chat, texto)
+        return {"puestas": len(bien), "fallaron": len(mal)}
 
     def _reintentar_miniatura(self, app_id: str) -> None:
         from agentes import youtube
