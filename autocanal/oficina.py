@@ -1018,9 +1018,18 @@ class Oficina:
         mejores = sorted(candidatas, key=lambda c: (not c.get("idea_jefe"), orden.get(c.get("potencial_vistas"), 3),
                                                     not c.get("inspiracion")))
         arrancadas, vistas = [], set()
+        from agentes import prueba as prueba_mod
+        sin_cel = None  # se pregunta una sola vez
         for mejor in mejores:
             if len(arrancadas) >= lugares:
                 break
+            # 📱 videos de apps de «Apps que sí pagan» = 100% grabación: sin cel listo, no se arrancan
+            if (estilo.cargar()["ajustes"].get("solo_grabacion", True) and not mejor["app_id"].startswith("tema:")
+                    and (mejor.get("canal") or "principal") == "principal"):
+                if sin_cel is None:
+                    sin_cel = not prueba_mod.celular_disponible()
+                if sin_cel:
+                    continue
             base = mejor["app_id"].split("~")[0]
             if base in vistas:  # nada de dos videos de la misma app a la vez
                 continue

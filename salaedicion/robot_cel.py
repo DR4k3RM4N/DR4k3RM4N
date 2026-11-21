@@ -185,11 +185,17 @@ def probar(of, t: dict, temporal: Path, avance, claude: str, log) -> None:
     if ya_instalada:
         reglas += YA_INSTALADA.format(nombre=nombre)
     (mesa / "CLAUDE.md").write_text(reglas, encoding="utf-8")
-    # ./cel para Claude Code (en Windows usa Git Bash): llama a cel.py con este mismo Python
-    import sys
-    (mesa / "cel").write_text(f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" "{(AQUI / "cel.py").as_posix()}" "$@"\n',
+    # ./cel para Claude Code (en Windows usa Git Bash). OJO: con python.exe, no pythonw.exe (ese no regresa texto
+    # y el robot quedaba a ciegas: no veía la pantalla ni las respuestas)
+    import editor_ia
+    py = Path(editor_ia.python_exe()).as_posix()
+    (mesa / "cel").write_text(f'#!/bin/sh\nexec "{py}" "{(AQUI / "cel.py").as_posix()}" "$@"\n',
                               encoding="utf-8", newline="\n")
     os.chmod(mesa / "cel", 0o755)
+    # antes de grabar: ¿el cel responde y se ve la pantalla?
+    crudo = cel.adb("exec-out", "screencap", "-p", binario=True)
+    if not crudo.startswith(b"\x89PNG"):
+        raise RuntimeError("No pude ver la pantalla del cel: desbloquéalo (sin PIN) y revisa el cable.")
     # el cel despierto y sin bloquearse mientras está conectado
     cel.adb("shell", "svc", "power", "stayon", "usb")
     cel.adb("shell", "input", "keyevent", "224")  # prender pantalla
@@ -208,8 +214,14 @@ def probar(of, t: dict, temporal: Path, avance, claude: str, log) -> None:
            "--allowedTools", "Bash(./cel:*)", "Bash(./cel *)", "Read",
            "--model", os.environ.get("ROBOT_MODELO_CLAUDE", "sonnet")]
     inicio = time.time()
-    proceso = subprocess.Popen(cmd, cwd=mesa, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                               encoding="utf-8", errors="replace", creationflags=SIN_VENTANA)
+    entorno = dict(os.environ)
+    git_bash = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
+    if os.name == "nt" and git_bash.exists():  # Claude Code en Windows necesita Git Bash para sus comandos
+        entorno.setdefault("CLAUDE_CODE_GIT_BASH_PATH", str(git_bash))
+    # sin teclado (si no, en Windows se queda esperando) y la salida a archivos (si no, se puede trabar)
+    salida_f, errores_f = open(mesa / "claude_salida.txt", "w", encoding="utf-8"), open(mesa / "claude_errores.txt", "w", encoding="utf-8")
+    proceso = subprocess.Popen(cmd, cwd=mesa, stdin=subprocess.DEVNULL, stdout=salida_f, stderr=errores_f, text=True,
+                               encoding="utf-8", errors="replace", creationflags=SIN_VENTANA, env=entorno)
     limite = inicio + (minutos + 12) * 60
     try:
         while proceso.poll() is None:
@@ -225,7 +237,10 @@ def probar(of, t: dict, temporal: Path, avance, claude: str, log) -> None:
         proceso.kill()
         grabadora.terminar(temporal / "cancelado.mp4")
         raise
-    salida = proceso.stdout.read() if proceso.stdout else ""
+    salida_f.close()
+    errores_f.close()
+    salida = (mesa / "claude_salida.txt").read_text(encoding="utf-8", errors="replace")
+    errores = (mesa / "claude_errores.txt").read_text(encoding="utf-8", errors="replace")
     try:
         info = json.loads(salida.strip().splitlines()[-1]) if salida.strip() else {}
     except ValueError:
@@ -242,6 +257,12 @@ def probar(of, t: dict, temporal: Path, avance, claude: str, log) -> None:
     (temporal / "notas.json").write_text(json.dumps(notas, ensure_ascii=False, indent=1), encoding="utf-8")
     if not video:
         raise RuntimeError("No se pudo sacar la grabación del cel. " + str(notas.get("problema", ""))[:150])
+    # ¿de verdad usó la app? Si no tocó nada, esa grabación no sirve para un video
+    usada = bool(notas.get("pasos") or notas.get("anuncios") or notas.get("terminado"))
+    if not usada:
+        motivo = (str(info.get("result") or "") or errores.strip() or salida.strip() or "no respondió")[-260:]
+        log(f"Robot: Claude no manejó el cel. Claude dijo: {motivo}")
+        raise RuntimeError(f"El robot no logró manejar el cel (no tocó la app). Claude dijo: {motivo}")
     avance("Subiendo la prueba a la oficina", 0.92)
     of.subir(tid, video)
     of.subir(tid, temporal / "notas.json")

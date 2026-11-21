@@ -266,10 +266,13 @@
     const agentes = {};
     estado.agentes.forEach((a) => (agentes[a.id] = a));
     const agenda = estado.agenda || [];
-    const htmlAgenda = agenda.length ? `<section class="tarjeta agenda"><h4>📅 Agenda de publicación</h4><ol>${agenda.map((a) =>
-      `<li class="${a.ya_salio ? "salio" : ""}"><b>${esc(a.cuando)}</b> ${a.tipo === "grabacion" ? "📱" : "🔎"} ${esc(a.titulo || a.proyecto)}${a.ya_salio ? " ✔" : ""}</li>`).join("")}</ol>
-      <p class="pista">🔎 investigación (3 h entre ellos) · 📱 con grabación de pantalla (1 h)</p></section>` : "";
-    $("#proyectos").innerHTML = htmlAgenda + lista.map((p) => {
+    const faltan = agenda.filter((a) => !a.ya_salio);
+    const proximo = faltan[0];
+    const htmlAgenda = faltan.length ? `<details class="tarjeta agenda" ${window.__agendaAbierta ? "open" : ""}>
+      <summary>📅 Agenda: ${faltan.length} por publicarse${proximo ? ` · el próximo ${esc(proximo.cuando)}` : ""}</summary><ol>${faltan.map((a) =>
+      `<li><b>${esc(a.cuando)}</b> ${a.tipo === "grabacion" ? "📱" : "🔎"} ${esc(a.titulo || a.proyecto)}</li>`).join("")}</ol>
+      <p class="pista">🔎 investigación (3 h entre ellos) · 📱 con grabación de pantalla (1 h)</p></details>` : "";
+    $("#proyectos").innerHTML = lista.map((p) => {
       const pasos = estado.etapas.map((et) => {
         const a = agentes[AGENTE_ETAPA[et]];
         let clase = "";
@@ -304,7 +307,7 @@
         ${["revision", "publicado"].includes(p.estado) ? `<button class="btn ancho" data-revisar="${esc(p.id)}">Ver video</button>` : ""}
         ${!p.id.startsWith("tema:") && p.estado !== "publicando" ? `<label class="btn btn-mini subir-grabacion" title="Tu grabación de pantalla usando la app: Iván la ve y el video se rehace con ella">📱 Subir mi grabación<input type="file" accept="video/*" hidden data-grabacion="${esc(p.id)}"></label>` : ""}
       </article>`;
-    }).join("") + ayudaBlog;
+    }).join("") + htmlAgenda + ayudaBlog;
   }
   // 📱 tu grabación de pantalla (puede pesar cientos de MB: se ve cuánto lleva)
   function subirGrabacion(params, archivo, etiqueta) {
@@ -346,6 +349,9 @@
     boton.disabled = false;
     boton.textContent = "📱 Hacer video con mi prueba";
   });
+  $("#proyectos").addEventListener("toggle", (e) => {
+    if (e.target.classList?.contains("agenda")) window.__agendaAbierta = e.target.open;
+  }, true);
   $("#proyectos").addEventListener("click", async (e) => {
     const dp = e.target.closest("[data-desprogramar]");
     if (dp) {

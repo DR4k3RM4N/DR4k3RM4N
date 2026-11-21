@@ -558,3 +558,4 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .trabajos-caja { margin-top: 12px; }
 .trabajos-caja summary { cursor: pointer; font-weight: 600; }
 .trabajos-caja .btn { margin: 6px 0; }
+.agenda summary { cursor: pointer; font-weight: 600; }

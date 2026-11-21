@@ -193,7 +193,9 @@ def correr(mesa: Path, claude: str, prompt: str, avance, minutos: int = 60, mode
     for intento in (["--continue"], []):  # con memoria; si no hay plática anterior, una nueva
         if intento and not (mesa / ".con_platica").exists():
             continue
-        proc = subprocess.Popen([*base[:2], *intento, *base[2:]], cwd=mesa, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        errores_f = open(mesa / "claude_errores.txt", "w", encoding="utf-8")  # a archivo: un tubo lleno lo traba
+        proc = subprocess.Popen([*base[:2], *intento, *base[2:]], cwd=mesa, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=errores_f,
                                 text=True, encoding="utf-8", errors="replace", env=entorno)
         inicio = time.time()
         reloj = threading.Timer(minutos * 60, proc.kill)
@@ -216,10 +218,12 @@ def correr(mesa: Path, claude: str, prompt: str, avance, minutos: int = 60, mode
             raise
         finally:
             reloj.cancel()
+            errores_f.close()
         if final and not (final.get("is_error") and intento and "conversation" in str(final.get("result", "")).lower()):
             break
     if not final:
-        raise RuntimeError(f"Claude Code se cerró sin terminar ({(proc.stderr.read() or '')[-200:]})")
+        errores = (mesa / "claude_errores.txt").read_text(encoding="utf-8", errors="replace")
+        raise RuntimeError(f"Claude Code se cerró sin terminar ({errores[-200:]})")
     (mesa / ".con_platica").write_text("1", encoding="utf-8")
     if final.get("is_error") or final.get("subtype") not in (None, "success"):
         motivo = str(final.get("result") or final.get("subtype") or "falló")
