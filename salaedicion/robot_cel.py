@@ -84,6 +84,86 @@ YA_INSTALADA = """
 """
 
 
+def _ejecutar(accion: str, args: list[str]) -> str:
+    """Corre un comando de cel.py (igual que ./cel ACCION ARGS) y regresa lo que contestó."""
+    import contextlib
+    import io
+    import sys
+    buf = io.StringIO()
+    viejo = sys.argv
+    sys.argv = ["cel", accion, *[str(a) for a in args]]
+    try:
+        with contextlib.redirect_stdout(buf):
+            cel.main()
+    except SystemExit:
+        pass
+    except Exception as exc:  # noqa: BLE001 — un toque fallido no tumba la prueba
+        buf.write(f"Error: {exc}")
+    finally:
+        sys.argv = viejo
+    return buf.getvalue().strip()
+
+
+def _bucle(of, tid: str, mesa: Path, par: dict, avance, log, limite: float) -> dict:
+    """📱 El robot paso a paso: foto de la pantalla → la oficina (Claude) decide UNA acción → se ejecuta aquí.
+    Regresa {"pasos": n, "error": ""}."""
+    import base64
+    import io
+
+    from PIL import Image
+
+    cel.AQUI, cel.NOTAS = mesa, mesa / "notas.json"
+    tam = cel.adb("shell", "wm", "size")
+    medidas = [int(x) for x in __import__("re").findall(r"(\d+)x(\d+)", tam)[-1]] if "x" in tam else [1080, 1920]
+    historial, fallos, pasos, inicio = [], 0, 0, time.time()
+    minutos = max(3, min(20, int(par.get("minutos") or 8)))
+    while time.time() < limite:
+        lista = _ejecutar("pantalla", [])
+        b64 = ""
+        try:
+            img = Image.open(mesa / "pantalla.png").convert("RGB")
+            img.thumbnail((720, 1280))
+            buf = io.BytesIO()
+            img.save(buf, "JPEG", quality=70)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+        except Exception:  # noqa: BLE001
+            pass
+        n = cel._notas()
+        resumen = (f"{len(n.get('anuncios', []))} anuncios; deseos: {len(n.get('deseos', []))}; últimas notas: "
+                   + " | ".join(x.get("nota", "") for x in n.get("pasos", [])[-4:]))
+        try:
+            r = of.post(f"robot/{tid}", {
+                "app": par.get("nombre"), "paquete": par.get("paquete"), "minutos": minutos,
+                "transcurrido": round((time.time() - inicio) / 60, 1), "ya_instalada": bool(par.get("ya_instalada")),
+                "ancho": medidas[0], "alto": medidas[1], "pantalla": b64, "elementos": lista[:6000],
+                "historial": historial[-14:], "notas": resumen}, timeout=240)
+        except Exception as exc:  # noqa: BLE001
+            r = {"error": f"sin conexión con la oficina ({exc.__class__.__name__})"}
+        if r.get("error"):
+            fallos += 1
+            log(f"Robot: la oficina no contestó ({r['error']})")
+            if fallos >= 3:
+                return {"pasos": pasos, "error": str(r["error"])[:200]}
+            time.sleep(5)
+            continue
+        fallos = 0
+        accion, args = str(r.get("accion") or "esperar"), [str(a) for a in (r.get("args") or [])][:4]
+        if accion == "esperar":
+            args = [str(min(15, max(1, int(float(args[0]))))) if args and args[0].replace(".", "", 1).isdigit() else "3"]
+        resultado = _ejecutar(accion, args)
+        pasos += 1
+        historial.append({"accion": accion, "args": args, "resultado": resultado[:160], "por_que": str(r.get("por_que", ""))[:120]})
+        transcurrido = (time.time() - inicio) / 60
+        avance(f"📱 {str(r.get('por_que') or accion)[:70]}", min(0.85, 0.05 + 0.8 * transcurrido / (minutos + 4)))
+        if accion == "terminar":
+            break
+        time.sleep(0.6)
+    else:
+        if pasos >= 3 and not cel._notas().get("terminado"):
+            _ejecutar("terminar", ["Se acabó el tiempo de la prueba."])
+    return {"pasos": pasos, "error": ""}
+
+
 def instalar_adb() -> str:
     """Si no hay adb, lo instala con winget (Google Platform Tools). Regresa la ruta o vacío."""
     if cel.adb_ruta():
@@ -214,6 +294,15 @@ def probar(of, t: dict, temporal: Path, avance, claude: str, log) -> None:
            "--allowedTools", "Bash(./cel:*)", "Bash(./cel *)", "Read",
            "--model", os.environ.get("ROBOT_MODELO_CLAUDE", "sonnet")]
     inicio = time.time()
+    limite = inicio + (minutos + 12) * 60
+    if os.environ.get("ROBOT_MODO", "paso_a_paso") != "claude_code":  # 📱 la compu maneja el cel; la oficina decide
+        try:
+            r = _bucle(of, tid, mesa, {**par, "nombre": nombre, "paquete": paquete}, avance, log, limite)
+        except InterruptedError:
+            grabadora.terminar(temporal / "cancelado.mp4")
+            raise
+        return _cerrar(of, t, tid, temporal, mesa, grabadora, nombre, paquete, estaba, ya_instalada, inicio, log, avance,
+                       info={}, problema=r.get("error", ""), salida="", errores="")
     entorno = dict(os.environ)
     git_bash = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
     if os.name == "nt" and git_bash.exists():  # Claude Code en Windows necesita Git Bash para sus comandos
@@ -245,6 +334,13 @@ def probar(of, t: dict, temporal: Path, avance, claude: str, log) -> None:
         info = json.loads(salida.strip().splitlines()[-1]) if salida.strip() else {}
     except ValueError:
         info = {}
+    return _cerrar(of, t, tid, temporal, mesa, grabadora, nombre, paquete, estaba, ya_instalada, inicio, log, avance,
+                   info=info, problema=str(info.get("result") or "") if info.get("is_error") else "", salida=salida,
+                   errores=errores)
+
+
+def _cerrar(of, t, tid, temporal, mesa, grabadora, nombre, paquete, estaba, ya_instalada, inicio, log, avance,
+            info: dict, problema: str, salida: str, errores: str) -> None:
     avance("Juntando la grabación", 0.88)
     video = grabadora.terminar(temporal / "prueba.mp4")
     if paquete and not estaba and not ya_instalada:  # que el cel no se llene (las que ya tenías se quedan)
@@ -252,15 +348,15 @@ def probar(of, t: dict, temporal: Path, avance, claude: str, log) -> None:
     cel.adb("shell", "input", "keyevent", "3")
     notas = json.loads((mesa / "notas.json").read_text(encoding="utf-8"))
     notas["segundos"] = round(time.time() - notas.get("inicio", inicio))
-    if info.get("is_error"):
-        notas["problema"] = str(info.get("result") or "")[:300]
+    if problema:
+        notas["problema"] = problema[:300]
     (temporal / "notas.json").write_text(json.dumps(notas, ensure_ascii=False, indent=1), encoding="utf-8")
     if not video:
         raise RuntimeError("No se pudo sacar la grabación del cel. " + str(notas.get("problema", ""))[:150])
     # ¿de verdad usó la app? Si no tocó nada, esa grabación no sirve para un video
     usada = bool(notas.get("pasos") or notas.get("anuncios") or notas.get("terminado"))
     if not usada:
-        motivo = (str(info.get("result") or "") or errores.strip() or salida.strip() or "no respondió")[-260:]
+        motivo = (problema or str(info.get("result") or "") or errores.strip() or salida.strip() or "no respondió")[-260:]
         log(f"Robot: Claude no manejó el cel. Claude dijo: {motivo}")
         raise RuntimeError(f"El robot no logró manejar el cel (no tocó la app). Claude dijo: {motivo}")
     avance("Subiendo la prueba a la oficina", 0.92)

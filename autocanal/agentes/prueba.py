@@ -152,6 +152,10 @@ def apps_anunciadas(prueba: dict | None) -> list[str]:
 
 
 # ---------- el robot: tu Android viejo en tu compu ----------
+OFICINA_LOCAL = "http://127.0.0.1:8787"  # lo pone oficina.py al arrancar (su puerto)
+ULTIMO_ERROR = {"texto": ""}  # por qué falló la última prueba en el cel (para decírtelo)
+
+
 def celular_disponible() -> bool:
     try:
         return bool(requests.get(f"{SALA_URL}/interno/disponible", params={"tipo": "probar_app"}, timeout=3).json().get("compus"))
@@ -162,13 +166,16 @@ def celular_disponible() -> bool:
 def pedir_al_celular(app_id: str, nombre: str, paquete: str, minutos: int = 8, avance=None,
                      ya_instalada: bool = False) -> bool:
     """Le pide a tu compu con el Android conectado que pruebe la app. Regresa True si dejó grabación."""
+    ULTIMO_ERROR["texto"] = ""
     if not celular_disponible():
+        ULTIMO_ERROR["texto"] = "no hay ninguna compu con el cel listo en la sala"
         return False
     destino = carpeta_robot(app_id)
     destino.mkdir(parents=True, exist_ok=True)
     try:
         r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=10, json={
             "tipo": "probar_app", "origen": "youtube", "etiqueta": f"Probar {nombre}"[:80], "salida": str(destino),
+            "clasificar": f"{OFICINA_LOCAL}/interno/robot/{app_id}",  # el cerebro del robot (paso a paso)
             "parametros": {"nombre": nombre, "paquete": paquete, "minutos": minutos, "ya_instalada": ya_instalada}}).json()
         tid = r.get("id")
     except (requests.RequestException, ValueError):
@@ -186,6 +193,7 @@ def pedir_al_celular(app_id: str, nombre: str, paquete: str, minutos: int = 8, a
             return any(p.suffix.lower() in VIDEO_EXT for p in destino.iterdir())
         if e.get("estado") in ("error", "cancelado"):
             print(f"  · el celular no pudo probarla: {e.get('error')}", flush=True)
+            ULTIMO_ERROR["texto"] = str(e.get("error") or "")[:300]
             return False
         if avance and e.get("paso"):
             avance(f"📱 {e['paso']}", 0.1 + 0.8 * float(e.get("avance") or 0))

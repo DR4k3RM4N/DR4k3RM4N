@@ -648,7 +648,7 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                     return self._json(sala.avance(c, tid, d))
                 if accion == "terminar":
                     return self._json(sala.terminar(c, tid, d))
-                if accion == "clasificar":
+                if accion in ("clasificar", "robot"):  # robot = el siguiente toque del robot del cel (lo decide la oficina)
                     return self._json(sala.clasificar(c, tid, d))
             self._json({"error": "no encontrado"}, 404)
 

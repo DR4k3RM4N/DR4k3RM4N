@@ -109,9 +109,10 @@ class Produccion:
                                         avance=editor._avance, ya_instalada=bool(origen.get("ya_instalada")))
             self.clips = [str(p) for p in prueba.grabaciones(c.name)] or self.clips
             if solo and not self.clips:  # 📱 este canal es 100% grabación: sin grabación no hay video
-                raise RuntimeError("Este canal es 100% grabación del cel y no pude grabar la app: revisa en la pestaña "
-                                   "Sala que tu cel salga 📱 (desbloqueado) y dale Reintentar, o sube tu grabación "
-                                   "con «📱 Subir mi grabación».")
+                motivo = prueba.ULTIMO_ERROR["texto"]
+                raise RuntimeError("No pude grabar la app en el cel" + (f" ({motivo})" if motivo else "") + ". Este canal "
+                                   "es 100% grabación: revisa en Sala que tu cel salga 📱 (desbloqueado) y dale "
+                                   "Reintentar, o sube tu grabación con «📱 Subir mi grabación».")
             if self.clips:
                 print(f"  · viendo {len(self.clips)} grabación(es) de la prueba")
                 self.prueba = prueba.analizar(c.name, c, nombre)

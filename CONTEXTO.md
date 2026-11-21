@@ -508,3 +508,13 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   `ajuste: contener` = grabación completa al centro sobre su versión desenfocada; capas solo a los lados). Música:
   si no hay `estilo/musica.mp3`, `_musica_libre` baja una pista CC0/dominio público de Openverse a `salida/<id>/musica.mp3`
   (el editor y el paquete de la sala la usan).
+- **📱 Robot paso a paso (nov 2026)**: en la pc de Miguel el robot con Claude Code no movía el cel (el `./cel` corría
+  con pythonw = sin salida, a ciegas; además stdin abierto y tubos sin leer podían trabarlo). Arreglado eso, y además
+  el robot ahora corre por defecto **sin Claude Code**: `robot_cel._bucle` (la compu) toma pantalla + lista de
+  elementos (cel.py), manda foto JPG + historial a `sala /robot/<tid>` → la sala la reenvía al `clasificar` del trabajo
+  = `oficina /interno/robot/<app>` (solo local, sin X-Forwarded-For) → `agentes/robot_cerebro.decidir` (tarea
+  "robot": Sonnet por suscripción, Haiku por API) regresa UNA acción (tocar n | x y, tocar_texto, escribir, deslizar,
+  atras, inicio, esperar, tienda, buscar_tienda, abrir, anuncio, nota, guardar_deseo, terminar) que se ejecuta con
+  `cel.main()`. `ROBOT_MODO=claude_code` vuelve al modo anterior. Si el robot no hizo nada útil → error con motivo
+  (`prueba.ULTIMO_ERROR` llega al mensaje del proyecto) y NO se entrega grabación vacía. Piloto no arranca videos de
+  apps del canal principal sin cel listo.

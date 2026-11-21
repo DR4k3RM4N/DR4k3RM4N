@@ -51,6 +51,7 @@ TAREAS = {
     "sala": ("claude-sonnet-5-5", "medium"),        # editores de la sala: ven tus clips y arman la edición. Sonnet edita
                                                      # mucho mejor que Haiku (~3-5 ¢ por mensaje); MODELO_SALA=claude-haiku-5-5 para ahorrar
     "sala_aprender": ("claude-haiku-5-5", "low"),   # ordenar el cuaderno de estilo cuando crece (fracción de centavo)
+    "robot": ("claude-haiku-5-5", "low"),           # 📱 robot probador: ve la pantalla del cel y decide el siguiente toque
 }
 
 # Precios en USD por millón de tokens: (entrada, salida). Haiku cambia de tarifa arriba de 100K de entrada.
@@ -76,6 +77,7 @@ TAREAS_SUSCRIPCION = {
     "estilo": "sonnet", "leer_web": "haiku", "whatsapp": "haiku", "miniatura": "haiku",
     # oficina de TikTok Shop y sala de edición
     "prueba": "sonnet", "miniatura_ia": "sonnet", "miniatura_dibujo": "sonnet", "ficha_shop": "haiku", "guion_shop": "sonnet", "tomas_shop": "sonnet", "sala": "sonnet", "sala_aprender": "haiku",
+    "robot": "sonnet",
 }
 LIMITE_PALABRAS = ("usage limit", "rate limit", "limit reached", "out of extra usage", "5-hour", "weekly limit")
 _suscripcion_pausada_hasta = 0.0  # si se acabó el límite del plan, se usa la API un rato

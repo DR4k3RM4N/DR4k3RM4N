@@ -2226,6 +2226,19 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     return self._tienda_subir()
                 largo = int(self.headers.get("Content-Length") or 0)
                 return self._tienda("POST", self.rfile.read(min(largo, 2_000_000)))
+            if urlparse(self.path).path.startswith("/interno/robot/"):  # 📱 la sala pregunta el siguiente toque del robot
+                local = self.client_address[0] in ("127.0.0.1", "::1") and not (
+                    self.headers.get("X-Forwarded-For") or self.headers.get("X-Real-IP"))
+                if not local:
+                    return self._json({"error": "solo desde la sala"}, 403)
+                try:
+                    datos = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 8_000_000)) or b"{}")
+                    from agentes import robot_cerebro
+                    ia.contexto.proyecto = unquote(urlparse(self.path).path).split("/", 3)[3] or None
+                    ia.contexto.etapa, ia.contexto.tarea = "investigar", None
+                    return self._json(robot_cerebro.decidir(datos))
+                except Exception as exc:  # noqa: BLE001
+                    return self._json({"error": f"El cerebro del robot falló: {str(exc)[:200]}"}, 500)
             if not self._autorizado():
                 return
             if urlparse(self.path).path == "/api/estilo/subir":
@@ -2471,6 +2484,8 @@ def main() -> None:
         ESTADO = config.BASE / "oficina_estado_demo.json"
         prender_tienda_demo()
     oficina = Oficina(a.demo)
+    from agentes import prueba as prueba_mod
+    prueba_mod.OFICINA_LOCAL = f"http://127.0.0.1:{a.puerto}"  # para que la sala le pregunte al cerebro del robot
     servidor = crear_servidor(oficina, a.puerto, a.host)
     url = f"http://localhost:{a.puerto}"
     print(f"🏢 Oficina abierta en {url}" + ("  (modo demo)" if a.demo else "")

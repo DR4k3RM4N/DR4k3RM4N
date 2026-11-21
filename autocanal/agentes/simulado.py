@@ -175,6 +175,14 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                     {"narracion": "Tiene más de diez millones de jugadores.", "visual": "dato", "indice": 0, "texto": "10 millones de jugadores"},
                     {"narracion": "¿Y tú, cuál es tu favorito? Déjamelo en los comentarios.", "visual": "cierre", "indice": 0, "texto": "¿Cuál es tu favorito?"},
                 ]}
+    if "veo" in props and "accion" in props:  # 📱 robot paso a paso (demo)
+        todo = contenido if isinstance(contenido, str) else " ".join(c.get("text", "") for c in contenido if isinstance(c, dict))
+        n = todo.split("ÚLTIMAS ACCIONES")[-1].split("BOTONES Y TEXTOS")[0].count("\n- ")
+        pasos = [("tienda", ["com.demo.app"]), ("nota", ["FICHA: Demo, 4.1 estrellas, 1M descargas"]),
+                 ("tocar_texto", ["Instalar"]), ("esperar", ["2"]), ("tocar", ["0"]),
+                 ("anuncio", ["Cash Cat", "gana dinero"]), ("terminar", ["Prueba demo terminada."])]
+        a, args = pasos[min(n, len(pasos) - 1)]
+        return {"veo": "(demo) pantalla", "por_que": f"(demo) paso {n + 1}: {a}", "accion": a, "args": args}
     if "para_nuestro_canal" in props:  # 🎬 analizar un video
         return {"resumen": "(Demo) Un creador prueba una app que promete pagar y muestra que paga centavos.",
                 "estructura": [{"tiempo": "0:00", "que_pasa": "Gancho: promesa contra realidad"},
