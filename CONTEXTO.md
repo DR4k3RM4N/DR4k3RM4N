@@ -524,3 +524,7 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
 - **Robot más humano**: `robot_cerebro` regresa `luego` (hasta 4 acciones encadenadas sin nueva foto) y recibe
   `misma_pantalla` (segundos sin cambio, por huella en grises). Reglas: videos máx. ~15 s y deslizar (copyright),
   juegos se juegan de verdad, no quedarse parado >20 s, explorar secciones clave.
+- **🔁 Cadena de anuncios**: `_ciclo_deseos` (cada 2 min, piloto prendido) ya no espera a que se acaben las ideas:
+  en cuanto el cel queda libre (`_cel_ocupado`: ningún video de app del principal en "investigar") y hay lugar
+  (`en_produccion < a_la_vez + 2`), prueba la siguiente app de ⭐ deseos (primero las que tienen paquete), hasta
+  `deseos_por_dia` (ajuste, 6 por defecto, selector en la Bandeja; `DESEOS_POR_DIA` en .env manda).

@@ -125,7 +125,8 @@
     if (deseos.length) {
       html += `<details class="deseos" open><summary>⭐ Lista de deseos: ${deseos.length} app(s) de anuncios para probar y grabar</summary>
         <p class="pista">Salieron anunciadas mientras probábamos otras apps. Con el 🚀 piloto prendido y tu cel conectado se
-          prueban solas (${esc(String(estado.deseos_por_dia ?? 2))} al día); cada prueba trae anuncios nuevos.</p>
+          prueban solas en cadena (cada prueba trae anuncios nuevos → más apps).
+          <label>Al día: <select data-deseos-dia>${[0, 2, 4, 6, 8, 10, 15, 20].map((n) => `<option value="${n}" ${n === (estado.deseos_por_dia ?? 6) ? "selected" : ""}>${n === 0 ? "ninguna (apagada)" : n}</option>`).join("")}</select></label></p>
         <ul class="lista-deseos">${deseos.map((d) => `<li><b>${esc(d.nombre)}</b>${d.promesa ? ` — «${esc(d.promesa)}»` : ""}
           <small>visto en ${esc(d.visto_en)}${d.paquete ? "" : " · sin paquete (se busca por nombre)"}</small>
           <span class="fila"><button class="btn btn-mini btn-primario" data-deseo="${esc(d.id)}" data-deseo-accion="probar">📱 Probar ahora</button>
@@ -134,7 +135,8 @@
       html += `<details class="deseos"><summary>⭐ Lista de deseos: todavía vacía</summary>
         <p class="pista">Aquí caen solas las apps que salen <b>anunciadas</b> mientras el robot prueba otras en tu cel. Para
           llenarla, haz el primer video de una app (pídele ideas a Paola y dale 👍 Hazlo): el robot la prueba, ve los
-          anuncios y los anota aquí con su botón 📱 Probar ahora.</p></details>`;
+          anuncios y los anota aquí con su botón 📱 Probar ahora. Con el 🚀 piloto prendido se prueban solas en cadena.
+          <label>Al día: <select data-deseos-dia>${[0, 2, 4, 6, 8, 10, 15, 20].map((n) => `<option value="${n}" ${n === (estado.deseos_por_dia ?? 6) ? "selected" : ""}>${n === 0 ? "ninguna (apagada)" : n}</option>`).join("")}</select></label></p></details>`;
     }
     if (estado.reglas?.length) {
       html += `<details class="gustos"><summary>📌 Reglas que Paola aplica siempre (${estado.reglas.length})</summary>
@@ -377,6 +379,13 @@
     }
     const b = e.target.closest("[data-revisar]");
     if (b) abrirRevision(b.dataset.revisar);
+  });
+
+  // 🔁 cuántas apps de la lista de deseos se prueban solas al día
+  document.addEventListener("change", async (e) => {
+    const sel = e.target.closest?.("[data-deseos-dia]");
+    if (!sel) return;
+    try { await api("/api/estilo/ajustes", { deseos_por_dia: Number(sel.value) }); } catch (err) { alert(err.message); }
   });
 
   // ---------- 📊 resultados ----------

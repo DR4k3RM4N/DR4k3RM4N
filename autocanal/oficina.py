@@ -187,7 +187,7 @@ class Oficina:
                     "etapas": ETAPAS_PROYECTO, "ahora": time.time(), "gasto": self._resumen_gasto(),
                     "ideas_auto": {"activo": self.ideas_auto, "hora": IDEAS_HORA or ""}, "piloto": self.piloto,
                     "deseos": [d for d in self.deseos if d["estado"] == "pendiente"][-60:],
-                    "deseos_por_dia": int(config.env("DESEOS_POR_DIA", "2") or 0),
+                    "deseos_por_dia": self.deseos_por_dia(),
                     "agenda": self._agenda_cache(),
                     "canales": self._canales(),
                     "lecciones": self._lecciones(),
@@ -900,36 +900,52 @@ class Oficina:
             d["proyecto"] = app["app_id"]
             self._tocar()
 
+    def deseos_por_dia(self) -> int:
+        """Cuántas apps de la lista de deseos se prueban solas al día (Bandeja → ⭐). DESEOS_POR_DIA en .env manda."""
+        if config.env("DESEOS_POR_DIA"):
+            return int(config.env("DESEOS_POR_DIA") or 0)
+        return int(estilo.cargar()["ajustes"].get("deseos_por_dia", 6))
+
+    def _cel_ocupado(self) -> bool:
+        """¿Hay un video de app del canal principal en la etapa donde el robot usa el cel?"""
+        with self.lock:
+            return any(p["estado"] == "produccion" and p.get("etapa") == "investigar"
+                       and not p["id"].startswith("tema:") and (p.get("canal") or "principal") == "principal"
+                       for p in self.proyectos.values())
+
     def _ciclo_deseos(self) -> None:
-        """🔁 Con el piloto automático prendido, cada 5 min: si hay lugar («videos a la vez»), arranca las mejores ideas
-        de la bandeja; si no hay ideas y el cel está conectado, prueba la siguiente app de la lista de deseos (con tope
-        diario: DESEOS_POR_DIA, 2 por defecto). Cada prueba trae nuevos anuncios → más deseos."""
+        """🔁 La cadena (con el piloto prendido), cada 2 min:
+        1. si hay lugar («videos a la vez»), arranca las mejores ideas de la bandeja;
+        2. aparte, en cuanto el cel queda libre, prueba la siguiente app de la ⭐ lista de deseos (las que salieron en
+           los anuncios), hasta el tope del día. Cada prueba trae anuncios nuevos → más deseos → la cadena sigue."""
         from agentes import prueba as prueba_mod
 
-        tope = int(config.env("DESEOS_POR_DIA", "2") or 0)
         while True:
-            time.sleep(300)
+            time.sleep(120)
             try:
                 if not self.piloto:
                     continue
-                # 🎬 varios a la vez: si hay lugar, primero las buenas ideas que esperan en la bandeja
+                # 🎬 varios a la vez: si hay lugar, las buenas ideas que esperan en la bandeja
                 if self.en_produccion() < self.a_la_vez():
                     with self.lock:
                         pendientes = [p for p in self.propuestas if p["estado"] == "pendiente"]
-                    if pendientes and self._arrancar_mejor(pendientes):
-                        continue
-                if not tope:
+                    if pendientes:
+                        self._arrancar_mejor(pendientes)
+                # 🔁 la cadena de anuncios: no espera a que se acaben las ideas, solo a que el cel esté libre
+                tope = self.deseos_por_dia()
+                if not tope or self._cel_ocupado() or self.en_produccion() >= self.a_la_vez() + 2:
                     continue
                 with self.lock:
-                    ocupado = sum(1 for p in self.proyectos.values()
-                                  if p["estado"] in ("produccion", "publicando")) >= self.a_la_vez()
                     hoy = self._hoy()
                     hechos_hoy = sum(1 for d in self.deseos if d.get("iniciado") and
                                      dt.datetime.fromtimestamp(d["iniciado"], ZoneInfo(IDEAS_ZONA)).date().isoformat() == hoy)
-                    siguiente = next((d for d in self.deseos if d["estado"] == "pendiente"), None)
-                if ocupado or not siguiente or hechos_hoy >= tope or not prueba_mod.celular_disponible():
+                    pendientes_d = [d for d in self.deseos if d["estado"] == "pendiente"]
+                    # primero las que tienen su página de Play Store (se encuentran seguro), en el orden en que salieron
+                    siguiente = next((d for d in pendientes_d if d.get("paquete")), None) or next(iter(pendientes_d), None)
+                if not siguiente or hechos_hoy >= tope or not prueba_mod.celular_disponible():
                     continue
-                self.decir("productora", f"🔁 Piloto: le toca a «{siguiente['nombre']}» de la lista de deseos")
+                self.decir("productora", f"🔁 Cadena: le toca a «{siguiente['nombre']}» (salió anunciada en "
+                                         f"{siguiente.get('visto_en') or 'otra app'}) · {hechos_hoy + 1} de {tope} hoy")
                 self.accion_deseo(siguiente["id"], "probar")
             except Exception as exc:  # noqa: BLE001 — el ciclo nunca debe morir
                 print(f"aviso: ciclo de deseos: {exc}")
