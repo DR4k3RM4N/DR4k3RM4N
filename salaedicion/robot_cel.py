@@ -65,6 +65,16 @@ de verdad paga.
 """
 
 
+YA_INSTALADA = """
+## OJO: el jefe ya tiene «{nombre}» instalada en el cel
+- NO la instales ni la busques en Play Store, y al final NO la desinstales.
+- Empieza en la pantalla de inicio (`./cel inicio`) y ábrela como lo haría una persona: busca su ícono (desliza
+  hacia arriba para ver todas las apps) y tócalo, para que en la grabación se vea cómo la abres.
+- Si no la encuentras así, `./cel instaladas` te da los paquetes instalados: elige el suyo y `./cel abrir PAQUETE`.
+- Después sigue tu misión desde el paso 2 (usarla, anuncios, lista de deseos, retiro).
+"""
+
+
 def instalar_adb() -> str:
     """Si no hay adb, lo instala con winget (Google Platform Tools). Regresa la ruta o vacío."""
     if cel.adb_ruta():
@@ -159,8 +169,13 @@ def probar(of, t: dict, temporal: Path, avance, claude: str, log) -> None:
         raise RuntimeError("No hay un Android conectado y autorizado en esta compu.")
     mesa = temporal / "mesa"
     mesa.mkdir(parents=True, exist_ok=True)
-    (mesa / "CLAUDE.md").write_text(REGLAS.format(nombre=nombre, paquete=paquete or "(no tiene: búscala por nombre)",
-                                                  minutos=minutos), encoding="utf-8")
+    ya_instalada = bool(par.get("ya_instalada"))
+    # si la app ya estaba en el cel (la instalaste tú), al final no se borra
+    estaba = bool(paquete) and f"package:{paquete}" in cel.adb("shell", "pm", "list", "packages", paquete).split()
+    reglas = REGLAS.format(nombre=nombre, paquete=paquete or "(no tiene: búscala por nombre)", minutos=minutos)
+    if ya_instalada:
+        reglas += YA_INSTALADA.format(nombre=nombre)
+    (mesa / "CLAUDE.md").write_text(reglas, encoding="utf-8")
     # ./cel para Claude Code (en Windows usa Git Bash): llama a cel.py con este mismo Python
     import sys
     (mesa / "cel").write_text(f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" "{(AQUI / "cel.py").as_posix()}" "$@"\n',
@@ -208,7 +223,7 @@ def probar(of, t: dict, temporal: Path, avance, claude: str, log) -> None:
         info = {}
     avance("Juntando la grabación", 0.88)
     video = grabadora.terminar(temporal / "prueba.mp4")
-    if paquete:  # que el cel de pruebas no se llene de apps (y de anuncios)
+    if paquete and not estaba and not ya_instalada:  # que el cel no se llene (las que ya tenías se quedan)
         cel.adb("shell", "pm", "uninstall", paquete)
     cel.adb("shell", "input", "keyevent", "3")
     notas = json.loads((mesa / "notas.json").read_text(encoding="utf-8"))

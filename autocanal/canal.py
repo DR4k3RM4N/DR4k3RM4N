@@ -85,12 +85,12 @@ class Produccion:
         from agentes import temas
 
         es_tema = self.app_id.startswith("tema:")
+        origen = _leer(c / "origen.json") or {}
         if (c / "ficha.json").exists() and "investigar" not in self.rehacer:
             datos = {"ficha": _leer(c / "ficha.json"), "resenas": _leer(c / "resenas.json"),
                      "imagenes": _leer(c / "imagenes.json")}
         else:
             print("  · recolectando datos")
-            origen = _leer(c / "origen.json") or {}
             datos = (temas.recolectar(self.app_id, c, origen) if es_tema
                      else investigador.recolectar(self.app_id, c, origen.get("nombre", "")))
         self.ficha, self.imagenes = datos["ficha"], datos["imagenes"]
@@ -99,11 +99,13 @@ class Produccion:
             from agentes import editor, estilo, prueba
 
             nombre = (self.ficha or {}).get("title") or self.app_id
-            if (not prueba.grabaciones(c.name) and estilo.cargar()["ajustes"].get("probar_en_cel")
+            if (not prueba.grabaciones(c.name)
+                    and (estilo.cargar()["ajustes"].get("probar_en_cel") or origen.get("grabar_cel"))
                     and prueba.celular_disponible()):
                 print("  · le pido al celular que la pruebe")
-                paquete = "" if self.app_id.startswith("web:") else self.app_id
-                prueba.pedir_al_celular(c.name, nombre, paquete, avance=editor._avance)
+                paquete = "" if self.app_id.startswith("web:") else self.app_id.split("~")[0]
+                prueba.pedir_al_celular(c.name, origen.get("nombre") if origen.get("ya_instalada") else nombre, paquete,
+                                        avance=editor._avance, ya_instalada=bool(origen.get("ya_instalada")))
             self.clips = [str(p) for p in prueba.grabaciones(c.name)] or self.clips
             if self.clips:
                 print(f"  · viendo {len(self.clips)} grabación(es) de la prueba")

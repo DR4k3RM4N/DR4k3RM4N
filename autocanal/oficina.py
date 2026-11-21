@@ -437,6 +437,8 @@ class Oficina:
                     self._tocar()
                 partes.append("🚀 Piloto automático " + ("prendido: Paola arranca solas las mejores ideas." if self.piloto
                                                           else "apagado: nada arranca sin que tú digas."))
+            elif tipo == "grabar_app" and texto:  # 📱 el robot usa y graba esa app en tu cel
+                partes.append(self.grabar_app(texto, ya_instalada=bool(n), canal=acc.get("canal") or ""))
             elif tipo == "miniaturas":  # 🖼️ Carla vuelve a poner las miniaturas que faltan en YouTube
                 video = videos[n - 1] if 0 < n <= len(videos) else None
                 threading.Thread(target=self.poner_miniaturas_faltantes, args=(canal, video["id"] if video else None),
@@ -454,6 +456,38 @@ class Oficina:
             texto += f"\n\n👉 {URL_PUBLICA}"
         botones = tg.botones_ideas(self._pendientes()) if canal == "telegram" and pidio_lista and self._pendientes() else None
         self._responder(canal, texto, botones)
+
+    def grabar_app(self, nombre: str, ya_instalada: bool = False, canal: str = "") -> str:
+        """📱 «Graba esta app»: el robot la abre en tu cel (desde el inicio si ya la tienes), la usa, la graba, le pica a
+        los anuncios de apps de dinero (→ lista de deseos) y el equipo arma el video con esa grabación."""
+        from agentes import canales as canales_mod, prueba as prueba_mod
+        if not prueba_mod.celular_disponible():
+            return ("📱 No veo tu cel listo en la sala (o la compu está ocupada con otra prueba). Revisa en la pestaña "
+                    "Sala que salga 📱 con su modelo junto a tu compu y vuelve a pedírmelo.")
+        canal = canal if canal and canales_mod.existe(canal) else canales_mod.PRINCIPAL
+
+        def trabajar():
+            from agentes import buscador
+            app = None
+            try:
+                app = buscador.encontrar_app(nombre, set())
+            except Exception as exc:  # noqa: BLE001
+                print(f"aviso: grabar_app {nombre}: {exc}")
+            if not app:  # no está en Play Store (APK que instalaste tú): se graba y se investiga por nombre
+                app = buscador.fuera_de_play(nombre) or {"app_id": "web:" + re.sub(r"[^a-z0-9]+", "-", nombre.lower()).strip("-")[:50],
+                                                         "titulo": nombre, "fuera_de_play": True}
+            self.iniciar_proyecto({"app_id": app["app_id"], "titulo": app["titulo"],
+                                   "angulo": f"Probé {app['titulo']}: ¿paga o es estafa?", "canal": canal,
+                                   "fuera_de_play": bool(app.get("fuera_de_play")), "ya_instalada": ya_instalada,
+                                   "grabar_cel": True},
+                                  notas="El jefe pidió que el robot probara y grabara esta app en su celular: el video se "
+                                        "basa en esa prueba.")
+            self.decir("productora", f"📱 Arrancamos con {app['titulo']}: el robot la abre en tu cel y la graba.")
+
+        threading.Thread(target=trabajar, daemon=True).start()
+        return (f"📱 Va: el robot {'abre' if ya_instalada else 'instala y abre'} «{nombre}» en tu cel, la usa unos minutos, "
+                "la graba y le pica a los anuncios de apps de dinero (van a tu ⭐ lista de deseos). Luego el equipo arma "
+                "el video. Mira el avance en la pestaña Sala.")
 
     def analizar_archivo(self, archivo: Path, pregunta: str) -> None:
         """📎 Le subiste un video al chat: Paola lo ve completo."""
@@ -1074,7 +1108,8 @@ class Oficina:
             (carpeta / "origen.json").write_text(json.dumps(
                 {"nombre": propuesta["titulo"], "angulo": propuesta.get("angulo", ""), "fuera_de_play": propuesta.get("fuera_de_play", False),
                  "tema": propuesta.get("tema", ""), "formato": propuesta.get("formato", ""),
-                 "canal": propuesta.get("canal") or "principal"},
+                 "canal": propuesta.get("canal") or "principal",
+                 "ya_instalada": bool(propuesta.get("ya_instalada")), "grabar_cel": bool(propuesta.get("grabar_cel"))},
                 ensure_ascii=False), encoding="utf-8")
             self.proyectos[app_id] = {"id": app_id, "titulo": propuesta["titulo"], "angulo": propuesta.get("angulo", ""),
                                       "estado": "produccion", "etapa": "investigar", "etapas": {},

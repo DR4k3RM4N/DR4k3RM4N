@@ -159,7 +159,8 @@ def celular_disponible() -> bool:
         return False
 
 
-def pedir_al_celular(app_id: str, nombre: str, paquete: str, minutos: int = 8, avance=None) -> bool:
+def pedir_al_celular(app_id: str, nombre: str, paquete: str, minutos: int = 8, avance=None,
+                     ya_instalada: bool = False) -> bool:
     """Le pide a tu compu con el Android conectado que pruebe la app. Regresa True si dejó grabación."""
     if not celular_disponible():
         return False
@@ -168,7 +169,7 @@ def pedir_al_celular(app_id: str, nombre: str, paquete: str, minutos: int = 8, a
     try:
         r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=10, json={
             "tipo": "probar_app", "origen": "youtube", "etiqueta": f"Probar {nombre}"[:80], "salida": str(destino),
-            "parametros": {"nombre": nombre, "paquete": paquete, "minutos": minutos}}).json()
+            "parametros": {"nombre": nombre, "paquete": paquete, "minutos": minutos, "ya_instalada": ya_instalada}}).json()
         tid = r.get("id")
     except (requests.RequestException, ValueError):
         return False

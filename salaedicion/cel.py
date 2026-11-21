@@ -12,6 +12,7 @@
   ./cel buscar_tienda "nombre"   busca en Play Store
   ./cel abrir com.app.id         abre la app instalada
   ./cel instalada com.app.id     ¿ya está instalada?
+  ./cel instaladas [texto]       paquetes de las apps que instaló el usuario (filtra por texto)
   ./cel anuncio "App anunciada" "lo que promete"   anota un anuncio que salió (con el segundo de la grabación)
   ./cel nota "lo que pasó"       anota algo importante (saldo, pago mínimo, retiro…)
   ./cel guardar_deseo "Nombre" "lo que promete"   después de picarle a un anuncio de dinero: ve qué app abrió
@@ -223,6 +224,10 @@ def main() -> None:
         adb("shell", "monkey", "-p", args[0], "-c", "android.intent.category.LAUNCHER", "1")
         _progreso("Usando la app")
         print("Abrí la app. Toma pantalla.")
+    elif cmd == "instaladas":  # apps que instalaste tú (no las del sistema), por si hay que buscar una
+        filtro = " ".join(args).lower()
+        lista = [l.split(":", 1)[1] for l in adb("shell", "pm", "list", "packages", "-3").split() if l.startswith("package:")]
+        print("\n".join(x for x in sorted(lista) if filtro in x.lower()) or "Ninguna con ese nombre.")
     elif cmd == "instalada":
         print("sí" if f"package:{args[0]}" in adb("shell", "pm", "list", "packages", args[0]).split() else "no")
     elif cmd == "anuncio":

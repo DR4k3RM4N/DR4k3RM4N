@@ -25,7 +25,9 @@ AYUDA = (
     "• *reintenta los que fallaron* · *descarta el 4* · *prende el piloto* / *apaga el piloto*\n"
     "• pega el *enlace de un video* (YouTube, TikTok, Instagram…) → te digo de qué trata y por qué funciona; "
     "puedes agregar una pregunta, ej. *¿qué gancho usa?* (de YouTube veo miniatura, título, descripción y comentarios)\n"
-    "• en la oficina, súbeme el *archivo del video* con el 📎 → lo veo completo: transcripción e imágenes"
+    "• en la oficina, súbeme el *archivo del video* con el 📎 → lo veo completo: transcripción e imágenes\n"
+    "• *graba la app Cash Gato* (o *ya la tengo instalada, grábala*) → el robot la abre en tu cel, la usa, la graba, "
+    "le pica a los anuncios de apps de dinero (van a tu lista de deseos) y el equipo arma el video"
 )
 
 SYSTEM = """Eres Paola, la productora de un canal de YouTube que investiga apps que prometen pagar dinero.
@@ -56,6 +58,10 @@ Reglas:
 - "reintentar" = volver a intentar un video con problema (número; 0 = todos los que tienen problema).
 - "descartar" = tirar un video en revisión o con problema (número obligatorio).
 - "piloto" = prender o apagar el piloto automático: "texto" = "on" u "off".
+- "grabar_app" = el jefe quiere que el robot use y GRABE una app en su celular conectado ("graba esta app",
+  "prueba X en el cel", "ya la tengo instalada, grábala"). En "texto" el nombre de la app tal cual lo dijo; en
+  "numero" pon 1 si dijo que YA la tiene instalada o abierta en el cel, 0 si no. En "canal" el id si lo pidió para
+  un canal (ej. una app de préstamos para el canal de fraudes); vacío si no.
 - MUY IMPORTANTE: solo puedes hacer las acciones de esta lista. Si pide algo que no está aquí (editar o
   borrar un video ya publicado, cambiar su título en YouTube, etc.), NO digas que lo vas a hacer ni que le avisas
   a alguien: dile con honestidad que eso todavía no lo puede hacer el equipo, y sugiere que se lo pida a quien
@@ -72,7 +78,7 @@ SCHEMA = {
             "properties": {
                 "tipo": {"type": "string", "enum": ["aprobar", "rechazar", "comentar", "pedir_ideas", "estado",
                                                      "pendientes", "corregir", "cambios", "miniaturas",
-                                                     "publicar", "reintentar", "descartar", "piloto"]},
+                                                     "publicar", "reintentar", "descartar", "piloto", "grabar_app"]},
                 "numero": {"type": "integer", "description": "Número de la idea o del video; 0 si no aplica"},
                 "texto": {"type": "string"},
                 "agente": {"type": "string", "enum": ["", "productora", "investigador", "guionista", "locutor",
