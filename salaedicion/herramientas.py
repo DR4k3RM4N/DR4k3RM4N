@@ -5,6 +5,7 @@
     python herramientas.py transcribir ARCHIVO          # palabras con tiempos (JSON) para subtítulos con estilo
     python herramientas.py armar PLAN.json SALIDA.mp4   # el motor de cortes de la sala (silencios, muletillas, música…)
     python herramientas.py motion PROPS.json SALIDA.mp4 # motion graphics (Remotion) encima de un video base
+    python herramientas.py edu EDU.json SALIDA.mp4 [DESDE HASTA]  # 🎬 video de YouTube completo con el kit Edu (Remotion)
     python herramientas.py revisar VIDEO                # cuadros + lo que se oye del video terminado, para revisarlo
     python herramientas.py codificar                    # qué opciones de ffmpeg usar en esta compu (NVENC si hay)
 
@@ -143,6 +144,41 @@ def motion(props: str, salida: str) -> None:
     print(f"Listo: {salida} con motion graphics.")
 
 
+def edu(guion_edicion: str, salida: str, desde: str = "", hasta: str = "") -> None:
+    """🎬 Renderiza el video de YouTube con el kit Edu (src/Edu.tsx). DESDE/HASTA (segundos) = solo un tramo, para
+    revisar rápido una parte antes de hacer el video completo."""
+    ruta = (TRABAJO / guion_edicion).resolve()
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    motion_dir = AQUI / "motion"
+    if not (motion_dir / "node_modules").exists():
+        raise SystemExit("Remotion no está instalado todavía en esta compu.")
+    faltan = []
+    for k, e in enumerate(datos.get("escenas") or [], 1):
+        archivos = [e.get("audio"), (e.get("fondo") or {}).get("archivo"), *[c.get("archivo") for c in e.get("capas") or []],
+                    *[s.get("archivo") for s in e.get("sfx") or []]]
+        faltan += [f"escena {k}: {a}" for a in archivos if a and not (ruta.parent / a).exists()]
+    if (datos.get("musica") or {}).get("archivo") and not (ruta.parent / datos["musica"]["archivo"]).exists():
+        faltan.append(f"música: {datos['musica']['archivo']}")
+    if faltan:
+        raise SystemExit("Faltan archivos (revisa las rutas):\n" + "\n".join(faltan[:20]))
+    npx = shutil.which("npx") or shutil.which("npx.cmd") or "npx"
+    cmd = [npx, "remotion", "render", "src/index.ts", "Edu", str((TRABAJO / salida).resolve()), f"--props={ruta}",
+           f"--public-dir={ruta.parent}", "--log=error", "--concurrency=75%"]
+    if desde or hasta:
+        fps = int(datos.get("fps") or 30)
+        total = sum(max(0.5, float(e.get("duracion") or 0)) for e in datos.get("escenas") or [])
+        a = max(0, int(float(desde or 0) * fps))
+        b = min(int(total * fps) - 1, int(float(hasta or total) * fps))
+        cmd.append(f"--frames={a}-{b}")
+    if os.environ.get("SALA_CHROME"):
+        cmd.append(f"--browser-executable={os.environ['SALA_CHROME']}")
+    r = subprocess.run(cmd, cwd=motion_dir, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       shell=compu.WINDOWS)
+    if r.returncode:
+        raise SystemExit("Remotion falló:\n" + (r.stderr or r.stdout)[-2000:])
+    print(f"Listo: {salida}")
+
+
 def revisar(video: str) -> None:
     ruta = (TRABAJO / video) if not Path(video).is_absolute() else Path(video)
     _oido()
@@ -167,7 +203,7 @@ def codificar() -> None:
 
 def main() -> None:
     ordenes = {"ficha": ficha, "cuadros": cuadros, "transcribir": transcribir, "armar": armar, "motion": motion,
-               "revisar": revisar, "codificar": codificar}
+               "revisar": revisar, "codificar": codificar, "edu": edu}
     if len(sys.argv) < 2 or sys.argv[1] not in ordenes:
         return print(__doc__)
     compu.configurar_editor(compu.nvenc())

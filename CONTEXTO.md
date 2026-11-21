@@ -483,3 +483,20 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   de la sala y se descartó por ir contra el bloqueo de YouTube). Con enlace de YouTube bloqueado → `_sin_video`: API
   oficial (título, descripción/capítulos, números, miniatura, comentarios). Análisis completo: 📎 en el chat sube
   el archivo (`/api/chat/video` → `entrada/_analizar/`, se borra al terminar) → `analizar(archivo=…)`.
+
+## 3l. Claude edita los videos de YouTube en la pc de Miguel (nov 2026)
+- Miguel sentía los videos "básicos y aburridos" (plantilla ffmpeg de Edu). Nuevo trabajo de sala **`edu_ia`**:
+  `edicion_remota.editar_en_sala` lo usa si el ajuste `editor_claude` (Estilo, prendido por defecto) y hay compu con
+  Claude Code + Remotion listos (`compu.py` anuncia `edu_ia`); si no, `edu` (plantilla) como siempre.
+- Kit Remotion `salaedicion/motion/src/Edu.tsx` (composición "Edu", 1920x1080): escenas que duran lo que su audio
+  (la voz nunca se desfasa) + fondo (imagen con movimiento/contener/desenfocar, video, degradado) + capas: texto
+  cinético (pop/golpe/maquina), titulo_seccion, dato (contador), celular, chat WhatsApp, resena, lista, comparativa,
+  alerta, sello, imagen, mascota (con globo), emoji, flecha, circulo, cintillo; efectos zoom_golpe, sacudida,
+  destello; transiciones; sfx por escena; subtítulos pop/karaoke/caja; música; barra. Probado aquí con render real.
+- `salaedicion/editor_youtube.py`: arma `materiales.md` (duración exacta por escena, lo que se dice, sugerencias del
+  guion, imágenes, clips, mascota, sfx, datos del expediente, momentos de la prueba) y `edu.json` borrador; escribe
+  CLAUDE.md (dirección: gancho, algo cambia cada 2-4 s, lo que se dice se ve, nada inventado + manual/lecciones del
+  canal) y corre Claude Code (`editor_ia.correr`, 90 min). Claude renderiza con `herramientas.py edu edu.json
+  SALIDA [DESDE HASTA]` y revisa. Si `video_final.mp4` falta o no dura lo de la narración → plantilla en la misma compu.
+- El servidor manda además: todas las caras de la mascota (`mascota/*.png`), `canal_nombre`, `acento`, `direccion`,
+  `datos` y `prueba.momentos`.

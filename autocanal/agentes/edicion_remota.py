@@ -22,16 +22,26 @@ ESTILO_ARCHIVOS = ("estilo.json", "fondo_relleno", "mascota.png", "musica.mp3", 
                    "fuente_negrita.ttf", "cara.png")
 
 
-def compus_libres() -> int:
+def compus_libres(tipo: str = "edu") -> int:
     import requests
     try:
-        return int(requests.get(f"{SALA_URL}/interno/disponible", params={"tipo": "edu"}, timeout=3).json().get("compus") or 0)
+        return int(requests.get(f"{SALA_URL}/interno/disponible", params={"tipo": tipo}, timeout=3).json().get("compus") or 0)
     except (requests.RequestException, ValueError):
         return 0
 
 
+def _direccion() -> str:
+    """Lo que Claude (el editor de tu compu) debe respetar: manual del canal, tus correcciones y tus números."""
+    from . import lecciones, manual
+    try:
+        return manual.para_agente()[:6000] + lecciones.para("editor", "disenadora")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _preparar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -> tuple[list[str], dict]:
     """Junta todo en carpeta/remota/envio (dentro de salida/, donde la sala puede leer) con nombres únicos."""
+    from . import estilo as estilo_mod
     from . import voz
 
     envio = carpeta / "remota" / "envio"
@@ -69,14 +79,35 @@ def _preparar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -
     for nombre in ESTILO_ARCHIVOS:
         if nombre != "mascota.png":
             poner(config.ESTILO_DIR / nombre, f"estilo/{nombre}")
-    poner(canales.mascota(canales.actual()), "estilo/mascota.png")  # la del canal del video
+    masc = canales.mascota(canales.actual())
+    poner(masc, "estilo/mascota.png")  # la del canal del video
+    if masc and masc.parent.parent.name == "mascotas":  # mascota con varias caras (Lanudo): todas, para el editor IA
+        for cara in sorted(masc.parent.glob("*.png")):
+            if not cara.name.startswith("boca_"):
+                poner(cara, f"mascota/{cara.name}")
     sfx = config.ESTILO_DIR / "sfx"
     for f in sorted(sfx.glob("*")) if sfx.exists() else []:
         poner(f, f"estilo/sfx/{f.name}")
     poner(carpeta / "plan_edicion.json", "plan_edicion.json")
+    exp = ctx.get("expediente") or {}
+    info_canal = canales.get(canales.actual())
+    try:
+        acento = (estilo_mod.cargar().get("miniaturas") or {}).get("color_acento") or "#FFD23F"
+    except Exception:  # noqa: BLE001
+        acento = "#FFD23F"
+    prueba = {}
+    try:
+        prueba = json.loads((carpeta / "prueba.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
     manifiesto = {"escenas": escenas_r, "clips": clips_r, "mapa": mapa,
                   "ctx": {"ficha": {"title": (ctx.get("ficha") or {}).get("title", "")},
-                          "expediente": ctx.get("expediente") or {}, "imagenes": imagenes_r}}
+                          "expediente": exp, "imagenes": imagenes_r},
+                  # 🎬 para el editor IA (Claude en tu compu)
+                  "canal_nombre": info_canal.get("nombre"), "acento": acento, "direccion": _direccion(),
+                  "datos": json.dumps({k: v for k, v in exp.items() if k not in ("informe_web", "fuentes_web")},
+                                      ensure_ascii=False, default=str)[:8000],
+                  "prueba": {"momentos": prueba.get("momentos") or []}}
     return entradas, manifiesto
 
 
@@ -86,7 +117,10 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
 
     from . import editor, efectos
 
-    if not compus_libres():
+    from . import estilo as estilo_mod
+    # 🎬 si tu compu puede (Claude Code + Remotion) y está prendido en Estilo, la edición la dirige Claude
+    tipo = "edu_ia" if (estilo_mod.cargar()["ajustes"].get("editor_claude", True) and compus_libres("edu_ia")) else "edu"
+    if tipo == "edu" and not compus_libres():
         return None
     efectos.planear(escenas, carpeta)  # el plan de efectos se hace aquí (la compu no tiene tus claves)
     entradas, manifiesto = _preparar(escenas, ctx, carpeta, clips)
@@ -95,7 +129,8 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
     salida.mkdir(parents=True)
     try:
         r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=15, json={
-            "tipo": "edu", "origen": "youtube", "etiqueta": f"Edu: {manifiesto['ctx']['ficha']['title']}"[:80],
+            "tipo": tipo, "origen": "youtube",
+            "etiqueta": f"{'🎬 Claude' if tipo == 'edu_ia' else 'Edu'}: {manifiesto['ctx']['ficha']['title']}"[:80],
             "parametros": {"manifiesto": manifiesto}, "entradas": entradas, "salida": str(salida)}).json()
         tid = r.get("id")
     except (requests.RequestException, ValueError):
@@ -103,7 +138,7 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
     if not tid:
         print(f"  · la sala no aceptó la edición: {r.get('error')}", flush=True)
         return None
-    print("  · la edición va a una compu de la sala", flush=True)
+    print("  · la edición va a una compu de la sala" + (" (la dirige Claude)" if tipo == "edu_ia" else ""), flush=True)
     inicio, en_cola_desde = time.time(), time.time()
     while time.time() - inicio < 3 * 3600:
         time.sleep(3)

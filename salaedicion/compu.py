@@ -735,8 +735,9 @@ def editar_libre(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     log(f"Editor IA «{nombre}»: {'v' + str(n) if video else 'sin video'} en {round(time.time() - inicio)} s.")
 
 
-def editar_edu(of: "Oficina", t: dict, temporal: Path, avance) -> None:
-    """🎬 Un video de YouTube de la oficina: esta compu lo edita con el mismo programa de Edu y lo regresa."""
+def editar_edu(of: "Oficina", t: dict, temporal: Path, avance, con_claude: bool = False) -> None:
+    """🎬 Un video de YouTube de la oficina: esta compu lo edita y lo regresa. Con `con_claude` (trabajo "edu_ia")
+    lo dirige Claude Code con el kit Edu de Remotion; si no queda bien, se hace con la plantilla de Edu."""
     tid, m = t["id"], t["parametros"]["manifiesto"]
     mesa = temporal / "mesa"
     mesa.mkdir(parents=True, exist_ok=True)
@@ -750,6 +751,17 @@ def editar_edu(of: "Oficina", t: dict, temporal: Path, avance) -> None:
         destino.parent.mkdir(parents=True, exist_ok=True)
         of.bajar(tid, e["n"], destino)
     (mesa / "manifiesto.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
+    if con_claude and claude_code() and ESTADO_MOTION["texto"] == "listo":
+        import editor_youtube
+        final = editor_youtube.editar(mesa, m, claude_code(), avance, log)
+        if final:
+            shutil.copyfile(final, mesa / "video.mp4")
+            avance("Subiendo el video a la oficina", 0.96)
+            of.subir(tid, mesa / "video.mp4")
+            of.post(f"terminar/{tid}", {"ok": True, "resultado": {"video": "video.mp4", "editor": "claude"}})
+            log(f"Claude editó «{t.get('etiqueta')}».")
+            return
+        avance("Claude no terminó: lo edito con la plantilla", 0.5)
     entorno = {**os.environ, "AUTOCANAL_ESTILO": str(mesa / "estilo"), "AUTOCANAL_SIN_COLA": "1",
                "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
     proceso = subprocess.Popen([sys.executable, "-m", "agentes.edicion_remota", str(mesa)], cwd=str(REPO / "autocanal"),
@@ -839,8 +851,8 @@ def hacer(of: Oficina, t: dict) -> None:
             return pensar(of, t, carpeta, avance)
         if t["tipo"] == "claude_libre":
             return editar_libre(of, t, carpeta, avance)
-        if t["tipo"] == "edu":  # 🎬 un video de YouTube de la oficina
-            return editar_edu(of, t, carpeta, avance)
+        if t["tipo"] in ("edu", "edu_ia"):  # 🎬 un video de YouTube de la oficina (edu_ia: lo dirige Claude)
+            return editar_edu(of, t, carpeta, avance, con_claude=t["tipo"] == "edu_ia")
         if t["tipo"] == "probar_app":  # 📱 el robot prueba la app en tu Android
             import robot_cel
             return robot_cel.probar(of, t, carpeta, avance, claude_code(), log)
@@ -924,6 +936,7 @@ def trabajar() -> None:
         datos["celular"] = cel.get("modelo") or ("falta autorizar" if cel.get("pendiente")
                                                   else robot_cel.MOTIVOS.get(cel.get("motivo"), ""))
         datos["tipos"] = ["cris", "libre", "edu", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else []),
+                          *(["edu_ia"] if datos["claude_code"] == "listo" and ESTADO_MOTION["texto"] == "listo" else []),
                           *(["probar_app"] if datos["claude_code"] == "listo" and cel.get("serie") else [])]
         datos["motion"] = ESTADO_MOTION["texto"]
     cerebro()
