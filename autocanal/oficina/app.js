@@ -483,12 +483,15 @@
     const agentes = {};
     estado.agentes.forEach((a) => (agentes[a.id] = a));
     const lista = $("#chat");
-    const abajo = lista.scrollHeight - lista.scrollTop - lista.clientHeight < 40;
+    const movil = window.matchMedia("(max-width: 900px)").matches;
+    const abajo = movil ? window.innerHeight + window.scrollY >= document.body.scrollHeight - 80
+      : lista.scrollHeight - lista.scrollTop - lista.clientHeight < 40;
     lista.innerHTML = estado.log.map((m) => {
       const a = agentes[m.quien] || { nombre: m.quien, color: "#888" };
       return `<li><span class="hora">${hora(m.t)}</span> <b style="color:${a.color === "#334155" ? "#cbd5e1" : a.color}">${esc(a.id === "jefe" ? "Tú" : a.nombre)}</b> ${enlazar(m.texto)}</li>`;
     }).join("");
-    if (abajo) lista.scrollTop = lista.scrollHeight;
+    if (abajo && movil && !$("#tab-chat").hidden) window.scrollTo({ top: document.body.scrollHeight });
+    else if (abajo) lista.scrollTop = lista.scrollHeight;
   }
 
   const NOMBRE_AGENTE = { productora: "Paola", investigador: "Iván", guionista: "Gabi", locutor: "Leo", disenadora: "Dani",
@@ -553,6 +556,9 @@
     if (nombre === "equipo") pintarEquipo();
     if (nombre === "estilo") pintarEstilo();
     if (nombre === "resultados") pintarResultados();
+    if (nombre === "chat" && window.matchMedia("(max-width: 900px)").matches) {  // 📱 directo a lo más reciente
+      setTimeout(() => window.scrollTo({ top: document.body.scrollHeight }), 60);
+    }
     if (nombre === "sala" && typeof pintarSala === "function") pintarSala();
   }
   document.querySelectorAll(".pestana").forEach((p) => p.addEventListener("click", () => abrirPestana(p.dataset.tab)));

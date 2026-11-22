@@ -184,7 +184,7 @@ class Oficina:
             return {"version": self.version, "demo": self.demo, "agentes": list(self.agentes.values()),
                     "propuestas": [p for p in self.propuestas if p["estado"] == "pendiente"],
                     "proyectos": sorted(self.proyectos.values(), key=lambda p: -p["creado"]),
-                    "preferencias": self.preferencias[-10:], "reglas": self.reglas[-40:], "log": self.log[-60:],
+                    "preferencias": self.preferencias[-10:], "reglas": self.reglas[-40:], "log": self.log[-150:],
                     "etapas": ETAPAS_PROYECTO, "ahora": time.time(), "gasto": self._resumen_gasto(),
                     "ideas_auto": {"activo": self.ideas_auto, "hora": IDEAS_HORA or ""}, "piloto": self.piloto,
                     "deseos": [d for d in self.deseos if d["estado"] == "pendiente"][-60:],
