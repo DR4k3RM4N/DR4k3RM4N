@@ -175,6 +175,27 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
                     {"narracion": "Tiene más de diez millones de jugadores.", "visual": "dato", "indice": 0, "texto": "10 millones de jugadores"},
                     {"narracion": "¿Y tú, cuál es tu favorito? Déjamelo en los comentarios.", "visual": "cierre", "indice": 0, "texto": "¿Cuál es tu favorito?"},
                 ]}
+    if "gancho" in props and "tomas" in props:  # 🌮 plan de visita (demo)
+        return {"formato": "(Demo) Probé lo más pedido", "gancho": "¿Las mejores jaibas de Tampico? Vamos a ver",
+                "guion": [{"momento": "Gancho", "se_ve": "La jaiba abierta en cámara lenta", "se_dice": "¿Las mejores jaibas de Tampico?", "texto_pantalla": "¿LAS MEJORES?"},
+                          {"momento": "Cierre", "se_ve": "Fachada y dron de la calle", "se_dice": "Aquí te dejo dónde está", "texto_pantalla": "📍 Tampico"}],
+                "tomas": [{"toma": "Platillo llegando a la mesa", "equipo": "gimbal", "como": "Sigue al mesero", "segundos": 5},
+                          {"toma": "Calle desde arriba", "equipo": "dron", "como": "Subida lenta", "segundos": 4}],
+                "preguntas_al_dueno": ["¿Cuál es el platillo más pedido?", "¿Desde cuándo abrieron?"],
+                "textos": {"facebook": "(demo) texto FB", "instagram": "(demo) texto IG #Tampico", "tiktok": "(demo) #Tampiqueando"},
+                "llevar": ["gimbal", "micrófono", "dron"]}
+    if "lugares" in props and list(props) == ["lugares"]:  # 🚁 dron (demo)
+        return {"lugares": [{"lugar": "(Demo) Laguna del Carpintero", "zona": "Tampico", "por_que": "ejemplo", "toma": "Órbita al atardecer",
+                             "mejor_hora": "Atardecer", "precaucion": "Gente en el malecón", "fuente": ""}]}
+    if "formatos" in props and "lo_que_ya_hay" in props:  # 🧪 formatos (demo)
+        return {"lo_que_ya_hay": "(Demo) Reseñas en mesa.", "recomendado": 0, "formatos": [
+            {"nombre": "(Demo) Un día con $200", "descripcion": "ejemplo", "por_que_funciona": "ejemplo", "como_se_graba": "ejemplo",
+             "ejemplo_gancho": "Tengo 200 pesos…", "serie": "Semanal"}]}
+    if "para_el_jefe" in props:  # 💬 Toño responde (demo)
+        return {"respuesta": "(demo) ¡Gracias por contestar! Miguel le confirma el día.", "estado": "interesado",
+                "para_el_jefe": "(demo) Le interesa", "fecha_propuesta": ""}
+    if list(props) == ["ideas"] and "red" in json.dumps(props):  # ♻️ remarketing (demo)
+        return {"ideas": [{"idea": "(Demo) Top 3 del mes", "red": "Instagram", "como": "Carrusel"}]}
     if "veo" in props and "accion" in props:  # 📱 robot paso a paso (demo)
         todo = contenido if isinstance(contenido, str) else " ".join(c.get("text", "") for c in contenido if isinstance(c, dict))
         n = todo.split("ÚLTIMAS ACCIONES")[-1].split("BOTONES Y TEXTOS")[0].count("\n- ")

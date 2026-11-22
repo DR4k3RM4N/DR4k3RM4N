@@ -162,6 +162,7 @@ class Oficina:
         threading.Thread(target=self._ciclo_deseos, daemon=True).start()
         threading.Thread(target=self._ciclo_resultados, daemon=True).start()
         threading.Thread(target=self._limpiar_deseos, daemon=True).start()  # junta las repetidas que ya había
+        threading.Thread(target=self._ciclo_tampico, daemon=True).start()
         if self.por_reanudar:
             threading.Thread(target=self._reanudar, daemon=True).start()
         ia.antes_de_llamar = self._revisar_tope
@@ -322,7 +323,9 @@ class Oficina:
             if mensaje["id"] in self.wa.setdefault("vistos", []):
                 return  # Meta a veces reenvía el mismo aviso
             self.wa["vistos"] = (self.wa["vistos"] + [mensaje["id"]])[-200:]
-            if not wa.es_el_jefe(mensaje["de"]):
+            if not wa.es_el_jefe(mensaje["de"]):  # 🌮 ¿un negocio de Tampiqueando contestando?
+                from agentes import tampico
+                threading.Thread(target=tampico.respuesta_negocio, args=(mensaje, self._aviso_tampico), daemon=True).start()
                 return
             self.wa["ultimo_entrante"], self.wa["numero"] = time.time(), mensaje["de"]
             self._tocar()
@@ -1046,6 +1049,74 @@ class Oficina:
             except Exception as exc:  # noqa: BLE001 — el ciclo nunca debe morir
                 print(f"aviso: ciclo de resultados: {exc}")
             time.sleep(6 * 3600)
+
+    # ---------- 🌮 Tampiqueando ----------
+    def _aviso_tampico(self, texto: str) -> None:
+        with self.lock:
+            self.log.append({"t": time.time(), "quien": "productora", "texto": texto})
+            self._tocar()
+        self.avisar_chat("productora", texto, importante=True)
+
+    def _ciclo_tampico(self) -> None:
+        """Cada 15 min: Toño manda los primeros WhatsApp a negocios nuevos (si lo prendiste, con tope y horario)."""
+        from agentes import tampico
+        time.sleep(90)
+        while True:
+            try:
+                tampico.enviar_pendientes(self._aviso_tampico)
+            except Exception as exc:  # noqa: BLE001
+                print(f"aviso: tampiqueando: {exc}")
+            time.sleep(900)
+
+    def tampico_accion(self, datos: dict) -> dict:
+        from agentes import tampico
+        a = str(datos.get("accion") or "")
+        ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "tampico", None
+        if a == "buscar":
+            return tampico.buscar_negocios(str(datos.get("tipo") or "restaurantes")[:60], str(datos.get("zona") or "Tampico"),
+                                           int(datos.get("cuantos") or 20))
+        if a == "mover":
+            return tampico.mover(str(datos.get("id")), str(datos.get("estado")), str(datos.get("nota") or "")[:200])
+        if a == "plan":
+            return tampico.plan_visita(str(datos.get("id")), str(datos.get("notas") or "")[:1500])
+        if a == "dron":
+            return tampico.planear_dron()
+        if a == "dron_usado":
+            with tampico._candado:
+                d = tampico.cargar()
+                for x in d["dron"]:
+                    if x["id"] == datos.get("id"):
+                        x["usado"] = not x.get("usado")
+                tampico.guardar(d)
+            return {"ok": True}
+        if a == "formatos":
+            return tampico.proponer_formatos()
+        if a == "elegir_formato":
+            with tampico._candado:
+                d = tampico.cargar()
+                for f in d["formatos"]:
+                    f["elegido"] = f["id"] == datos.get("id")
+                tampico.guardar(d)
+            return {"ok": True}
+        if a == "remarketing":
+            return tampico.ideas_remarketing()
+        if a == "ajustes":
+            with tampico._candado:
+                d = tampico.cargar()
+                aj = d["ajustes"]
+                if "propuesta" in datos:
+                    aj["propuesta"] = str(datos["propuesta"])[:1500]
+                for k in ("envio_auto", "responder_auto"):
+                    if k in datos:
+                        aj[k] = bool(datos[k])
+                if "mensajes_dia" in datos:
+                    aj["mensajes_dia"] = max(0, min(30, int(datos["mensajes_dia"] or 0)))
+                tampico.guardar(d)
+            return {"ok": True, "ajustes": aj}
+        if a == "publicar":
+            threading.Thread(target=tampico.publicar, args=(str(datos.get("id")),), daemon=True).start()
+            return {"ok": True}
+        return {"error": "¿Qué hago?"}
 
     def _version(self) -> dict:
         """Cuándo se actualizó el servidor y si ya pediste «Actualizar ya»."""
@@ -2099,6 +2170,43 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"error": str(exc)}, 400)
             return self._json({"ok": True, "archivo": p.name})
 
+        def _subir_tampico(self):
+            """🌮 Un video o foto para publicar en Tampiqueando (Facebook, Instagram y TikTok)."""
+            from agentes import tampico
+            if "application/octet-stream" not in self.headers.get("Content-Type", ""):
+                return self._json({"error": "tipo no permitido"}, 403)
+            origen = self.headers.get("Origin")
+            if origen and urlparse(origen).netloc != self.headers.get("Host"):
+                return self._json({"error": "origen no permitido"}, 403)
+            q = parse_qs(urlparse(self.path).query)
+            ext = Path(q.get("nombre", ["x.mp4"])[0]).suffix.lower()
+            if ext not in (".mp4", ".mov", ".m4v", ".jpg", ".jpeg", ".png"):
+                return self._json({"error": "Sube un video (.mp4/.mov) o una foto (.jpg/.png)."}, 400)
+            largo = int(self.headers.get("Content-Length") or 0)
+            if largo <= 0 or largo > 1024 ** 3:
+                return self._json({"error": "Debe pesar menos de 1 GB."}, 400)
+            tampico.MEDIOS.mkdir(parents=True, exist_ok=True)
+            destino = tampico.MEDIOS / f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}{ext}"
+            restante = largo
+            with open(destino.with_suffix(destino.suffix + ".subiendo"), "wb") as f:
+                while restante > 0:
+                    trozo = self.rfile.read(min(1024 * 1024, restante))
+                    if not trozo:
+                        break
+                    f.write(trozo)
+                    restante -= len(trozo)
+            if restante:
+                destino.with_suffix(destino.suffix + ".subiendo").unlink(missing_ok=True)
+                return self._json({"error": "La subida se cortó; inténtalo otra vez."}, 400)
+            destino.with_suffix(destino.suffix + ".subiendo").rename(destino)
+            redes = [r for r in q.get("redes", ["facebook,instagram,tiktok"])[0].split(",") if r in ("facebook", "instagram", "tiktok")]
+            textos = {r: q.get(r, [""])[0][:2200] for r in ("facebook", "instagram", "tiktok")}
+            pub = tampico.nueva_publicacion(destino, q.get("titulo", [""])[0], textos, redes)
+            if q.get("ya", ["1"])[0] == "1":
+                threading.Thread(target=tampico.publicar, args=(pub["id"],), daemon=True).start()
+            oficina._tocar()
+            return self._json({"ok": True, "id": pub["id"]})
+
         def _subir_video_chat(self):
             """📎 Un video para que Paola lo analice (va en trozos directo al disco)."""
             if "application/octet-stream" not in self.headers.get("Content-Type", ""):
@@ -2271,6 +2379,16 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._texto("token inválido", 403)
             if urlparse(self.path).path.startswith("/sala/api/maquina/"):  # tus compus: la sala revisa su llave
                 return self._tienda("GET")
+            if url.path.startswith("/publico/tampico/"):  # 🌮 Instagram baja de aquí el video (solo con su clave)
+                from agentes import tampico
+                partes = unquote(url.path).split("/")
+                if len(partes) == 5:
+                    clave, nombre = partes[3], Path(partes[4]).name
+                    pub = next((x for x in tampico.cargar()["publicaciones"]
+                                if hmac.compare_digest(x.get("token", ""), clave) and x["archivo"] == nombre), None)
+                    if pub and time.time() - pub["t"] < 3 * 86400:
+                        return self._archivo(tampico.MEDIOS / nombre, tampico.MEDIOS)
+                return self._texto("no encontrado", 404)
             if not self._autorizado():
                 return
             ruta = unquote(urlparse(self.path).path)
@@ -2290,6 +2408,12 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 info = canales_mod.get(cid)
                 return self._json({**identidad.estado(cid), "nombre": info.get("nombre"),
                                    "conectado": canales_mod.conectado(cid) and not oficina.demo})
+            if ruta == "/api/tampico":  # 🌮 Tampiqueando
+                from agentes import tampico
+                return self._json(tampico.resumen())
+            if ruta.startswith("/tampico/medio/"):  # bajar un video/foto (para subirlo tú a TikTok)
+                from agentes import tampico
+                return self._archivo(tampico.MEDIOS / Path(ruta).name, tampico.MEDIOS)
             if ruta == "/api/manual":
                 cid = parse_qs(urlparse(self.path).query).get("canal", ["principal"])[0]
                 return self._json({"texto": manual_canal.leer(cid), "propio": manual_canal.archivo(cid).exists()})
@@ -2376,6 +2500,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._subir_grabacion()
             if urlparse(self.path).path == "/api/chat/video":
                 return self._subir_video_chat()
+            if urlparse(self.path).path == "/api/tampico/subir":
+                return self._subir_tampico()
             if urlparse(self.path).path in ("/tiktok/api/subir", "/sala/api/subir"):
                 return self._tienda_subir()
             if not self._mismo_origen():
@@ -2452,6 +2578,11 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 except Exception as exc:  # noqa: BLE001
                     return self._json({"error": f"No se pudo: {str(exc)[:300]}"}, 500)
                 return self._json(r)
+            if ruta == "/api/tampico":
+                try:
+                    return self._json(oficina.tampico_accion(datos))
+                except Exception as exc:  # noqa: BLE001
+                    return self._json({"error": str(exc)[:300]}, 500)
             if ruta == "/api/servidor/actualizar":  # 🔄 que el servidor agarre la versión nueva ya (en ~1 min)
                 try:
                     (config.BASE.parent / ".actualizar_ya").write_text(str(time.time()), encoding="utf-8")

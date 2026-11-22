@@ -537,3 +537,18 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   compu corre cada uno en su hilo (`arrancar`). Sala/compu viejas siguen con un trabajo. El servidor ya no se lleva
   un video en fila mientras haya una compu prendida para ese tipo (`compus_libres(tipo)`); solo si no hay ninguna
   por 3 min. Chip «⚡ N a la vez» en Sala.
+
+## 3m. 🌮 Tampiqueando (foodie de Tampico, nov 2026)
+- Miguel quiere hacer crecer «Tampiqueando» (comida en Tampico/Madero/Altamira) en Facebook, Instagram y TikTok;
+  eligió **envío automático** a negocios y **publicación automática**. Vive dentro de la oficina principal:
+  `agentes/tampico.py` (datos en `estilo/tampico.json`, medios en `estilo/tampico_medios/`), pestaña «🌮 Tampico».
+- Lupita: `buscar_negocios` (Serper /places, sin repetir por cid o nombre+dirección; WhatsApp MX 52+10). Toño:
+  `enviar_pendientes` (cada 15 min, `_ciclo_tampico`; plantilla `TAMPICO_WA_PLANTILLA` con {{1}}=negocio, tope
+  diario, lun-sáb 10-19 h) y `respuesta_negocio` (WhatsApp de un número que no es el jefe → si es de un negocio,
+  Claude responde dentro de la ventana de 24 h sin prometer más que `ajustes.propuesta`; «no gracias» = baja; aviso al
+  jefe). Fer: `plan_visita` (formato, gancho, guion, tomas por equipo, preguntas, textos por red) + proyecto en la
+  sala con el guion. Dron: `planear_dron` (lugares de resultados de Google, sin repetir, precauciones AFAC).
+  `proponer_formatos` (qué hacen los foodies locales → 5 formatos, uno elegido). `ideas_remarketing`.
+  Publicar: Facebook (/videos o /photos) e Instagram (Reels vía `video_url` pública `/publico/tampico/<token>/…`,
+  3 días) con `TAMPICO_FB_PAGINA`, `TAMPICO_FB_TOKEN`, `TAMPICO_IG_ID`; TikTok = descargar. Guía:
+  `despliegue/GUIA_TAMPIQUEANDO.md`. Demo con `AUTOCANAL_DEMO` (negocios de ejemplo).
