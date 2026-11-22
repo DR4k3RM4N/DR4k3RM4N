@@ -4,9 +4,9 @@
   // El edificio: ala de YouTube (x 0–13), pasillo con el despacho del jefe (x 14–16) y ala de TikTok Shop (x 17–30).
   // Abajo (filas 10–14) el patio de descanso que comparten los dos equipos.
   // A la derecha de TikTok, la sala de edición (x 31–37): tus compus editan ahí.
-  const COLS = 38, OFI = 10, ROWS = 15, TW = 32 * K, TH = 16 * K, MURO = 74, PAD = 16 * K;
-  const ALA_TT = 17, PASILLO = 14, ALA_SALA = 31; // primera columna de cada zona
-  const MAMPARAS = [PASILLO, ALA_TT, ALA_SALA]; // muros de vidrio entre zonas (sobre la línea x = …)
+  const COLS = 48, OFI = 10, ROWS = 15, TW = 32 * K, TH = 16 * K, MURO = 74, PAD = 16 * K;
+  const ALA_TT = 17, PASILLO = 14, ALA_SALA = 31, ALA_TAMP = 38; // primera columna de cada zona
+  const MAMPARAS = [PASILLO, ALA_TT, ALA_SALA, ALA_TAMP]; // muros de vidrio entre zonas (sobre la línea x = …)
   const PCS = { 1: [32, 1], 2: [35, 1], 3: [32, 5], 4: [35, 5] }; // lugar de cada compu (escritorio de 2 casillas)
   const PUERTAS = new Set([6, 7]); // filas donde las mamparas tienen puerta
   const ANCHO = (COLS + ROWS) * TW / 2 + PAD * 2;
@@ -17,7 +17,8 @@
   const iso = (x, y, z = 0) => [OX + (x - y) * TW / 2, OY + (x + y) * TH / 2 - z * K];
   const esTT = (id) => id.startsWith("tt_");
   const esSala = (id) => id.startsWith("sala_");
-  const alaDe = (id) => (esTT(id) ? "tiktok" : esSala(id) ? "edicion" : "youtube");
+  const esTamp = (id) => id.startsWith("tp_");
+  const alaDe = (id) => (esTT(id) ? "tiktok" : esSala(id) ? "edicion" : esTamp(id) ? "tampico" : "youtube");
 
   // ---------- el equipo de TikTok Shop (su oficina se conecta en el siguiente paso) ----------
   const EQUIPO_TT = [
@@ -29,6 +30,16 @@
     ["tt_disenadora", "Vale", "Diseñadora de portadas", "#d946ef", "bob", "Hace la portada del video para que se vea chida en tu perfil."],
     ["tt_analista", "Ana", "Analista de ventas", "#22c55e", "chongo", "Lee lo que vendió cada video y le dice al equipo qué repetir."],
   ];
+  // ---------- 🌮 el equipo de Tampiqueando (foodie de Tampico) ----------
+  const EQUIPO_TAMP = [
+    ["tp_lupita", "Lupita", "Negocios", "#f59e0b", "coleta", "Busca restaurantes, taquerías y cafés en Google Maps, sin repetir, y lleva el seguimiento de cada uno."],
+    ["tp_chuy", "Chuy", "Relaciones (WhatsApp)", "#10b981", "gorra", "Les escribe a los negocios por WhatsApp, les contesta y te avisa quién quiere grabar."],
+    ["tp_fer", "Fer", "Producción y guion", "#ef4444", "rizos", "Planea cada visita: gancho, guion, tomas, preguntas al dueño y textos para cada red."],
+    ["tp_paco", "Paco", "Piloto de dron", "#3b82f6", "audifonos", "Busca lugares para tomas de dron sin repetir, con la mejor hora y precauciones."],
+    ["tp_mar", "Mar", "Redes y publicación", "#ec4899", "largo", "Publica en Facebook e Instagram, deja TikTok listo y saca ideas para reusar lo publicado."],
+  ];
+  const SALUDOS_TAMP = { tp_lupita: "¿A dónde vamos a comer hoy? 🌮", tp_chuy: "Ya tengo el WhatsApp listo 📲",
+                         tp_paco: "Hélices revisadas 🚁", tp_fer: "Hoy grabamos jaibas, ¿o qué?", tp_mar: "¡A darle a Tampiqueando!" };
   const SALUDOS_TT = { tt_editor: "¡Ya llegué! Lentes listos 🤓", tt_guionista: "¿Y nuestros productos, jefe?",
                        tt_cazador: "Ya ando viendo qué se vende…", tt_director: "Luces, cámara… ¿celular?" };
 
@@ -38,6 +49,7 @@
     disenadora: [2, 5], editor: [4, 5], redactora: [6, 5], community: [8, 5],
     tt_cazador: [18, 1], tt_guionista: [20, 1], tt_director: [22, 1],
     tt_editor: [19, 5], tt_disenadora: [21, 5], tt_analista: [23, 5],
+    tp_lupita: [39, 1], tp_chuy: [41, 1], tp_fer: [43, 1], tp_paco: [40, 5], tp_mar: [42, 5],
   };
   const CASA = { jefe: [15, 1] };
   const VISITA = { jefe: [15, 3] };
@@ -51,6 +63,7 @@
   const PASEOS = [CAFE, [11, 7], [10, 4], [6, 3], [9, 8], [12, 7]];
   const PASEOS_TT = [CAFE_TT, [28, 7], [25, 6], [24, 3], [26, 8], [29, 7]];
   const PASEOS_SALA = [[33, 3], [36, 3], [34, 8], [36, 7], [32, 8], [35, 4]];
+  const PASEOS_TAMP = [[45, 3], [44, 7], [46, 8], [39, 8], [45, 5], [41, 4]];
   // patio de descanso (filas 10 a 14), compartido: cada lugar con su actividad
   const ACTIVIDADES = [
     { id: "ping_a", pos: [1, 12], icono: "🏓", frente: true, mano: true },
@@ -87,11 +100,14 @@
   // sala de edición: escritorios de las compus y su rack
   for (const [x, y] of Object.values(PCS)) { bloquear(x, y); bloquear(x + 1, y); }
   [[37, 0], [37, 9], [31, 9]].forEach(([x, y]) => bloquear(x, y));
+  // ala Tampiqueando: mesa de platillos, dron y plantas
+  [[45, 1], [46, 1], [45, 2], [46, 2], [46, 5], [47, 0], [47, 9], [38, 9], [44, 9]].forEach(([x, y]) => bloquear(x, y));
   // jardineras entre el edificio y el patio, con una entrada por zona
-  const ENTRADAS = new Set([6, 7, 15, 23, 24, 34]);
+  const ENTRADAS = new Set([6, 7, 15, 23, 24, 34, 42, 43]);
   for (let x = 0; x < COLS; x++) if (!ENTRADAS.has(x)) bloquear(x, OFI);
   [[2, 12], [3, 12], [0, 11], [6, 13], [8, 11], [0, 14], [13, 14], [13, 11],
-   [19, 12], [20, 12], [23, 13], [25, 11], [30, 11], [17, 14], [30, 14], [36, 11], [33, 14], [37, 14]].forEach(([x, y]) => bloquear(x, y));
+   [19, 12], [20, 12], [23, 13], [25, 11], [30, 11], [17, 14], [30, 14], [36, 11], [33, 14], [37, 14],
+   [39, 11], [46, 11], [47, 14], [40, 14]].forEach(([x, y]) => bloquear(x, y));
   // las mamparas de vidrio solo se cruzan por sus puertas
   const cruzaMampara = (p, n) => p[1] < OFI && p[0] !== n[0] && MAMPARAS.includes(Math.max(p[0], n[0])) && !PUERTAS.has(p[1]);
 
@@ -155,7 +171,7 @@
   function piso(estado, t) {
     for (let x = 0; x < COLS; x++) for (let y = 0; y < ROWS; y++) {
       if (y >= OFI) { // patio: pasto, con un camino de deck desde la puerta
-        const deck = ENTRADAS.has(x) || (y === 13 && ((x >= 4 && x <= 8) || (x >= 14 && x <= 16) || (x >= 21 && x <= 25) || (x >= 32 && x <= 35)))
+        const deck = ENTRADAS.has(x) || (y === 13 && ((x >= 4 && x <= 8) || (x >= 14 && x <= 16) || (x >= 21 && x <= 25) || (x >= 32 && x <= 35) || (x >= 41 && x <= 45)))
                      || (y === 12 && ((x >= 1 && x <= 4) || (x >= 18 && x <= 21)));
         const c = deck ? ((x + y) % 2 ? "#c79a6a" : "#bb8d5d") : ((x * 7 + y * 3) % 5 === 0 ? "#6fbf5f" : (x + y) % 2 ? "#7ccb6b" : "#74c263");
         poligono([iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)], c, deck ? "rgba(90,55,25,.25)" : "rgba(40,90,30,.18)");
@@ -167,6 +183,14 @@
         continue;
       }
       const celda = [iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)];
+      if (x >= ALA_TAMP) { // Tampiqueando: loseta de barro con mosaico tipo talavera cada tantito
+        poligono(celda, (x + y) % 2 ? "#d9774b" : "#cf6c41", "rgba(110,45,20,.25)");
+        if ((x * 5 + y * 3) % 7 === 0) {
+          poligono([iso(x + 0.3, y + 0.3), iso(x + 0.7, y + 0.3), iso(x + 0.7, y + 0.7), iso(x + 0.3, y + 0.7)], "#f1e7d0");
+          poligono([iso(x + 0.42, y + 0.42), iso(x + 0.58, y + 0.42), iso(x + 0.58, y + 0.58), iso(x + 0.42, y + 0.58)], "#1d4ed8");
+        }
+        continue;
+      }
       if (x >= ALA_SALA) { // sala de edición: piso oscuro tipo estudio, con rejilla
         poligono(celda, (x + y) % 2 ? "#2a2e3a" : "#262a35", "rgba(120,140,255,.10)");
         continue;
@@ -190,7 +214,7 @@
       g.fillRect(Math.round(vx), Math.round(vy), 10, 1);
     }
     // escalones de las puertas al patio y tapetes de bienvenida
-    for (const [a, b, color] of [[6, 8, "#a16207"], [15, 16, "#7f1d1d"], [23, 25, "#ea580c"], [34, 35, "#6d28d9"]]) {
+    for (const [a, b, color] of [[6, 8, "#a16207"], [15, 16, "#7f1d1d"], [23, 25, "#ea580c"], [34, 35, "#6d28d9"], [42, 44, "#0f766e"]]) {
       poligono([iso(a, OFI - 0.08), iso(b, OFI - 0.08), iso(b, OFI + 0.08), iso(a, OFI + 0.08)], "#8f6a44");
       poligono([iso(a + 0.2, OFI + 0.2), iso(b - 0.2, OFI + 0.2), iso(b - 0.2, OFI + 0.8), iso(a + 0.2, OFI + 0.8)], color);
     }
@@ -246,7 +270,8 @@
     for (const [a, b, c] of [[0, PASILLO, ["#f1e6d2", "#d6bf99", "#b39771", "#9c8059", "#a88a63"]],
                              [PASILLO, ALA_TT, ["#8a6446", "#6f4e35", "#5a3e2a", "#4a3222", "#5a3e2a"]],
                              [ALA_TT, ALA_SALA, ["#f4f6f9", "#2b2d3a", "#f97316", "#1f2130", "#3a3d4e"]],
-                             [ALA_SALA, COLS, ["#1d2030", "#141622", "#8b5cf6", "#0d0f18", "#2a2e44"]]]) {
+                             [ALA_SALA, ALA_TAMP, ["#1d2030", "#141622", "#8b5cf6", "#0d0f18", "#2a2e44"]],
+                             [ALA_TAMP, COLS, ["#fbbf24", "#0e7490", "#f97316", "#155e75", "#0e7490"]]]) {
       poligono([muroD(a, 0), muroD(b, 0), muroD(b, MURO), muroD(a, MURO)], c[0]);
       poligono([muroD(a, 0), muroD(b, 0), muroD(b, 18), muroD(a, 18)], c[1]); // franja inferior
       poligono([muroD(a, 18), muroD(b, 18), muroD(b, 19), muroD(a, 19)], c[2]);
@@ -256,7 +281,7 @@
     // ventanas
     const hora = new Date().getHours();
     const cielo = esDeNoche() ? ["#16204a", "#2a3a78"] : hora >= 17 ? ["#f59e6b", "#fcd5a5"] : ["#7cc4f2", "#c9ecff"];
-    for (const [a, b] of [[1.6, 3.4], [9.4, 10.6], [18.4, 20.2], [21.6, 23.4]]) {
+    for (const [a, b] of [[1.6, 3.4], [9.4, 10.6], [18.4, 20.2], [21.6, 23.4], [43.6, 45.4]]) {
       poligono([muroD(a - 0.08, 22), muroD(b + 0.08, 22), muroD(b + 0.08, 64), muroD(a - 0.08, 64)], "#fff");
       poligono([muroD(a, 26), muroD(b, 26), muroD(b, 62), muroD(a, 62)], cielo[0]);
       poligono([muroD(a, 26), muroD(b, 26), muroD(b, 40), muroD(a, 40)], cielo[1]);
@@ -332,12 +357,35 @@
     // sala de edición: tira de luz neón que cambia de color y letrero
     const tono = (t * 40) % 360;
     g.save(); g.globalAlpha = 0.9;
-    for (let x = ALA_SALA; x < COLS; x += 0.25) {
+    for (let x = ALA_SALA; x < ALA_TAMP; x += 0.25) {
       const [a1, a2] = [muroD(x, 60), muroD(x + 0.25, 61)];
       g.fillStyle = `hsl(${(tono + x * 25) % 360} 90% 60%)`; g.fillRect(Math.round(a1[0]), Math.round(a1[1]), Math.ceil(a2[0] - a1[0]) + 1, 2 * K);
     }
     g.restore();
     letrero(31.5, 72.5, "SALA DE EDICIÓN", "#c4b5fd", 7, "#4c1d95");
+    // 🌮 Tampiqueando: papel picado, letrero de neón, cuadro de la jaiba y mapa de lugares para dron
+    const PICADO = ["#ef4444", "#22c55e", "#3b82f6", "#ec4899", "#a855f7", "#f97316"];
+    for (let x = ALA_TAMP + 0.2, i = 0; x < COLS - 0.3; x += 0.62, i++) {
+      const vaiven = Math.sin(t * 2 + i) * 0.6;
+      poligono([muroD(x, 64), muroD(x + 0.5, 64), muroD(x + 0.5, 59 + vaiven), muroD(x + 0.25, 57.5 + vaiven), muroD(x, 59 + vaiven)], PICADO[i % PICADO.length]);
+    }
+    letrero(38.6, 72.5, "TAMPIQUEANDO", "#fde047", 7, "#b45309");
+    poligono([muroD(39.3, 30), muroD(41.1, 30), muroD(41.1, 56), muroD(39.3, 56)], "#7c2d12", "#3b1307");
+    poligono([muroD(39.45, 32), muroD(40.95, 32), muroD(40.95, 54), muroD(39.45, 54)], "#fef3c7");
+    poligono([muroD(39.7, 38), muroD(40.7, 38), muroD(40.7, 46), muroD(39.7, 46)], "#dc2626"); // la jaiba
+    poligono([muroD(39.55, 44), muroD(39.75, 44), muroD(39.75, 49), muroD(39.55, 49)], "#dc2626");
+    poligono([muroD(40.65, 44), muroD(40.85, 44), muroD(40.85, 49), muroD(40.65, 49)], "#dc2626");
+    poligono([muroD(41.6, 28), muroD(43.2, 28), muroD(43.2, 56), muroD(41.6, 56)], "#e0f2fe", "#0c4a6e"); // mapa
+    poligono([muroD(41.7, 30), muroD(43.1, 30), muroD(42.4, 44)], "#7dd3fc");
+    for (const [mx, mz] of [[41.95, 48], [42.6, 40], [42.85, 51], [42.2, 35]]) {
+      poligono([muroD(mx, mz), muroD(mx + 0.12, mz), muroD(mx + 0.12, mz + 3), muroD(mx, mz + 3)], Math.floor(t * 2 + mx) % 2 ? "#ef4444" : "#f97316");
+    }
+    poligono([muroD(46.0, 30), muroD(47.6, 30), muroD(47.6, 54), muroD(46.0, 54)], "#111827", "#000"); // tele: negocios por estado
+    const tp = estado.tampico || {};
+    [[tp.contactados || 0, "#10b981"], [tp.interesados || 0, "#f59e0b"], [tp.publicados || 0, "#ec4899"]].forEach(([n, col], i) => {
+      const alto = 3 + Math.min(n, 10) * 1.8;
+      poligono([muroD(46.25 + i * 0.45, 33), muroD(46.55 + i * 0.45, 33), muroD(46.55 + i * 0.45, 33 + alto), muroD(46.25 + i * 0.45, 33 + alto)], col);
+    });
     // pantalla grande con lo que pasa en la sala
     poligono([muroD(33.4, 26), muroD(35.6, 26), muroD(35.6, 52), muroD(33.4, 52)], "#0b0d16", "#000");
     const compus = salaEd?.compus || [];
@@ -367,11 +415,13 @@
   const PANTALLA = { investigador: "#1e3a8a", guionista: "#78350f", locutor: "#4c1d95", productora: "#831843",
                      disenadora: "#065f46", editor: "#7f1d1d", redactora: "#155e75", community: "#7c2d12",
                      tt_cazador: "#0c4a6e", tt_guionista: "#881337", tt_director: "#365314", tt_editor: "#7c2d12",
-                     tt_disenadora: "#701a75", tt_analista: "#14532d" };
+                     tt_disenadora: "#701a75", tt_analista: "#14532d",
+                     tp_lupita: "#78350f", tp_chuy: "#064e3b", tp_fer: "#7f1d1d", tp_paco: "#1e3a8a", tp_mar: "#831843" };
   const PANTALLA_LUZ = { investigador: "#60a5fa", guionista: "#fbbf24", locutor: "#a78bfa", productora: "#f472b6",
                          disenadora: "#34d399", editor: "#f87171", redactora: "#22d3ee", community: "#fb923c",
                          tt_cazador: "#38bdf8", tt_guionista: "#fb7185", tt_director: "#a3e635", tt_editor: "#fb923c",
-                         tt_disenadora: "#e879f9", tt_analista: "#4ade80" };
+                         tt_disenadora: "#e879f9", tt_analista: "#4ade80",
+                         tp_lupita: "#fbbf24", tp_chuy: "#34d399", tp_fer: "#f87171", tp_paco: "#60a5fa", tp_mar: "#f472b6" };
 
   function escritorio(id, x, y, t, estado) {
     caja(x + 0.06, y + 0.12, x + 0.94, y + 0.88, 0, 12, "#c8915a", "#9c6b3e", "#875a32");
@@ -408,6 +458,11 @@
     if (id === "tt_director") { caja(x + 0.1, y + 0.55, x + 0.28, y + 0.62, 12, 1, "#111827", "#000", "#000"); caja(x + 0.12, y + 0.62, x + 0.26, y + 0.8, 12, 0.6, "#f8fafc", "#e5e7eb", "#d1d5db"); } // claqueta
     if (id === "tt_editor") { caja(x + 0.12, y + 0.56, x + 0.2, y + 0.72, 12, 0.6, "#111", "#000", "#000"); caja(x + 0.8, y + 0.2, x + 0.9, y + 0.34, 12, 9, "#111827", "#1f2937", "#111827"); } // celular y bocina
     if (id === "tt_disenadora") caja(x + 0.1, y + 0.55, x + 0.26, y + 0.8, 12, 1, "#e879f9", "#a21caf", "#86198f"); // tableta
+    if (id === "tp_lupita") caja(x + 0.1, y + 0.55, x + 0.28, y + 0.8, 12, 1, "#fde68a", "#f59e0b", "#d97706"); // mapa doblado
+    if (id === "tp_chuy") caja(x + 0.12, y + 0.56, x + 0.2, y + 0.72, 12, 0.6, "#10b981", "#047857", "#064e3b"); // cel con WhatsApp
+    if (id === "tp_fer") { caja(x + 0.1, y + 0.55, x + 0.28, y + 0.62, 12, 1, "#111827", "#000", "#000"); caja(x + 0.12, y + 0.62, x + 0.26, y + 0.8, 12, 0.6, "#f8fafc", "#e5e7eb", "#d1d5db"); } // claqueta
+    if (id === "tp_paco") caja(x + 0.1, y + 0.56, x + 0.3, y + 0.76, 12, 2, "#374151", "#1f2937", "#111827"); // control del dron
+    if (id === "tp_mar") caja(x + 0.1, y + 0.2, x + 0.2, y + 0.3, 12, 5, "#fbcfe8", "#ec4899", "#be185d"); // taza rosa
     if (id === "tt_analista") for (let i = 0; i < 3; i++) caja(x + 0.1 + i * 0.05, y + 0.6, x + 0.13 + i * 0.05, y + 0.66, 12, 2 + i * 2, "#4ade80", "#16a34a", "#15803d"); // gráfica
   }
 
@@ -715,6 +770,38 @@
     }
   }
 
+  // 🌮 mesa de platillos para fotos (jaibas, tacos y salsa) y el dron en su base
+  function mesaPlatillos(t) {
+    caja(45.08, 1.1, 46.92, 2.9, 0, 13, "#a16207", "#854d0e", "#713f12");
+    caja(45.08, 1.1, 46.92, 2.9, 13, 1, "#fef3c7", "#fde68a", "#fcd34d"); // mantel
+    caja(45.3, 1.35, 45.8, 1.85, 14, 1, "#f8fafc", "#e2e8f0", "#cbd5e1"); caja(45.4, 1.45, 45.7, 1.75, 15, 2, "#dc2626", "#b91c1c", "#991b1b"); // jaiba
+    caja(46.1, 1.4, 46.7, 1.8, 14, 1, "#f8fafc", "#e2e8f0", "#cbd5e1"); // tacos
+    for (let i = 0; i < 3; i++) caja(46.15 + i * 0.17, 1.48, 46.27 + i * 0.17, 1.72, 15, 2, "#fde68a", "#eab308", "#ca8a04");
+    caja(45.5, 2.2, 45.75, 2.45, 14, 4, "#16a34a", "#15803d", "#166534"); // salsa verde
+    caja(45.9, 2.2, 46.15, 2.45, 14, 4, "#dc2626", "#b91c1c", "#991b1b"); // salsa roja
+    // vapor
+    g.fillStyle = "rgba(255,255,255,.35)";
+    for (let i = 0; i < 3; i++) { const [vx, vy] = iso(45.55, 1.6, 22 + ((t * 10 + i * 6) % 16)); g.fillRect(Math.round(vx) + i * 3 - 3, Math.round(vy), 2, 3); }
+  }
+  function dron(t, volando) {
+    caja(46.15, 5.15, 46.85, 5.85, 0, 6, "#334155", "#1e293b", "#0f172a"); // base
+    const z = volando ? 22 + Math.sin(t * 3) * 3 : 7;
+    caja(46.3, 5.3, 46.7, 5.7, z, 3, "#e5e7eb", "#9ca3af", "#6b7280"); // cuerpo
+    for (const [dx, dy] of [[0, 0], [0.5, 0], [0, 0.5], [0.5, 0.5]]) {
+      const [hx, hy] = iso(46.25 + dx, 5.25 + dy, z + 4);
+      g.fillStyle = volando ? (Math.floor(t * 20) % 2 ? "rgba(203,213,225,.9)" : "rgba(148,163,184,.6)") : "#94a3b8";
+      g.fillRect(Math.round(hx) - (volando ? 7 : 4), Math.round(hy), volando ? 14 : 8, 2);
+    }
+    if (volando) { const [lx, ly] = iso(46.5, 5.5, z); g.fillStyle = Math.floor(t * 3) % 2 ? "#ef4444" : "#22c55e"; g.fillRect(Math.round(lx) - 1, Math.round(ly) + 2, 2, 2); }
+  }
+  function palmera(x, y) {
+    caja(x + 0.4, y + 0.4, x + 0.6, y + 0.6, 0, 34, "#a16207", "#854d0e", "#713f12");
+    const [px, py] = iso(x + 0.5, y + 0.5, 34);
+    g.fillStyle = "#16a34a";
+    for (const [dx, dy, w] of [[-18, 2, 16], [2, 2, 16], [-12, -4, 24], [-8, 5, 16]]) g.fillRect(Math.round(px) + dx, Math.round(py) + dy, w, 4);
+    g.fillStyle = "#15803d"; g.fillRect(Math.round(px) - 4, Math.round(py) - 2, 8, 6);
+  }
+
   function arbol(x, y) {
     caja(x + 0.43, y + 0.43, x + 0.57, y + 0.57, 0, 22, "#92400e", "#78350f", "#713f12");
     const [px, py] = iso(x + 0.5, y + 0.5, 22);
@@ -767,15 +854,18 @@
   const PIEL = { productora: "#f2c6a0", investigador: "#d9a17a", guionista: "#8d5a3b", locutor: "#f5d0b0", disenadora: "#c68863",
                  editor: "#e8b48f", redactora: "#a86b4a", community: "#f0c09a", jefe: "#e0ac85",
                  tt_cazador: "#b97a56", tt_guionista: "#f1c6a3", tt_director: "#7a4a2e", tt_editor: "#e9b996",
-                 tt_disenadora: "#c98e6b", tt_analista: "#9a5f3f" };
+                 tt_disenadora: "#c98e6b", tt_analista: "#9a5f3f",
+                 tp_lupita: "#c98e6b", tp_chuy: "#8d5a3b", tp_fer: "#e8b48f", tp_paco: "#b97a56", tp_mar: "#f1c6a3" };
   const PELO = { productora: "#2b1a12", investigador: "#3b2a20", guionista: "#1a1110", locutor: "#c08a3e", disenadora: "#5a2d82",
                  editor: "#2a2a2a", redactora: "#6b2f1a", community: "#e2683c", jefe: "#1f1f1f",
                  tt_cazador: "#1c1917", tt_guionista: "#7c2d12", tt_director: "#111111", tt_editor: "#3b2a1a",
-                 tt_disenadora: "#be185d", tt_analista: "#27170f" };
+                 tt_disenadora: "#be185d", tt_analista: "#27170f",
+                 tp_lupita: "#1c1917", tp_chuy: "#111111", tp_fer: "#3b2a1a", tp_paco: "#27170f", tp_mar: "#7c2d12" };
   const PANTALON = { productora: "#1f2937", investigador: "#2f3a56", guionista: "#3f3f46", locutor: "#2f3a56", disenadora: "#4b3a2a",
                      editor: "#2f3a56", redactora: "#3f3f46", community: "#2f3a56", jefe: "#1e293b",
                      tt_cazador: "#3f3f46", tt_guionista: "#1f2937", tt_director: "#4b3a2a", tt_editor: "#1e293b",
-                     tt_disenadora: "#2f3a56", tt_analista: "#3f3f46" };
+                     tt_disenadora: "#2f3a56", tt_analista: "#3f3f46",
+                     tp_lupita: "#1f2937", tp_chuy: "#2f3a56", tp_fer: "#3f3f46", tp_paco: "#1e293b", tp_mar: "#4b3a2a" };
   const CONTORNO = "#1b1a26";
 
   // Dibuja un personaje con los pies en (fx, fy). o = {frente, paso, tecleando, sentado, libre, t}
@@ -888,6 +978,10 @@
     id, nombre, rol, color, pelo, desc, lentes: id === "tt_editor", estado: "libre", ubicacion: "casa", dice: "", dice_t: 0, enObra: true,
   }));
   let equipoTT = enObraTT, tareasTT = [], ultimoYT = null, equipoSala = [], tareasSala = [];
+  const baseTamp = EQUIPO_TAMP.map(([id, nombre, rol, color, pelo, desc]) => ({
+    id, nombre, rol, color, pelo, desc, estado: "libre", ubicacion: "casa", dice: "", dice_t: 0 }));
+  // lo que manda la oficina (quién trabaja y qué dice) encima de la lista fija
+  const equipoTamp = (n) => baseTamp.map((a) => ({ ...a, ...((n?.tampico_agentes || []).find((x) => x.id === a.id) || {}) }));
 
   // Estado de la oficina de TikTok Shop (null = apagada: su equipo vuelve a estar "en obra")
   function actualizarTT(tt) {
@@ -898,7 +992,7 @@
 
   function actualizar(nuevo) {
     ultimoYT = nuevo;
-    const lista = [...nuevo.agentes, ...equipoTT, ...equipoSala];
+    const lista = [...nuevo.agentes, ...equipoTT, ...equipoSala, ...equipoTamp(nuevo)];
     const agentes = {};
     lista.forEach((a) => (agentes[a.id] = a));
     estado = { ...nuevo, agentes, tareas: [...(nuevo.tareas || []), ...tareasTT, ...tareasSala] };
@@ -908,6 +1002,7 @@
         const c = CASA[a.id];
         v = vivos[a.id] = { pos: [c[0] + 0.5, c[1] + 0.5], camino: [], meta: c, frente: a.id === "jefe", dice_t: a.dice_t,
                             globo: null, pasearEn: performance.now() + 8000 + Math.random() * 20000, dom: crearDom(a) };
+        if (esTamp(a.id) && SALUDOS_TAMP[a.id]) setTimeout(() => { if (vivos[a.id]) vivos[a.id].pendiente = SALUDOS_TAMP[a.id]; }, 3000 + Math.random() * 12000);
         if (a.enObra && SALUDOS_TT[a.id]) setTimeout(() => { if (vivos[a.id] && equipoTT === enObraTT) vivos[a.id].pendiente = SALUDOS_TT[a.id]; }, 2500 + Math.random() * 9000);
       }
       const meta = destinoDe(a), clave = meta.join(",");
@@ -936,7 +1031,8 @@
 
   const ICONO_TRABAJO = { productora: "📋", investigador: "🔎", guionista: "✍️", locutor: "🎙️", disenadora: "🎨",
                           editor: "🎬", redactora: "📝", community: "📤", jefe: "👔",
-                          tt_cazador: "🔎", tt_guionista: "✍️", tt_director: "🎥", tt_editor: "🎬", tt_disenadora: "🎨", tt_analista: "📊" };
+                          tt_cazador: "🔎", tt_guionista: "✍️", tt_director: "🎥", tt_editor: "🎬", tt_disenadora: "🎨", tt_analista: "📊",
+                          tp_lupita: "📍", tp_chuy: "📲", tp_fer: "🎬", tp_paco: "🚁", tp_mar: "📣" };
   const DURACION = { ficha: 25, tomas: 25, ideas: 30, investigar: 90, guion: 60, voz: 45, miniatura: 8, video: 150, blog: 60, publicar: 60 };
 
   function tareasDe(id) { return (estado.tareas || []).filter((t) => t.agente === id); }
@@ -990,6 +1086,13 @@
       agrega(x + 1 + y + 0.5, () => pcGamer(slot, t));
       if (compuEn(slot)) { agrega(x + y + 1 + 0.9, () => silla(x, y + 1)); agrega(x + y + 1 + 1.3, () => respaldo(x, y + 1, COLORES_SALA[(slot - 1) % 4])); }
     }
+    // 🌮 Tampiqueando
+    agrega(45 + 2 + 0.6, () => mesaPlatillos(t));
+    agrega(46 + 5 + 0.6, () => dron(t, estado.agentes.tp_paco?.estado === "trabajando"));
+    agrega(47 + 0 + 0.5, () => palmera(47, 0)); agrega(47 + 9 + 0.5, () => planta(47, 9, true)); agrega(38 + 9 + 0.5, () => planta(38, 9));
+    agrega(44 + 9 + 0.5, () => planta(44, 9));
+    agrega(39.5 + 11.5 + 0.5, () => palmera(39, 11)); agrega(46.5 + 11.5 + 0.5, () => arbol(46, 11));
+    agrega(40.5 + 14.5 + 0.5, () => arbol(40, 14)); agrega(47.5 + 14.5 + 0.5, () => palmera(47, 14));
     agrega(37.5 + 0.5, () => rack(t)); agrega(37 + 9 + 0.5, () => planta(37, 9, true)); agrega(31 + 9 + 0.5, () => planta(31, 9));
     // mamparas de vidrio entre zonas, con marcos en las puertas
     for (const lx of MAMPARAS) {
@@ -1040,7 +1143,7 @@
           const conPareja = libres.filter((x) => x.id.startsWith("ping") && ocupadas.has(x.id === "ping_a" ? "ping_b" : "ping_a"));
           let elegido = conPareja[0] || (Math.random() < 0.75 && libres.length ? libres[Math.floor(Math.random() * libres.length)] : null);
           v.actividad = elegido ? elegido.id : null;
-          const paseos = esTT(id) ? PASEOS_TT : esSala(id) ? PASEOS_SALA : PASEOS;
+          const paseos = esTT(id) ? PASEOS_TT : esSala(id) ? PASEOS_SALA : esTamp(id) ? PASEOS_TAMP : PASEOS;
           irA(v, elegido ? elegido.pos : paseos[Math.floor(Math.random() * paseos.length)]);
           v.pasearEn = ahora + 18000 + Math.random() * 25000;
         } else {
@@ -1222,7 +1325,7 @@
     return { x: izq - m, y: arriba - m, w: der - izq + m * 2, h: abajo - arriba + m * 2 };
   }
   const VISTAS = { todo: { x: 0, y: 0, w: ANCHO, h: ALTO }, youtube: marco(0, ALA_TT), tiktok: marco(PASILLO, ALA_SALA + 1),
-                   edicion: marco(ALA_SALA - 2, COLS) };
+                   edicion: marco(ALA_SALA - 2, ALA_TAMP + 1), tampico: marco(ALA_TAMP - 2, COLS) };
   const leerAla = () => { try { return localStorage.getItem("ala"); } catch { return null; } };
   let ala = VISTAS[leerAla()] ? leerAla() : (window.innerWidth < 760 ? "youtube" : "todo");
   const cam = { ...VISTAS[ala] };
@@ -1337,6 +1440,7 @@
     },
     equipoSala: () => equipoSala,
     equipoTT: () => equipoTT,
+    equipoTamp: () => equipoTamp(ultimoYT),
     encima: (id) => { encima = id; },
     verAla,
   };

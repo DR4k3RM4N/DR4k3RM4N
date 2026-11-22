@@ -429,7 +429,7 @@
     const opcionesEstado = (actual) => Object.entries(ESTADO_NEGOCIO).map(([e, txt]) => `<option value="${e}" ${e === actual ? "selected" : ""}>${txt}</option>`).join("");
     caja.innerHTML = `
       <section class="tarjeta"><h4>🌮 Tampiqueando · foodie de Tampico, Madero y Altamira</h4>
-        <p class="pista">Lupita busca negocios sin repetir, Toño les escribe por WhatsApp y les contesta, Fer planea cada visita
+        <p class="pista">Lupita busca negocios sin repetir, Chuy les escribe por WhatsApp y les contesta, Fer planea cada visita
           (guion, tomas y textos) y la manda a la sala de edición; aquí planeas el dron, el formato y publicas en Facebook,
           Instagram y TikTok.</p>
         <p>WhatsApp (plantilla) ${ok(cx.whatsapp_plantilla)} · Facebook ${ok(cx.facebook)} · Instagram ${ok(cx.instagram)} · TikTok: listo para subir tú</p>
@@ -440,8 +440,8 @@
       <section class="tarjeta"><h4>💬 Lo que les ofreces a los negocios</h4>
         <textarea id="tp-propuesta" rows="3" placeholder="Ej.: Te hago un video para Facebook, Instagram y TikTok de tu negocio sin costo a cambio de la comida; lo publico en Tampiqueando y te lo comparto…">${esc(aj.propuesta)}</textarea>
         <div class="acciones"><button class="btn" data-tp="guardar_propuesta">💾 Guardar</button></div>
-        <label class="chk"><input type="checkbox" data-tp-aj="envio_auto" ${aj.envio_auto ? "checked" : ""}> Toño escribe solo a los negocios nuevos (lun-sáb, ${aj.hora_inicio}:00-${aj.hora_fin}:00)</label>
-        <label class="chk"><input type="checkbox" data-tp-aj="responder_auto" ${aj.responder_auto ? "checked" : ""}> Toño contesta solo cuando un negocio responde (siempre te avisa)</label>
+        <label class="chk"><input type="checkbox" data-tp-aj="envio_auto" ${aj.envio_auto ? "checked" : ""}> Chuy escribe solo a los negocios nuevos (lun-sáb, ${aj.hora_inicio}:00-${aj.hora_fin}:00)</label>
+        <label class="chk"><input type="checkbox" data-tp-aj="responder_auto" ${aj.responder_auto ? "checked" : ""}> Chuy contesta solo cuando un negocio responde (siempre te avisa)</label>
         <label>Primeros mensajes al día <select data-tp-aj="mensajes_dia">${[0, 3, 5, 8, 10, 15, 20].map((n) => `<option ${n === aj.mensajes_dia ? "selected" : ""}>${n}</option>`).join("")}</select></label>
         <p class="pista">Hoy van ${t.enviados_hoy}. Si alguien dice «no gracias», ya no se le escribe.</p>
       </section>
@@ -455,7 +455,7 @@
           <small class="pista">${esc(n.direccion || "")}${n.fecha_propuesta ? ` · 📅 propone: ${esc(n.fecha_propuesta)}` : ""}</small>
           <div class="fila"><select data-tp-estado="${esc(n.id)}">${opcionesEstado(n.estado)}</select>
             <button class="btn btn-mini" data-tp="plan" data-id="${esc(n.id)}">🎬 Plan de visita</button>
-            ${(t.chats[n.id] || []).length ? `<details><summary class="btn btn-mini">💬 Plática (${t.chats[n.id].length})</summary>${t.chats[n.id].map((m) => `<p class="pista"><b>${m.de === "negocio" ? "Ellos" : "Toño"}:</b> ${esc(m.texto)}</p>`).join("")}</details>` : ""}</div>
+            ${(t.chats[n.id] || []).length ? `<details><summary class="btn btn-mini">💬 Plática (${t.chats[n.id].length})</summary>${t.chats[n.id].map((m) => `<p class="pista"><b>${m.de === "negocio" ? "Ellos" : "Chuy"}:</b> ${esc(m.texto)}</p>`).join("")}</details>` : ""}</div>
         </div>`).join("")}</div>
       </section>
       <section class="tarjeta"><h4>🎬 Planes de visita</h4>
@@ -872,14 +872,16 @@
   const todasLasTareas = () => [...(estado.tareas || []), ...(estadoTT?.tareas || []), ...(estadoSala?.tareas || [])];
   const tareasDe = (id) => todasLasTareas().filter((t) => t.agente === id);
   // (las tareas de los editores de la sala vienen en estadoSala.tareas)
-  const equipoCompleto = () => [...estado.agentes, ...(window.Oficina.equipoTT?.() || []), ...(window.Oficina.equipoSala?.() || [])];
+  const equipoCompleto = () => [...estado.agentes, ...(window.Oficina.equipoTT?.() || []), ...(window.Oficina.equipoSala?.() || []),
+                                 ...(window.Oficina.equipoTamp?.() || [])];
   function equipoVisible() {
     const ala = window.Oficina.ala?.() || "todo";
     if (ala === "edicion") return equipoCompleto().filter((a) => ["editor", "tt_editor", "jefe"].includes(a.id) || a.id.startsWith("sala_"));
-    return equipoCompleto().filter((a) => ala === "todo" || a.id === "jefe" || (ala === "tiktok") === esTT(a.id));
+    if (ala === "tampico") return equipoCompleto().filter((a) => a.id === "jefe" || a.id.startsWith("tp_"));
+    return equipoCompleto().filter((a) => !a.id.startsWith("tp_") && (ala === "todo" || a.id === "jefe" || (ala === "tiktok") === esTT(a.id)));
   }
   const TITULO_ALA = { todo: "Todo el edificio", youtube: "▶ Equipo YouTube", tiktok: "🛒 Equipo TikTok Shop",
-                       edicion: "🎬 Los editores (y tus compus en la pestaña Sala)" };
+                       edicion: "🎬 Los editores (y tus compus en la pestaña Sala)", tampico: "🌮 Equipo Tampiqueando" };
   function estadoAgente(a) {
     const ts = tareasDe(a.id);
     if (ts.some((t) => t.estado === "trabajando")) return ["Trabajando", "trab"];
@@ -993,7 +995,8 @@
   window.addEventListener("ala", () => pintarEquipo(true));
   // A la derecha solo los menús de la oficina que estás viendo (en "Todo", todos)
   const PESTANAS_ALA = { youtube: ["bandeja", "proyectos", "resultados", "estilo", "equipo", "chat", "tampico"],
-                         tiktok: ["shop", "equipo", "chat", "tampico"], edicion: ["sala", "equipo", "tampico"] };
+                         tiktok: ["shop", "equipo", "chat", "tampico"], edicion: ["sala", "equipo", "tampico"],
+                         tampico: ["tampico", "equipo", "chat"] };
   function menusDelAla(ala) {
     const visibles = PESTANAS_ALA[ala];
     document.querySelectorAll(".pestana").forEach((b) => (b.hidden = !!visibles && !visibles.includes(b.dataset.tab)));

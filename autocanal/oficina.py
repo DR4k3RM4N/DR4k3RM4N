@@ -157,6 +157,7 @@ class Oficina:
         if tg.activo():
             threading.Thread(target=tg.escuchar, args=(self.recibir_telegram,), daemon=True).start()
         self.cupo_lleno: dict[str, float] = {}  # canal → hasta cuándo no intentar subir (límite de YouTube)
+        self.tamp_agentes: dict[str, dict] = {}  # 🌮 quién del equipo de Tampiqueando trabaja y qué dice
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
         threading.Thread(target=self._ciclo_deseos, daemon=True).start()
@@ -198,6 +199,7 @@ class Oficina:
                     "publicar_solo": bool(estilo.cargar()["ajustes"].get("publicar_solo")),
                     "a_la_vez": self.a_la_vez(),
                     "version": self._version(),
+                    "tampico": self._tampico_cuenta(), "tampico_agentes": list(self.tamp_agentes.values()),
                     "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
                               + [t for t in self.tareas[-250:] if t["estado"] not in ACTIVAS][-120:]}
 
@@ -1052,6 +1054,7 @@ class Oficina:
 
     # ---------- 🌮 Tampiqueando ----------
     def _aviso_tampico(self, texto: str) -> None:
+        self._tamp("tp_chuy", "libre", texto[:90])
         with self.lock:
             self.log.append({"t": time.time(), "quien": "productora", "texto": texto})
             self._tocar()
@@ -1068,7 +1071,52 @@ class Oficina:
                 print(f"aviso: tampiqueando: {exc}")
             time.sleep(900)
 
+    QUIEN_TAMP = {"buscar": ("tp_lupita", "Busco negocios en Google Maps…"), "plan": ("tp_fer", "Planeando la visita…"),
+                  "dron": ("tp_paco", "Busco lugares para volar 🚁"), "formatos": ("tp_fer", "Viendo qué hacen los foodies…"),
+                  "remarketing": ("tp_mar", "Ideas para reusar lo publicado…"), "publicar": ("tp_mar", "Publicando…")}
+
+    def _tamp(self, agente: str, estado: str, dice: str = "") -> None:
+        with self.lock:
+            a = self.tamp_agentes.setdefault(agente, {"id": agente})
+            a["estado"] = estado
+            if dice:
+                a["dice"], a["dice_t"] = dice, time.time()
+            self._tocar()
+
+    def _tampico_cuenta(self) -> dict:
+        """Para la tele del ala: cuántos negocios van en cada paso."""
+        if time.time() - getattr(self, "_tamp_t", 0) < 60:
+            return self._tamp_cache
+        try:
+            from agentes import tampico
+            n = tampico.cargar()["negocios"]
+            self._tamp_cache = {"contactados": sum(1 for x in n if x["estado"] in ("contactado", "respondio")),
+                                "interesados": sum(1 for x in n if x["estado"] in ("interesado", "plan", "grabado")),
+                                "publicados": sum(1 for x in n if x["estado"] == "publicado")}
+        except Exception:  # noqa: BLE001
+            self._tamp_cache = {}
+        self._tamp_t = time.time()
+        return self._tamp_cache
+
     def tampico_accion(self, datos: dict) -> dict:
+        a = str(datos.get("accion") or "")
+        quien = self.QUIEN_TAMP.get(a)
+        if not quien:
+            return self._tampico_accion(datos)
+        self._tamp(quien[0], "trabajando", quien[1])
+        try:
+            r = self._tampico_accion(datos)
+        except Exception:
+            self._tamp(quien[0], "libre", "Uy, algo falló 😕")
+            raise
+        resumen = {"buscar": lambda r: f"¡Encontré {r.get('nuevos', 0)} negocio(s) nuevo(s)!",
+                   "dron": lambda r: f"{r.get('nuevos', 0)} lugar(es) nuevo(s) para volar ✔",
+                   "plan": lambda r: "¡Plan de visita listo! 🎬", "formatos": lambda r: "Te dejé 5 formatos nuevos 🧪",
+                   "remarketing": lambda r: "Ideas listas ♻️", "publicar": lambda r: "Subiendo a las redes…"}
+        self._tamp(quien[0], "libre", resumen[a](r) if "error" not in r else str(r["error"])[:80])
+        return r
+
+    def _tampico_accion(self, datos: dict) -> dict:
         from agentes import tampico
         a = str(datos.get("accion") or "")
         ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = None, "tampico", None

@@ -552,3 +552,9 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   Publicar: Facebook (/videos o /photos) e Instagram (Reels vía `video_url` pública `/publico/tampico/<token>/…`,
   3 días) con `TAMPICO_FB_PAGINA`, `TAMPICO_FB_TOKEN`, `TAMPICO_IG_ID`; TikTok = descargar. Guía:
   `despliegue/GUIA_TAMPIQUEANDO.md`. Demo con `AUTOCANAL_DEMO` (negocios de ejemplo).
+- **Sala visual de Tampiqueando** (oficina.js): `COLS` 38→48, ala nueva desde `ALA_TAMP = 38` (mampara en x=38): piso de
+  barro con mosaico, muro amarillo/turquesa, papel picado, letrero «TAMPIQUEANDO», cuadro de jaiba, mapa con pines,
+  tele con negocios por estado (`estado.tampico`), mesa de platillos (jaiba, tacos, salsas con vapor), dron que vuela
+  cuando Paco trabaja, palmeras; entrada al patio en x=42-43. Equipo `tp_*` (Lupita negocios, Chuy WhatsApp, Fer
+  producción, Paco dron, Mar redes; Chuy = el antes llamado Toño de tampico.py). Estado desde `estado.tampico_agentes`
+  (oficina `_tamp`, marcado por `tampico_accion`). Botón de ala «🌮 Tampiqueando» (pestañas tampico, equipo, chat).

@@ -3,7 +3,7 @@
 El equipo:
 - 🔎 Lupita (negocios): busca restaurantes, taquerías, cafés… en Google Maps (Serper), sin repetir, y lleva el
   seguimiento de cada uno (nuevo → contactado → respondió → interesado → plan → grabado → publicado).
-- 💬 Toño (relaciones): manda el primer WhatsApp con la plantilla aprobada por Meta (regla de WhatsApp: a quien no te
+- 💬 Chuy (relaciones): manda el primer WhatsApp con la plantilla aprobada por Meta (regla de WhatsApp: a quien no te
   ha escrito solo se le puede mandar una plantilla), y cuando el negocio contesta le responde con Claude dentro de la
   ventana de 24 h, sin prometer nada que no esté en tu propuesta; te avisa de cada respuesta. Tope diario y horario.
 - 🎬 Fer (producción): plan de visita por negocio: formato, gancho, guion, lista de tomas (cel, cámara, gimbal, dron),
@@ -39,7 +39,7 @@ ZONAS = ["Tampico", "Ciudad Madero", "Altamira"]
 ESTADOS = ["nuevo", "contactado", "respondio", "interesado", "plan", "grabado", "publicado", "no_interesado", "sin_numero"]
 _candado = threading.RLock()
 AJUSTES = {
-    "propuesta": "",           # lo que ofreces a los negocios (colaboración, costo, qué incluye): Toño solo dice esto
+    "propuesta": "",           # lo que ofreces a los negocios (colaboración, costo, qué incluye): Chuy solo dice esto
     "envio_auto": False,       # mandar WhatsApp solos a los negocios nuevos
     "responder_auto": True,    # contestar solos cuando un negocio responde (siempre te avisa)
     "mensajes_dia": 8,         # tope de primeros mensajes al día (que no se vea como spam)
@@ -160,7 +160,7 @@ def mover(nid: str, estado: str, nota: str = "") -> dict:
     return {"ok": True}
 
 
-# ---------- 💬 Toño: WhatsApp ----------
+# ---------- 💬 Chuy: WhatsApp ----------
 def _plantilla() -> str:
     return config.env("TAMPICO_WA_PLANTILLA", "")
 
@@ -203,7 +203,7 @@ def enviar_pendientes(avisar=None) -> int:
                 guardar(d)
         time.sleep(4)
     if hechos and avisar:
-        avisar(f"🌮 Toño le escribió a {hechos} negocio(s) nuevo(s) por WhatsApp. Te aviso cuando contesten.")
+        avisar(f"🌮 Chuy le escribió a {hechos} negocio(s) nuevo(s) por WhatsApp. Te aviso cuando contesten.")
     return hechos
 
 
@@ -240,7 +240,7 @@ def respuesta_negocio(mensaje: dict, avisar=None) -> bool:
                                              "¡Que le vaya muy bien! 🌮"), "no_interesado", "No le interesa; ya no se le escribe.", ""
     elif aj["responder_auto"]:
         r = claude.json_estructurado(
-            "Eres Toño, de Tampiqueando (cuenta foodie de Tampico, Madero y Altamira en Facebook, Instagram y TikTok; "
+            "Eres Chuy, de Tampiqueando (cuenta foodie de Tampico, Madero y Altamira en Facebook, Instagram y TikTok; "
             "la lleva Miguel). Platicas por WhatsApp con un negocio de comida que contestó a nuestra invitación para "
             "hacerle contenido. Español de México, amable, breve (máx. 3 frases), sin presionar. REGLAS: solo ofreces "
             "lo que dice LA PROPUESTA (si no dice algo, como precios o fechas, di que Miguel se los confirma); nunca "

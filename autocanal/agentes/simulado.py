@@ -191,7 +191,7 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
         return {"lo_que_ya_hay": "(Demo) Reseñas en mesa.", "recomendado": 0, "formatos": [
             {"nombre": "(Demo) Un día con $200", "descripcion": "ejemplo", "por_que_funciona": "ejemplo", "como_se_graba": "ejemplo",
              "ejemplo_gancho": "Tengo 200 pesos…", "serie": "Semanal"}]}
-    if "para_el_jefe" in props:  # 💬 Toño responde (demo)
+    if "para_el_jefe" in props:  # 💬 Chuy responde (demo)
         return {"respuesta": "(demo) ¡Gracias por contestar! Miguel le confirma el día.", "estado": "interesado",
                 "para_el_jefe": "(demo) Le interesa", "fecha_propuesta": ""}
     if list(props) == ["ideas"] and "red" in json.dumps(props):  # ♻️ remarketing (demo)
