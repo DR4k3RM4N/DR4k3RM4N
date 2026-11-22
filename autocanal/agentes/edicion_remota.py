@@ -42,6 +42,17 @@ SOLO_GRABACION_EDICION = """FORMATO 100% GRABACIÓN DEL CEL (lo más importante 
 - La escena 1 (gancho) puede abrir con `texto` golpe corto encima de la grabación."""
 
 
+def lugares(tipo: str) -> tuple[int, int]:
+    """(compus prendidas que saben hacer ese tipo, lugares libres que tienen ahorita)."""
+    import requests
+    try:
+        j = requests.get(f"{SALA_URL}/interno/disponible", params={"tipo": tipo}, timeout=3).json()
+        compus = int(j.get("compus") or 0)
+        return compus, int(j.get("libres", compus) or 0)
+    except (requests.RequestException, ValueError):
+        return 0, 0
+
+
 def _direccion() -> str:
     """Lo que Claude (el editor de tu compu) debe respetar: manual del canal, tus correcciones y tus números."""
     from . import lecciones, manual
@@ -156,7 +167,7 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
         print(f"  · la sala no aceptó la edición: {r.get('error')}", flush=True)
         return None
     print("  · la edición va a una compu de la sala" + (" (la dirige Claude)" if tipo == "edu_ia" else ""), flush=True)
-    inicio, en_cola_desde = time.time(), time.time()
+    inicio, en_cola_desde, fila_desde = time.time(), time.time(), None
     while time.time() - inicio < 3 * 3600:
         time.sleep(3)
         try:
@@ -183,16 +194,25 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
             print(f"  · la compu no pudo editarlo ({e.get('error')}); lo edito aquí", flush=True)
             break
         if estado == "en_cola":
-            # 🖥️ si hay una compu prendida que sabe hacerlo, el video espera su turno ahí (es más rápida que el
-            # servidor); solo si en 3 min no hay NINGUNA compu prendida para esto, lo edita el servidor
-            if compus_libres(tipo):
+            # 🖥️ el video espera su turno en tus compus (son más rápidas), pero sin quedarse atorado:
+            # - si no hay NINGUNA compu prendida para esto en 3 min → lo edita el servidor;
+            # - si hay lugar libre y en 8 min nadie lo toma (compu trabada o versión vieja) → el servidor;
+            # - si están ocupadas, espera hasta 25 min en fila → luego el servidor.
+            fila_desde = fila_desde or time.time()
+            en_fila = time.time() - fila_desde
+            compus, libres = lugares(tipo)
+            if not compus:
+                if time.time() - en_cola_desde > 180:
+                    break
+            else:
                 en_cola_desde = time.time()
+                if (libres and en_fila > 480) or en_fila > 1500:
+                    print("  · ninguna compu lo tomó a tiempo; lo edito aquí", flush=True)
+                    break
                 if avance:
-                    avance("🖥️ En fila para tu compu (está editando otros)", 0.02)
-            elif time.time() - en_cola_desde > 180:
-                break
+                    avance(f"🖥️ En fila para tu compu ({round(en_fila / 60)} min; si tarda más de 25, lo hago aquí)", 0.02)
             continue
-        en_cola_desde = time.time()
+        en_cola_desde, fila_desde = time.time(), None
         if avance:
             avance(f"🖥️ {e.get('compu') or 'Compu'}: {e.get('paso') or 'editando'}", float(e.get("avance") or 0))
     try:

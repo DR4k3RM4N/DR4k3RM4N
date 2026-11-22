@@ -183,6 +183,22 @@ class Sala(Aprendizaje, Proyectos):
         return next((c for c in self.compus.values() if hmac.compare_digest(c["token"], h)), None)
 
     # ---------- trabajos ----------
+    def libres(self, tipo: str) -> int:
+        """Lugares libres ahorita en las compus prendidas que saben hacer ese tipo."""
+        with self.lock:
+            total = 0
+            for c in self.compus.values():
+                if not self.viva(c) or tipo not in (c.get("tipos") or ["cris"]):
+                    continue
+                if c.get("capacidad"):
+                    vivos = [x for x in (c.get("activos") or [])
+                             if (self.trabajos.get(x) or {}).get("estado") in ("asignado", "trabajando")]
+                    total += max(0, c["capacidad"] - len(vivos))
+                else:
+                    t = self.trabajos.get(c.get("trabajo") or "")
+                    total += 0 if t and t["estado"] in ("asignado", "trabajando") else 1
+            return total
+
     def disponibles(self, tipo: str) -> int:
         with self.lock:
             return sum(1 for c in self.compus.values() if self.viva(c) and tipo in (c.get("tipos") or ["cris"]))
@@ -277,6 +293,7 @@ class Sala(Aprendizaje, Proyectos):
 
             if "capacidad" in d:  # 🖥️ compus nuevas: editan VARIOS videos a la vez (según lo que aguantan)
                 cap = max(1, min(6, int(d.get("capacidad") or 1)))
+                c["capacidad"] = cap
                 activos = [x for x in (c.get("activos") or []) if activo(self.trabajos.get(x))]
                 libres = min(cap - len(activos), int(d.get("libres", cap)))
                 for t in sorted(self.trabajos.values(), key=lambda t: t["creado"]):
@@ -559,7 +576,8 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                 self.end_headers()
                 return self.wfile.write(jpg)
             if ruta == "/interno/disponible":
-                return self._json({"compus": sala.disponibles(parse_qs(url.query).get("tipo", ["cris"])[0])})
+                tipo = parse_qs(url.query).get("tipo", ["cris"])[0]
+                return self._json({"compus": sala.disponibles(tipo), "libres": sala.libres(tipo)})
             if ruta.startswith("/interno/trabajo/"):
                 return self._json(sala.ver(ruta.rsplit("/", 1)[-1]))
             if ruta.startswith("/api/maquina/archivo/"):
