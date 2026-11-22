@@ -148,7 +148,7 @@
           prueban solas en cadena (cada prueba trae anuncios nuevos → más apps).
           <label>Al día: <select data-deseos-dia>${[0, 2, 4, 6, 8, 10, 15, 20].map((n) => `<option value="${n}" ${n === (estado.deseos_por_dia ?? 6) ? "selected" : ""}>${n === 0 ? "ninguna (apagada)" : n}</option>`).join("")}</select></label></p>
         <ul class="lista-deseos">${deseos.map((d) => `<li><b>${esc(d.nombre)}</b>${d.promesa ? ` — «${esc(d.promesa)}»` : ""}
-          <small>visto en ${esc(d.visto_en)}${d.paquete ? "" : " · sin paquete (se busca por nombre)"}</small>
+          <small>visto en ${esc(d.visto_en)}${(d.veces || 1) > 1 ? ` · salió ${d.veces} veces en anuncios` : ""}${d.paquete ? "" : " · sin paquete (se busca por nombre)"}</small>
           <span class="fila"><button class="btn btn-mini btn-primario" data-deseo="${esc(d.id)}" data-deseo-accion="probar">📱 Probar ahora</button>
           <button class="btn btn-mini" data-deseo="${esc(d.id)}" data-deseo-accion="quitar">Quitar</button></span></li>`).join("")}</ul></details>`;
     } else {

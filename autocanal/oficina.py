@@ -161,6 +161,7 @@ class Oficina:
         threading.Thread(target=self._agenda, daemon=True).start()
         threading.Thread(target=self._ciclo_deseos, daemon=True).start()
         threading.Thread(target=self._ciclo_resultados, daemon=True).start()
+        threading.Thread(target=self._limpiar_deseos, daemon=True).start()  # junta las repetidas que ya había
         if self.por_reanudar:
             threading.Thread(target=self._reanudar, daemon=True).start()
         ia.antes_de_llamar = self._revisar_tope
@@ -843,19 +844,65 @@ class Oficina:
             self.avisar_jefe(f"⭐ Mientras probábamos {titulo} salieron anuncios de: {', '.join(agregados)}. "
                              "Las guardé en tu lista de deseos para probarlas y grabarlas después.")
 
+    @staticmethod
+    def _clave_app(nombre: str) -> str:
+        """Nombre «limpio» para comparar apps: «Cash Cat: Gana Dinero», «CashCat» y «cash cat app» → «cashcat»."""
+        import unicodedata
+        t = unicodedata.normalize("NFKD", nombre or "").encode("ascii", "ignore").decode().lower()
+        t = re.split(r"\s[-–|:]\s|[:|(]", t)[0]  # lo de antes de «: gana dinero», «- earn», «(…)»
+        t = re.sub(r"\b(app|apk|the|la|el|oficial|official)\b", " ", t)
+        return re.sub(r"[^a-z0-9]+", "", t)
+
+    def _misma_app(self, a: dict, nombre: str, paquete: str) -> bool:
+        if paquete and a.get("paquete") and a["paquete"] == paquete:
+            return True
+        ka, kb = self._clave_app(a.get("nombre", "")), self._clave_app(nombre)
+        if not ka or not kb:
+            return False
+        if ka == kb or (min(len(ka), len(kb)) >= 5 and (ka in kb or kb in ka)):
+            return True
+        import difflib
+        return min(len(ka), len(kb)) >= 5 and difflib.SequenceMatcher(None, ka, kb).ratio() >= 0.88
+
+    def _limpiar_deseos(self) -> int:
+        """Junta las repetidas que ya estén en la lista (deja una; si alguna traía su página de Play Store, se queda)."""
+        quitadas = 0
+        with self.lock:
+            pendientes = [d for d in self.deseos if d["estado"] == "pendiente"]
+            for i, d in enumerate(pendientes):
+                if d["estado"] != "pendiente":
+                    continue
+                for otra in pendientes[i + 1:]:
+                    if otra["estado"] == "pendiente" and self._misma_app(d, otra["nombre"], otra.get("paquete", "")):
+                        if not d.get("paquete") and otra.get("paquete"):
+                            d["paquete"], d["url"] = otra["paquete"], otra.get("url") or d.get("url", "")
+                        d["veces"] = d.get("veces", 1) + otra.get("veces", 1)
+                        otra["estado"] = "repetida"
+                        quitadas += 1
+            if quitadas:
+                self._tocar()
+        return quitadas
+
     def agregar_deseos(self, lista: list[dict], visto_en: str) -> list[str]:
         from agentes import buscador
 
         hechas = set(buscador.historial())
         agregados = []
         with self.lock:
+            hechos_nombres = [{"nombre": p.get("titulo", ""), "paquete": p["id"].split("~")[0]} for p in self.proyectos.values()]
             for d in lista:
                 nombre, paquete = (d.get("nombre") or "").strip()[:80], (d.get("paquete") or "").strip()[:150]
                 if len(nombre) < 3 and not paquete:
                     continue
-                ya = any((paquete and x.get("paquete") == paquete) or x["nombre"].lower() == nombre.lower() for x in self.deseos)
-                if ya or (paquete and (paquete in self.proyectos or paquete in hechas)):
+                igual = next((x for x in self.deseos if self._misma_app(x, nombre, paquete)), None)
+                if igual:  # ya estaba: si ahora trae su página de Play Store, se la ponemos
+                    if paquete and not igual.get("paquete"):
+                        igual["paquete"] = paquete
+                    igual["veces"] = igual.get("veces", 1) + 1
                     continue
+                if (paquete and (paquete in self.proyectos or paquete in hechas)) or any(
+                        self._misma_app(x, nombre, paquete) for x in hechos_nombres):
+                    continue  # ya tiene video
                 self.deseos.append({"id": uuid.uuid4().hex[:8], "nombre": nombre or paquete, "paquete": paquete,
                                     "url": d.get("url", ""), "promesa": (d.get("promesa") or "")[:200],
                                     "visto_en": visto_en, "creado": time.time(), "estado": "pendiente"})
