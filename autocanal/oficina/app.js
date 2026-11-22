@@ -39,7 +39,22 @@
     fuente.onmessage = (e) => pintar(JSON.parse(e.data));
   }
 
+  // 📱 mientras tienes el dedo en la pantalla no se redibuja nada (si no, el botón cambia bajo tu dedo y el toque
+  // se pierde); en cuanto lo sueltas, se pinta lo último que llegó
+  let tocando = false, estadoGuardado = null, soltarReloj = null;
+  document.addEventListener("touchstart", () => { tocando = true; clearTimeout(soltarReloj); }, { passive: true, capture: true });
+  const soltarDedo = () => {
+    clearTimeout(soltarReloj);
+    soltarReloj = setTimeout(() => {
+      tocando = false;
+      if (estadoGuardado) { const n = estadoGuardado; estadoGuardado = null; pintar(n); }
+    }, 500);
+  };
+  document.addEventListener("touchend", soltarDedo, { passive: true, capture: true });
+  document.addEventListener("touchcancel", soltarDedo, { passive: true, capture: true });
+
   function pintar(nuevo) {
+    if (tocando && estado) { estadoGuardado = nuevo; return; }
     estado = nuevo;
     window.Oficina.actualizar(nuevo);
     $("#modo").hidden = !nuevo.demo;
