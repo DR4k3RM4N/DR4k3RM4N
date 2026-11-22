@@ -195,6 +195,7 @@ class Oficina:
                     "resultados": self._resultados(),
                     "publicar_solo": bool(estilo.cargar()["ajustes"].get("publicar_solo")),
                     "a_la_vez": self.a_la_vez(),
+                    "version": self._version(),
                     "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
                               + [t for t in self.tareas[-250:] if t["estado"] not in ACTIVAS][-120:]}
 
@@ -998,6 +999,16 @@ class Oficina:
             except Exception as exc:  # noqa: BLE001 — el ciclo nunca debe morir
                 print(f"aviso: ciclo de resultados: {exc}")
             time.sleep(6 * 3600)
+
+    def _version(self) -> dict:
+        """Cuándo se actualizó el servidor y si ya pediste «Actualizar ya»."""
+        repo = config.BASE.parent
+        try:
+            ultima = (repo / ".ultima_actualizacion").read_text(encoding="utf-8").strip()
+        except OSError:
+            ultima = ""
+        return {"ultima": ultima, "pedida": (repo / ".actualizar_ya").exists(),
+                "esperando": (repo / ".autoactualizar_esperando").exists()}
 
     def _lecciones(self) -> list:
         from agentes import lecciones
@@ -2394,6 +2405,13 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 except Exception as exc:  # noqa: BLE001
                     return self._json({"error": f"No se pudo: {str(exc)[:300]}"}, 500)
                 return self._json(r)
+            if ruta == "/api/servidor/actualizar":  # 🔄 que el servidor agarre la versión nueva ya (en ~1 min)
+                try:
+                    (config.BASE.parent / ".actualizar_ya").write_text(str(time.time()), encoding="utf-8")
+                except OSError as exc:
+                    return self._json({"error": f"No pude pedirlo: {exc}"}, 500)
+                oficina._tocar()
+                return self._json({"ok": True})
             if ruta == "/api/resultados/actualizar":  # 📊 traer los números ahora
                 threading.Thread(target=oficina.revisar_resultados, args=(True,), daemon=True).start()
                 return self._json({"ok": True})

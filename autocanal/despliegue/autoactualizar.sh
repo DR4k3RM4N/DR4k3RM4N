@@ -58,11 +58,18 @@ ocupado=""
 if [ -f "$REPO/.cola_video.lock" ] && ! flock -n "$REPO/.cola_video.lock" true; then ocupado="se está haciendo un video"; fi
 if [ -z "$ocupado" ] && curl -fsS -m 5 http://127.0.0.1:8767/api/estado 2>/dev/null \
     | grep -qE '"estado": ?"(asignado|trabajando)"'; then ocupado="la sala de edición está editando"; fi
+# 🔄 «Actualizar ya» desde la oficina: no espera a nadie
+if [ -f "$REPO/.actualizar_ya" ]; then
+  rm -f "$REPO/.actualizar_ya"
+  [ -n "$ocupado" ] && anota "Me pidieron actualizar ya: no espero a que termine ($ocupado)."
+  ocupado=""
+fi
 if [ -n "$ocupado" ]; then
-  # tope: si lleva más de 3 horas esperando, se actualiza de todos modos
+  # tope: con el piloto siempre hay algo haciéndose; si lleva más de 30 min esperando, se actualiza de todos modos
+  # (al reiniciar, la oficina retoma cada video donde se quedó)
   if [ ! -f "$ESPERA" ]; then date +%s > "$ESPERA"; fi
-  if [ $(( $(date +%s) - $(cat "$ESPERA") )) -lt 10800 ]; then anota "Hay versión nueva, pero $ocupado: espero."; exit 0; fi
-  anota "Llevo 3 horas esperando: actualizo de todos modos."
+  if [ $(( $(date +%s) - $(cat "$ESPERA") )) -lt 1800 ]; then anota "Hay versión nueva, pero $ocupado: espero."; exit 0; fi
+  anota "Llevo 30 min esperando: actualizo de todos modos."
 fi
 rm -f "$ESPERA"
 

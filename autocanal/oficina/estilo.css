@@ -559,3 +559,4 @@ select { background: var(--fondo2); color: var(--texto); border: 2px solid var(-
 .trabajos-caja summary { cursor: pointer; font-weight: 600; }
 .trabajos-caja .btn { margin: 6px 0; }
 .agenda summary { cursor: pointer; font-weight: 600; }
+.chip-version { cursor: pointer; border: 0; background: rgba(255,255,255,.08); color: inherit; font-size: 12px; }

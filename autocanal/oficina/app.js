@@ -49,6 +49,11 @@
         + `💰 API hoy <b>${dinero(nuevo.gasto.hoy)}</b>${nuevo.gasto.tope ? `<span> / tope ${dinero(nuevo.gasto.tope)}</span>` : ""} <span>· mes ${dinero(nuevo.gasto.mes)}</span>`;
       $("#gasto").classList.toggle("tope", !!nuevo.gasto.tope && nuevo.gasto.hoy >= nuevo.gasto.tope);
     }
+    if (nuevo.version) {
+      const v = nuevo.version, b = $("#version");
+      b.hidden = false;
+      b.textContent = v.pedida ? "🔄 actualizando… (~1 min)" : `🔄 servidor: ${v.ultima || "—"}${v.esperando ? " · versión nueva esperando" : ""}`;
+    }
     pintarBandeja();
     pintarProyectos();
     pintarIdeasAuto();
@@ -386,6 +391,12 @@
     const sel = e.target.closest?.("[data-deseos-dia]");
     if (!sel) return;
     try { await api("/api/estilo/ajustes", { deseos_por_dia: Number(sel.value) }); } catch (err) { alert(err.message); }
+  });
+
+  $("#version").addEventListener("click", async () => {
+    if (!confirm("¿Actualizar el servidor ya? Si se está haciendo un video, se retoma donde se quedó al reiniciar.")) return;
+    try { await api("/api/servidor/actualizar", {}); $("#version").textContent = "🔄 actualizando… (~1 min)"; }
+    catch (err) { alert(err.message); }
   });
 
   // ---------- 📊 resultados ----------
