@@ -1854,6 +1854,7 @@
           <span class="pc-chips"><span class="chip">${esc(c.gpu || "—")}</span>${c.nvenc ? `<span class="chip chip-estado-publicado">NVENC</span>` : ""}
             <span class="chip">👂 ${esc((c.oido || "—").replace(" (GPU)", " GPU").replace(" (CPU)", " CPU"))}</span>
             <span class="chip">🎬 ${c.editados || 0}</span>
+            ${(c.a_la_vez || 0) > 1 ? `<span class="chip chip-estado-publicado" title="Trabajos que está haciendo al mismo tiempo">⚡ ${c.a_la_vez} a la vez</span>` : ""}
             ${c.claude_code === "listo" && c.motion === "listo" ? `<span class="chip chip-estado-publicado" title="Remotion listo para motion graphics">🎨 Motion</span>`
               : c.claude_code === "listo" && c.motion === "sin_node" ? `<span class="chip" title="Corre otra vez INSTALAR_SALA.bat para instalar Node.js">🎨 falta Node.js</span>`
               : c.claude_code === "listo" && c.motion === "instalando" ? `<span class="chip">🎨 instalando…</span>` : ""}

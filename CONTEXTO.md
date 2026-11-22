@@ -532,3 +532,8 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   ya no lo marca como error: `_esperar_cupo` deja el video en "revision" con `p["cupo"]` (reintento) y
   `cupo_lleno[canal]` = ahora + 3 h (no se intentan más subidas a ese canal). `_reintentar_cupo` (cada 10 min en
   `_agenda`) prueba UN video por canal; si entra, los demás de la fila siguen enseguida. Un solo aviso al jefe.
+- **🖥️ Varias ediciones a la vez por compu**: la compu manda `capacidad` (auto: 3 con NVENC, 2 con ≥12 hilos, 1; o
+  `SALA_A_LA_VEZ`) y `libres`; la sala le asigna varios trabajos en `c["activos"]` y responde `trabajos` (lista); la
+  compu corre cada uno en su hilo (`arrancar`). Sala/compu viejas siguen con un trabajo. El servidor ya no se lleva
+  un video en fila mientras haya una compu prendida para ese tipo (`compus_libres(tipo)`); solo si no hay ninguna
+  por 3 min. Chip «⚡ N a la vez» en Sala.

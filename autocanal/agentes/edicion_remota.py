@@ -183,7 +183,13 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
             print(f"  · la compu no pudo editarlo ({e.get('error')}); lo edito aquí", flush=True)
             break
         if estado == "en_cola":
-            if time.time() - en_cola_desde > 300:  # ninguna compu lo agarró en 5 min: mejor lo hace el servidor
+            # 🖥️ si hay una compu prendida que sabe hacerlo, el video espera su turno ahí (es más rápida que el
+            # servidor); solo si en 3 min no hay NINGUNA compu prendida para esto, lo edita el servidor
+            if compus_libres(tipo):
+                en_cola_desde = time.time()
+                if avance:
+                    avance("🖥️ En fila para tu compu (está editando otros)", 0.02)
+            elif time.time() - en_cola_desde > 180:
                 break
             continue
         en_cola_desde = time.time()

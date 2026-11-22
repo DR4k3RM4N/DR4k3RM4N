@@ -1024,13 +1024,32 @@ def trabajar() -> None:
 
     for f in (pulso, preparar, carpetas, motion, adb):
         threading.Thread(target=f, daemon=True).start()
+    # 🖥️ varios videos a la vez: cuántos aguanta esta compu (SALA_A_LA_VEZ en el .env de la compu manda)
+    capacidad = int(os.environ.get("SALA_A_LA_VEZ") or 0) or (3 if con_nvenc else 2 if (os.cpu_count() or 4) >= 12 else 1)
+    corriendo: dict = {}  # id del trabajo → hilo
+    log(f"Esta compu edita hasta {capacidad} video(s) a la vez.")
+
+    def libres() -> int:
+        for tid in [k for k, h in corriendo.items() if not h.is_alive()]:
+            corriendo.pop(tid, None)
+        return max(0, capacidad - len(corriendo))
+
+    def arrancar(t: dict) -> None:
+        if t["id"] in corriendo:
+            return
+        hilo = threading.Thread(target=hacer, args=(Oficina(cfg["servidor"], cfg["token"]), t), daemon=True)
+        corriendo[t["id"]] = hilo
+        hilo.start()
+
     espera, revisado = 5, time.time()
     while True:
-        if time.time() - revisado > 1800:  # cada 30 min, entre trabajos
+        if time.time() - revisado > 1800 and not corriendo and cel_libre():  # cada 30 min, sin nada a medias
             revisado = time.time()
             actualizarme()
         try:
-            r = of.post("latido", {**datos, "libre": True, "oido_listo": listo.is_set(), "libre_cel": cel_libre(),
+            n_libres = libres()
+            r = of.post("latido", {**datos, "libre": n_libres > 0, "capacidad": capacidad, "libres": n_libres,
+                                   "oido_listo": listo.is_set(), "libre_cel": cel_libre(),
                                    "estado": ESTADO_COMPU["texto"]}, timeout=20)
             espera = 5
             atender_cel(r)
@@ -1039,12 +1058,15 @@ def trabajar() -> None:
             if "carpetas" in r and not pedido["evento"].is_set():
                 pedido["carpetas"] = (r["carpetas"], r.get("proyectos"))
                 pedido["evento"].set()
-            if r.get("trabajo"):
-                antes = ESTADO_COMPU["texto"]
-                ESTADO_COMPU["texto"] = f"Editando {r['trabajo'].get('etiqueta', '')}"[:60]
-                hacer(of, r["trabajo"])
-                ESTADO_COMPU["texto"] = antes if antes.startswith("Analizando") else "Lista"
-                espera = 1
+            # sala nueva: lista de trabajos; sala vieja: uno solo
+            for t in (r.get("trabajos") or ([r["trabajo"]] if r.get("trabajo") else [])):
+                arrancar(t)
+            n = len([h for h in corriendo.values() if h.is_alive()])
+            if n:
+                ESTADO_COMPU["texto"] = f"Editando {n} video(s) a la vez"
+                espera = 3
+            elif ESTADO_COMPU["texto"].startswith("Editando"):
+                ESTADO_COMPU["texto"] = "Lista"
         except requests.RequestException as exc:
             log(f"Sin conexión con la oficina ({exc.__class__.__name__}); reintento en {espera} s.")
             espera = min(60, espera * 2)

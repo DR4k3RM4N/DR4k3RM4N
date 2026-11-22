@@ -75,7 +75,7 @@ class Sala(Aprendizaje, Proyectos):
             if t["estado"] in ("en_cola", "asignado", "trabajando"):
                 t["estado"], t["error"] = "cancelado", "La sala se reinició."
         for c in self.compus.values():
-            c["trabajo"] = None
+            c["trabajo"], c["activos"] = None, []
 
     def _tocar(self) -> None:
         self.version += 1
@@ -96,11 +96,13 @@ class Sala(Aprendizaje, Proyectos):
             compus = []
             for c in sorted(self.compus.values(), key=lambda c: c["slot"]):
                 t = self.trabajos.get(c.get("trabajo") or "") or self.trabajos.get(c.get("trabajo_cel") or "")
+                varios = len(c.get("activos") or []) + (1 if c.get("trabajo_cel") else 0)
                 compus.append({k: c.get(k) for k in ("id", "nombre", "slot", "gpu", "sistema", "version", "ultimo",
                                                      "nvenc", "oido", "editados", "estado_texto", "claude_code", "motion",
                                                      "celular")}
                               | {"viva": self.viva(c),
-                                 "trabajo": {k: t.get(k) for k in ("id", "etiqueta", "origen", "paso", "avance")} if t else None})
+                                 "trabajo": {k: t.get(k) for k in ("id", "etiqueta", "origen", "paso", "avance")} if t else None,
+                                 "a_la_vez": varios})
             trabajos = [{k: t.get(k) for k in ("id", "tipo", "origen", "etiqueta", "estado", "compu", "creado", "inicio",
                                                 "fin", "error", "paso", "avance")}
                         for t in sorted(self.trabajos.values(), key=lambda t: -t["creado"])[:15]]
@@ -168,7 +170,7 @@ class Sala(Aprendizaje, Proyectos):
             c = self.compus.pop(cid, None)
             if not c:
                 return {"error": "No encontré esa compu."}
-            for t in (self.trabajos.get(c.get("trabajo") or ""), self.trabajos.get(c.get("trabajo_cel") or "")):
+            for t in [self.trabajos.get(x or "") for x in (c.get("trabajo"), c.get("trabajo_cel"), *(c.get("activos") or []))]:
                 if t and t["estado"] in ("asignado", "trabajando"):
                     t.update(estado="en_cola", compu=None, slot=None)
             self._tocar()
@@ -268,6 +270,25 @@ class Sala(Aprendizaje, Proyectos):
                             c["trabajo_cel"] = cel_t["id"]
                             self._tocar()
                 extra["trabajo_cel"] = self._para_compu(cel_t) if cel_t else None
+            def sirve(t: dict) -> bool:
+                return (t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])
+                        and not (dos_carriles and t["tipo"] == "probar_app")
+                        and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia")))
+
+            if "capacidad" in d:  # 🖥️ compus nuevas: editan VARIOS videos a la vez (según lo que aguantan)
+                cap = max(1, min(6, int(d.get("capacidad") or 1)))
+                activos = [x for x in (c.get("activos") or []) if activo(self.trabajos.get(x))]
+                libres = min(cap - len(activos), int(d.get("libres", cap)))
+                for t in sorted(self.trabajos.values(), key=lambda t: t["creado"]):
+                    if libres <= 0:
+                        break
+                    if sirve(t):
+                        t.update(estado="asignado", compu=c["id"], slot=c["slot"], inicio=time.time(), paso="Bajando tus clips")
+                        activos.append(t["id"])
+                        libres -= 1
+                c["activos"], c["trabajo"] = activos, (activos[0] if activos else None)
+                self._tocar()
+                return {"trabajos": [self._para_compu(self.trabajos[x]) for x in activos], **extra}
             actual = self.trabajos.get(c.get("trabajo") or "")
             if actual and actual["estado"] in ("asignado", "trabajando"):
                 return {"trabajo": self._para_compu(actual), **extra}
@@ -389,6 +410,8 @@ class Sala(Aprendizaje, Proyectos):
             c["trabajo"] = None
         if c.get("trabajo_cel") == tid:
             c["trabajo_cel"] = None
+        if tid in (c.get("activos") or []):
+            c["activos"] = [x for x in c["activos"] if x != tid]
 
     def del_compu(self, c: dict, tid: str) -> dict | None:
         t = self.trabajos.get(tid)
