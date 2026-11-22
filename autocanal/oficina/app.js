@@ -488,10 +488,16 @@
   }
   $("#form-chat").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const caja = $("#chat-texto"), texto = caja.value.trim();
+    const caja = $("#chat-texto");
+    caja.blur(); // que el teclado del cel termine la última palabra antes de leer el texto
+    await new Promise((r) => setTimeout(r, 60));
+    const texto = caja.value.trim();
     if (!texto) return;
-    caja.value = "";
-    try { await api("/api/chat", { texto }); } catch (err) { alert(err.message); caja.value = texto; }
+    const boton = e.target.querySelector('button[type="submit"]');
+    boton.disabled = true;
+    try { await api("/api/chat", { texto }); caja.value = ""; }
+    catch (err) { alert(`No se mandó: ${err.message}. Tu mensaje sigue en la caja; intenta otra vez.`); }
+    finally { boton.disabled = false; }
   });
   // 📎 un video para que Paola lo analice completo (lo escrito en la caja va como pregunta)
   $("#chat-video").addEventListener("change", (e) => {
@@ -512,7 +518,11 @@
     x.onerror = () => { boton.firstChild.textContent = "📎"; alert("Se cortó la conexión"); caja.value = pregunta; };
     x.send(archivo);
   });
+  // Enter manda en la compu. En el celular NO: ahí Enter es salto de línea y se manda con el botón (el teclado del
+  // cel a veces sigue «armando» la última palabra al dar Enter y el mensaje salía incompleto).
+  const tactil = window.matchMedia?.("(pointer: coarse)").matches;
   $("#chat-texto").addEventListener("keydown", (e) => {
+    if (tactil || e.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form-chat").requestSubmit(); }
   });
   $("#lecciones").addEventListener("click", async (e) => {
@@ -824,7 +834,7 @@
   setInterval(() => { if (agenteVisto || !$("#tab-equipo").hidden) pintarEquipo(); }, 1000);
   window.addEventListener("ala", () => pintarEquipo(true));
   // A la derecha solo los menús de la oficina que estás viendo (en "Todo", todos)
-  const PESTANAS_ALA = { youtube: ["bandeja", "proyectos", "estilo", "equipo", "chat"], tiktok: ["shop", "equipo", "chat"],
+  const PESTANAS_ALA = { youtube: ["bandeja", "proyectos", "resultados", "estilo", "equipo", "chat"], tiktok: ["shop", "equipo", "chat"],
                          edicion: ["sala", "equipo"] };
   function menusDelAla(ala) {
     const visibles = PESTANAS_ALA[ala];
