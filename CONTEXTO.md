@@ -528,3 +528,7 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   en cuanto el cel queda libre (`_cel_ocupado`: ningún video de app del principal en "investigar") y hay lugar
   (`en_produccion < a_la_vez + 2`), prueba la siguiente app de ⭐ deseos (primero las que tienen paquete), hasta
   `deseos_por_dia` (ajuste, 6 por defecto, selector en la Bandeja; `DESEOS_POR_DIA` en .env manda).
+- **⏳ Límite de subidas de YouTube** (`uploadLimitExceeded`, tope diario por canal; se libera solo ~24 h): `_publicar`
+  ya no lo marca como error: `_esperar_cupo` deja el video en "revision" con `p["cupo"]` (reintento) y
+  `cupo_lleno[canal]` = ahora + 3 h (no se intentan más subidas a ese canal). `_reintentar_cupo` (cada 10 min en
+  `_agenda`) prueba UN video por canal; si entra, los demás de la fila siguen enseguida. Un solo aviso al jefe.

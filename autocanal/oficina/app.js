@@ -1101,7 +1101,8 @@
         <ol class="pasos-shop">${ETAPAS_TT.filter(([e]) => !["video", "portada"].includes(e) || p.etapas?.[e]).map(([e, txt]) => `<li class="${esc(p.etapas?.[e] || "")}">${esc(txt)}</li>`).join("")}</ol>
         ${p.clips && !p.videos ? `<p class="pista">📤 ${p.clips} clip(s) subido(s)</p>` : ""}
         ${p.guion_id ? `<p class="pista">${esc(FORMATO_TT[p.formato] || p.formato || "")} · 🪝 ${p.gancho && p.gancho !== "todos" ? `Gancho ${esc(p.gancho)}` : "Los 3 ganchos"} · <code>${esc(p.guion_id)}</code></p>` : ""}
-        ${p.error ? `<p class="error">${esc(p.error)}</p>` : ""}
+        ${p.cupo ? `<p class="pista">⏳ En fila: YouTube llegó al límite de subidas de este canal por hoy. Lo subo solo; próximo intento ${hora(p.cupo.reintento)}.</p>` : ""}
+      ${p.error ? `<p class="error">${esc(p.error)}</p>` : ""}
         ${p.costo ? `<div class="costo">💰 ${dinero(p.costo)}</div>` : ""}
         <div class="fila">
           ${p.etapas?.guion === "hecha" ? `<button class="btn btn-primario" data-ver-tt="${esc(p.id)}">${p.videos ? "🎬 Ver videos" : p.estado === "listo" ? "Guion, tomas y subir clips" : "Ver guion y tomas"}</button>` : ""}

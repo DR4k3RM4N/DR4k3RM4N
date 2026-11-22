@@ -156,6 +156,7 @@ class Oficina:
             threading.Thread(target=self._chat_despachar, daemon=True).start()
         if tg.activo():
             threading.Thread(target=tg.escuchar, args=(self.recibir_telegram,), daemon=True).start()
+        self.cupo_lleno: dict[str, float] = {}  # canal → hasta cuándo no intentar subir (límite de YouTube)
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
         threading.Thread(target=self._ciclo_deseos, daemon=True).start()
@@ -623,6 +624,8 @@ class Oficina:
                 if time.time() - ultima_limpieza > 3600:
                     ultima_limpieza = time.time()
                     self.limpiar()
+                if int(time.time() / 60) % 10 == 0:  # ⏳ videos esperando cupo de YouTube
+                    self._reintentar_cupo()
             except Exception as exc:  # noqa: BLE001 — la agenda nunca debe morir
                 print(f"aviso: agenda: {exc}")
 
@@ -1285,6 +1288,42 @@ class Oficina:
             listas[etapa].set()
             self.turnos[agente].release()
 
+    def _esperar_cupo(self, app_id: str, titulo_n: int, avisar: bool = True) -> None:
+        """⏳ YouTube llegó al límite de subidas del canal (se libera solo en ~24 h): el video queda listo en fila y
+        se reintenta solo cada 3 horas, sin marcarlo como error."""
+        with self.lock:
+            p = self.proyectos[app_id]
+            cid = p.get("canal") or "principal"
+            p["estado"], p["error"] = "revision", None
+            p["cupo"] = {"reintento": self.cupo_lleno.get(cid, time.time() + 3 * 3600), "titulo_n": titulo_n}
+            self._tocar()
+            en_fila = sum(1 for x in self.proyectos.values() if x.get("cupo") and (x.get("canal") or "principal") == cid)
+        if avisar:
+            from agentes import canales
+            nombre = canales.get(cid).get("nombre") or cid
+            self.avisar_jefe(f"⏳ YouTube dice que «{nombre}» ya llegó a su límite de videos subidos por hoy (es un tope de "
+                             f"YouTube, se libera solo en unas 24 h). Dejé {en_fila} video(s) listo(s) en fila: los subo "
+                             "solos en cuanto haya cupo, reintentando cada 3 horas.")
+
+    def _reintentar_cupo(self) -> None:
+        """Cada 10 min: si ya pasó la hora de reintento de un canal, prueba a subir UN video en fila (si entra, siguen)."""
+        ahora = time.time()
+        with self.lock:
+            listos = sorted((p for p in self.proyectos.values() if p.get("cupo") and p["estado"] == "revision"
+                             and p["cupo"]["reintento"] <= ahora), key=lambda p: p["creado"])
+            por_canal = {}
+            for p in listos:
+                por_canal.setdefault(p.get("canal") or "principal", p)
+        for cid, p in por_canal.items():
+            if self.cupo_lleno.get(cid, 0) > ahora:
+                continue
+            with self.lock:
+                n = p["cupo"].get("titulo_n", 1)
+                p.pop("cupo", None)
+                p["estado"] = "publicando"
+                self._tocar()
+            threading.Thread(target=self._publicar, args=(p["id"], n), daemon=True).start()
+
     def _fallo_proyecto(self, app_id: str, quien: str, exc: Exception) -> None:
         with self.lock:
             p = self.proyectos[app_id]
@@ -1490,11 +1529,19 @@ class Oficina:
             self.tarea(t, estado="trabajando", inicio=time.time())
             self.poner("community", estado="trabajando", proyecto=app_id)
             self.decir("community", random.choice(FRASES["community"]), al_log=False)
+            cid = self.proyectos[app_id].get("canal") or "principal"
+            if self.cupo_lleno.get(cid, 0) > time.time():  # ⏳ YouTube ya dijo que hoy no: ni lo intentes
+                self.tarea(t, estado="hecha", fin=time.time(), resultado="en fila: YouTube sin cupo")
+                self.poner("community", estado="libre", proyecto=None)
+                return self._esperar_cupo(app_id, titulo_n, avisar=False)
             try:
                 pub = canal.publicar(app_id, titulo_n, self.proyectos[app_id].get("privacidad") or None)
             except Exception as exc:  # noqa: BLE001
                 self.tarea(t, estado="fallo", fin=time.time(), error=str(exc)[:300])
                 self.poner("community", estado="libre", proyecto=None)
+                if "uploadLimitExceeded" in str(exc) or "exceeded the number of videos" in str(exc):
+                    self.cupo_lleno[cid] = time.time() + 3 * 3600
+                    return self._esperar_cupo(app_id, titulo_n)
                 return self._fallo_proyecto(app_id, "community", exc)
             self.tarea(t, estado="hecha", fin=time.time())
             self.poner("community", estado="libre", proyecto=None)
@@ -1503,8 +1550,16 @@ class Oficina:
             p = self.proyectos[app_id]
             p["estado"], p["etapa"], p["publicado"] = "publicado", "publicado", pub
             p["publicado_t"] = time.time()
+            # ⏳ si había videos en fila por el límite de YouTube en este canal: ya hay cupo, que sigan
+            hay_fila = False
+            for x in self.proyectos.values():
+                if x.get("cupo") and (x.get("canal") or "principal") == cid:
+                    x["cupo"]["reintento"], hay_fila = 0, True
             p["blog_pendiente"] = bool((pub or {}).get("blog_error"))
             self._tocar()
+        if hay_fila:
+            self.cupo_lleno.pop(cid, None)
+            threading.Thread(target=self._reintentar_cupo, daemon=True).start()
         donde = "en YouTube y en el blog" if (pub or {}).get("blog") else "en YouTube"
         pedida, real = (pub or {}).get("privacidad_pedida"), (pub or {}).get("privacidad")
         if (pub or {}).get("programado"):
