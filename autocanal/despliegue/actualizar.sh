@@ -5,6 +5,20 @@ if [ "$(id -u)" -ne 0 ]; then echo "Córrelo con sudo:  sudo bash $0"; exit 1; f
 APP="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$APP/.." && pwd)"
 sudo -u canal git -C "$REPO" pull --ff-only
+# 🔑 Compus de Miguel que pueden entrar al servidor por SSH: sus llaves PÚBLICAS viven en despliegue/llaves_ssh/
+# (las pone Claude en el repositorio); aquí se agregan al usuario administrador si todavía no están.
+ADMIN="${ADMIN_SSH:-ubuntu}"
+if id "$ADMIN" >/dev/null 2>&1 && ls "$APP/despliegue/llaves_ssh/"*.pub >/dev/null 2>&1; then
+  CASA_ADMIN="$(getent passwd "$ADMIN" | cut -d: -f6)"
+  install -d -m 700 -o "$ADMIN" -g "$ADMIN" "$CASA_ADMIN/.ssh"
+  touch "$CASA_ADMIN/.ssh/authorized_keys"
+  for llave in "$APP/despliegue/llaves_ssh/"*.pub; do
+    linea="$(head -n 1 "$llave" | tr -d '\r')"
+    case "$linea" in ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*) ;; *) echo "  aviso: $llave no parece una llave pública"; continue ;; esac
+    grep -qF "$(echo "$linea" | cut -d' ' -f2)" "$CASA_ADMIN/.ssh/authorized_keys" || { echo "$linea" >> "$CASA_ADMIN/.ssh/authorized_keys"; echo "  ✔ llave agregada: $(basename "$llave")"; }
+  done
+  chown "$ADMIN:$ADMIN" "$CASA_ADMIN/.ssh/authorized_keys"; chmod 600 "$CASA_ADMIN/.ssh/authorized_keys"
+fi
 # Para convertir en imagen las miniaturas que Claude dibuja con código
 dpkg -s libcairo2 >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get install -y -q libcairo2 >/dev/null
 sudo -u canal "$APP/.venv/bin/pip" install -q -r "$APP/requirements.txt"
