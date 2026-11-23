@@ -787,6 +787,30 @@ def editar_edu(of: "Oficina", t: dict, temporal: Path, avance, con_claude: bool 
     log(f"Edu: edité «{t.get('etiqueta')}».")
 
 
+def probar_ssh(of: "Oficina", t: dict) -> None:
+    """Prueba fija: entra al servidor por SSH con la llave de esta compu (sin contraseña) y sale. No corre nada más."""
+    import re as _re
+    host = str(t["parametros"].get("host") or "")
+    if not _re.fullmatch(r"[A-Za-z0-9.-]{3,80}", host):
+        raise RuntimeError("Dirección del servidor no válida.")
+    ssh = shutil.which("ssh") or r"C:\Windows\System32\OpenSSH\ssh.exe"
+    if not Path(ssh).exists() and not shutil.which("ssh"):
+        raise RuntimeError("Esta compu no tiene el cliente SSH (Configuración → Aplicaciones → Características opcionales → Cliente OpenSSH).")
+    llave = Path.home() / ".ssh" / "id_ed25519"
+    r = subprocess.run([ssh, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15",
+                        *(["-i", str(llave)] if llave.exists() else []), f"ubuntu@{host}", "echo ENTRE_OK"],
+                       capture_output=True, text=True, timeout=60, creationflags=0x08000000 if WINDOWS else 0)
+    salida = (r.stdout + r.stderr).strip()
+    if "ENTRE_OK" in r.stdout:
+        of.post(f"terminar/{t['id']}", {"ok": True, "resultado": {"ssh": "ok", "llave": llave.exists()}})
+        log("SSH: esta compu ya entra al servidor con su llave ✔")
+        return
+    motivo = ("el servidor todavía no tiene la llave de esta compu" if "Permission denied" in salida
+              else "esta compu no tiene llave (corre ssh-keygen -t ed25519)" if not llave.exists()
+              else f"no pude conectar: {salida[-160:]}")
+    raise RuntimeError(f"SSH: {motivo}")
+
+
 def hacer_proyecto(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     """Un proyecto de la sala: los clips están en su carpeta de esta compu (lo que subiste al servidor se baja ahí)."""
     import editor_libre
@@ -853,6 +877,8 @@ def hacer(of: Oficina, t: dict) -> None:
             return editar_libre(of, t, carpeta, avance)
         if t["tipo"] in ("edu", "edu_ia"):  # 🎬 un video de YouTube de la oficina (edu_ia: lo dirige Claude)
             return editar_edu(of, t, carpeta, avance, con_claude=t["tipo"] == "edu_ia")
+        if t["tipo"] == "probar_ssh":  # 🔑 ¿esta compu ya entra al servidor con su llave?
+            return probar_ssh(of, t)
         if t["tipo"] == "probar_app":  # 📱 el robot prueba la app en tu Android
             import robot_cel
             return robot_cel.probar(of, t, carpeta, avance, claude_code(), log)
@@ -935,7 +961,7 @@ def trabajar() -> None:
         cel = robot_cel.celular()  # 📱 ¿tu Android viejo está conectado? Entonces también prueba apps
         datos["celular"] = cel.get("modelo") or ("falta autorizar" if cel.get("pendiente")
                                                   else robot_cel.MOTIVOS.get(cel.get("motivo"), ""))
-        datos["tipos"] = ["cris", "libre", "edu", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else []),
+        datos["tipos"] = ["cris", "libre", "edu", "probar_ssh", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else []),
                           *(["edu_ia"] if datos["claude_code"] == "listo" and ESTADO_MOTION["texto"] == "listo" else []),
                           # 📱 el robot paso a paso no necesita Claude Code aquí (lo piensa la oficina)
                           *(["probar_app"] if cel.get("serie") and (os.environ.get("ROBOT_MODO") != "claude_code"

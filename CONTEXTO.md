@@ -558,3 +558,7 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   cuando Paco trabaja, palmeras; entrada al patio en x=42-43. Equipo `tp_*` (Lupita negocios, Chuy WhatsApp, Fer
   producción, Paco dron, Mar redes; Chuy = el antes llamado Toño de tampico.py). Estado desde `estado.tampico_agentes`
   (oficina `_tamp`, marcado por `tampico_accion`). Botón de ala «🌮 Tampiqueando» (pestañas tampico, equipo, chat).
+- **🔑 SSH desde las compus de Miguel**: llaves PÚBLICAS en `autocanal/despliegue/llaves_ssh/*.pub` (sin nombre de
+  usuario/compu); `actualizar.sh` (root) las agrega a `~ubuntu/.ssh/authorized_keys` sin duplicar. Trabajo de sala
+  fijo `probar_ssh` (la compu corre solo `ssh -o BatchMode=yes ubuntu@HOST echo ENTRE_OK`); botón «🔑 Probar SSH»
+  en Sala → `/api/sala/probar_ssh` (host: `SSH_HOST` o el de `OFICINA_URL` sslip). La sala acepta hasta 12 tipos.

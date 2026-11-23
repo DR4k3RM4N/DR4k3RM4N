@@ -2009,7 +2009,7 @@
               <span class="tiras">${(loc.muestra?.[pid] || []).slice(0, 4).map((nombre) => `<img loading="lazy" alt="" src="/sala/api/miniatura/${encodeURIComponent(c.id)}/${encodeURIComponent(pid)}/${encodeURIComponent(nombre)}">`).join("") || "<i>vacía</i>"}</span>
               <span class="pc-carpeta-txt"><b>${esc(productos[pid].nombre)}</b><small>${n} clip${n === 1 ? "" : "s"}${productos[pid].videos ? " · 🎬 video listo" : ""}</small></span>
             </button>`).join("")}</div>` : ""}
-        <div class="pc-acciones"><button class="btn btn-mini" data-quitar-compu="${esc(c.id)}">Quitar de la sala</button></div>
+        <div class="pc-acciones">${c.viva ? `<button class="btn btn-mini" data-probar-ssh="${esc(c.id)}" title="Prueba si esta compu ya entra a tu servidor con su llave (sin contraseña)">🔑 Probar SSH</button> ` : ""}<button class="btn btn-mini" data-quitar-compu="${esc(c.id)}">Quitar de la sala</button></div>
       </article>`;
     };
     const agregar = `
@@ -2082,6 +2082,13 @@
         if (!r.ok) throw new Error("No pude generar el código.");
         codigoSala = await r.json();
         setTimeout(pintarSala, (codigoSala.vence * 1000 - Date.now()) + 500);
+      }
+      if (b.dataset.probarSsh) {
+        b.disabled = true; b.textContent = "Probando… (hasta 2 min)";
+        try { const r = await api("/api/sala/probar_ssh", { compu: b.dataset.probarSsh }); alert(r.mensaje); }
+        catch (err) { alert(err.message); }
+        b.disabled = false; b.textContent = "🔑 Probar SSH";
+        return;
       }
       if (b.dataset.quitarCompu && confirm("¿Quitar esta compu de la sala? (Para volver a usarla hay que reinstalarla con un código nuevo)")) {
         await fetch(`/sala/api/quitar/${encodeURIComponent(b.dataset.quitarCompu)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });

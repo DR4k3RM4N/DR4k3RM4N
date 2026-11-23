@@ -1166,6 +1166,47 @@ class Oficina:
             return {"ok": True}
         return {"error": "¿Qué hago?"}
 
+    def probar_ssh(self, compu: str) -> dict:
+        """Le pide a una compu de la sala que pruebe entrar al servidor por SSH con su llave (trabajo fijo «probar_ssh»)."""
+        import requests
+
+        from agentes.edicion_remota import SALA_URL
+        host = config.env("SSH_HOST", "")
+        if not host:
+            m = re.match(r"(?:https?://)?(\d+)-(\d+)-(\d+)-(\d+)\.sslip\.io", URL_PUBLICA or "")
+            host = ".".join(m.groups()) if m else urlparse(URL_PUBLICA or "").hostname or ""
+        if not host:
+            return {"error": "No sé la dirección del servidor (pon SSH_HOST en el .env)."}
+        salida = config.SALIDA / "_ssh"
+        salida.mkdir(parents=True, exist_ok=True)
+        try:
+            r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=10, json={
+                "tipo": "probar_ssh", "origen": "oficina", "etiqueta": "Probar SSH", "compu": compu,
+                "parametros": {"host": host}, "entradas": [], "salida": str(salida)}).json()
+        except (requests.RequestException, ValueError) as exc:
+            return {"error": f"La sala no contestó: {exc}"}
+        tid = r.get("id")
+        if not tid:
+            return {"error": r.get("error") or "La sala no aceptó la prueba."}
+        for _ in range(40):
+            time.sleep(3)
+            try:
+                e = requests.get(f"{SALA_URL}/interno/trabajo/{tid}", timeout=5).json()
+            except (requests.RequestException, ValueError):
+                continue
+            if e.get("estado") == "listo":
+                return {"ok": True, "mensaje": "✅ ¡Entró! Esa compu ya puede entrar a tu servidor sin contraseña: en su "
+                                               "PowerShell escribe  ssh ubuntu@" + host}
+            if e.get("estado") in ("error", "cancelado"):
+                return {"ok": False, "mensaje": "❌ " + str(e.get("error") or "No pudo.")
+                        + ("\n\nSi dice que el servidor no tiene la llave: dale al 🔄 de arriba para actualizar y vuelve a probar."
+                           if "llave" in str(e.get("error")) else "")}
+        try:
+            requests.post(f"{SALA_URL}/interno/cancelar/{tid}", json={}, timeout=5)
+        except requests.RequestException:
+            pass
+        return {"ok": False, "mensaje": "⏳ Esa compu no tomó la prueba a tiempo. ¿Tiene la versión nueva? Corre INSTALAR_SALA.bat en ella."}
+
     def _version(self) -> dict:
         """Cuándo se actualizó el servidor y si ya pediste «Actualizar ya»."""
         repo = config.BASE.parent
@@ -2631,6 +2672,9 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     return self._json(oficina.tampico_accion(datos))
                 except Exception as exc:  # noqa: BLE001
                     return self._json({"error": str(exc)[:300]}, 500)
+            if ruta == "/api/sala/probar_ssh":  # 🔑 ¿esa compu ya entra al servidor con su llave?
+                r = oficina.probar_ssh(str(datos.get("compu") or ""))
+                return self._json(r, 400 if "error" in r else 200)
             if ruta == "/api/servidor/actualizar":  # 🔄 que el servidor agarre la versión nueva ya (en ~1 min)
                 try:
                     (config.BASE.parent / ".actualizar_ya").write_text(str(time.time()), encoding="utf-8")

@@ -108,7 +108,7 @@ class Sala(Aprendizaje, Proyectos):
                         for t in sorted(self.trabajos.values(), key=lambda t: -t["creado"])[:15]]
             tareas = [{"id": t["id"], "agente": self.editor_id(t["compu"]), "etapa": "edicion",
                        "accion": {"pensar": "Pensar", "claude_libre": "Editor IA", "probar_app": "📱 Probar app",
-                                "edu": "🎬 Video de YouTube", "edu_ia": "🎬 Claude edita video"}.get(t["tipo"], "Editar"),
+                                "edu": "🎬 Video de YouTube", "edu_ia": "🎬 Claude edita video", "probar_ssh": "🔑 Probar SSH"}.get(t["tipo"], "Editar"),
                        "titulo": t["etiqueta"], "estado": {"listo": "hecha", "error": "fallo", "cancelado": "cancelada"}.get(t["estado"], "trabajando"),
                        "inicio": t.get("inicio"), "fin": t.get("fin"), "error": t.get("error"), "paso": t.get("paso"),
                        "avance": t.get("avance")} for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])[-40:] if t.get("compu")]
@@ -260,7 +260,7 @@ class Sala(Aprendizaje, Proyectos):
                 c["estado_texto"] = str(d["estado"])[:80]
             c.update(ultimo=time.time(), gpu=str(d.get("gpu") or c.get("gpu") or "")[:60],
                      version=str(d.get("version") or "")[:12], nvenc=bool(d.get("nvenc")), oido=str(d.get("oido") or "")[:40],
-                     tipos=[x for x in (d.get("tipos") or ["cris"]) if isinstance(x, str)][:8],
+                     tipos=[x for x in (d.get("tipos") or ["cris"]) if isinstance(x, str)][:12],
                      claude_code=str(d.get("claude_code") or "")[:20], motion=str(d.get("motion") or "")[:20],
                      celular=str(d.get("celular") or "")[:40])
             extra = {}
@@ -289,7 +289,7 @@ class Sala(Aprendizaje, Proyectos):
             def sirve(t: dict) -> bool:
                 return (t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])
                         and not (dos_carriles and t["tipo"] == "probar_app")
-                        and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia")))
+                        and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia", "probar_ssh")))
 
             if "capacidad" in d:  # 🖥️ compus nuevas: editan VARIOS videos a la vez (según lo que aguantan)
                 cap = max(1, min(6, int(d.get("capacidad") or 1)))
@@ -314,7 +314,7 @@ class Sala(Aprendizaje, Proyectos):
             pendiente = next((t for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])
                               if t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])
                               and not (dos_carriles and t["tipo"] == "probar_app")
-                              and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia"))),
+                              and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia", "probar_ssh"))),
                              None) if libre else None
             if pendiente:
                 pendiente.update(estado="asignado", compu=c["id"], slot=c["slot"], inicio=time.time(), paso="Bajando tus clips")
