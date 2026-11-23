@@ -30,7 +30,7 @@ tienen trabajo, y **Paola (productora) le propone ideas al jefe y le pide su opi
 - `oficina.py`: servidor (Python stdlib, `ThreadingHTTPServer`), estado, tareas, propuestas, proyectos, gasto,
   SSE `/eventos`, contraseña (OFICINA_PASSWORD), chat por Telegram/WhatsApp, tope diario, reanudar trabajos
   interrumpidos (hasta 2 veces), agenda de ideas diaria. Flags: `--demo`, `--host`, `--puerto`,
-  `--configurar-telegram`, `--configurar-whatsapp`, `--probar-whatsapp`, `--probar-wordpress`.
+  `--configurar-telegram`, `--configurar-whatsapp`, `--configurar-tampico`, `--probar-whatsapp`, `--probar-wordpress`.
 - `canal.py`: la producción (`Produccion`) con etapas y dependencias (`DEPENDE`): investigar → {guion, blog};
   guion → {voz, miniatura}; voz → video. Varias corren al mismo tiempo. `publicar()` sigue con YouTube aunque falle
   WordPress (el blog queda pendiente con botón "Subir blog" → `publicar_blog()`).

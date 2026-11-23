@@ -2027,6 +2027,77 @@ def configurar_whatsapp() -> None:
     print("Después reinicia la oficina:  sudo systemctl restart oficina")
 
 
+def configurar_tampico() -> None:
+    """🌮 Asistente de Tampiqueando: con el token corto del Explorador de Meta saca solo el token de página que no
+    caduca, el id de la página y el de Instagram, y lo guarda en .env. Nada de esto sale en pantalla."""
+    import getpass
+    import os
+    import re
+
+    env = config.BASE / ".env"
+    texto = env.read_text(encoding="utf-8") if env.exists() else ""
+
+    def actual(clave):
+        valores = [v.strip() for v in re.findall(rf"^{clave}=(.*)$", texto, flags=re.M) if v.strip()]
+        return valores[-1] if valores else ""
+
+    def pon(clave, valor):
+        nonlocal texto
+        if re.search(rf"^{clave}=", texto, flags=re.M):
+            texto = re.sub(rf"^{clave}=.*$", lambda _: f"{clave}={valor}", texto, flags=re.M)
+        else:
+            texto = texto.rstrip("\n") + f"\n{clave}={valor}\n"
+
+    def graph(ruta, **params):
+        r = requests.get(f"https://graph.facebook.com/v21.0/{ruta}", params=params, timeout=60)
+        datos = r.json() if r.content else {}
+        if r.status_code >= 400:
+            raise SystemExit("✖ Meta dijo: " + (datos.get("error", {}).get("message") or r.text[:200]))
+        return datos
+
+    print("🌮 Conectar Tampiqueando. Deja vacío y da Enter para saltarte un paso.\n")
+    print("— Facebook e Instagram —")
+    app_id = input("App ID (número de tu app en developers.facebook.com): ").strip()
+    if app_id:
+        secreto = getpass.getpass("App Secret (Configuración → Básica; no se ve al pegarlo): ").strip()
+        corto = getpass.getpass("Token del Explorador de la API Graph (no se ve al pegarlo): ").strip()
+        if not (secreto and corto):
+            raise SystemExit("✖ Faltó el App Secret o el token.")
+        largo = graph("oauth/access_token", grant_type="fb_exchange_token", client_id=app_id,
+                      client_secret=secreto, fb_exchange_token=corto)["access_token"]
+        paginas = graph("me/accounts", access_token=largo, fields="id,name,access_token").get("data", [])
+        if not paginas:
+            raise SystemExit("✖ Ese token no ve ninguna página. En el Explorador, al generar el token, marca tu página "
+                             "de Tampiqueando y los permisos pages_show_list y pages_manage_posts.")
+        for i, pg in enumerate(paginas, 1):
+            print(f"  {i}. {pg['name']}")
+        n = input("¿Cuál es la de Tampiqueando? (número) [1]: ").strip() or "1"
+        pagina = paginas[max(0, min(len(paginas), int(n) if n.isdigit() else 1) - 1)]
+        pon("TAMPICO_FB_PAGINA", pagina["id"])
+        pon("TAMPICO_FB_TOKEN", pagina["access_token"])  # sale del token largo: no caduca
+        print(f"✔ Página: {pagina['name']}")
+        ig = graph(pagina["id"], fields="instagram_business_account{username}",
+                   access_token=pagina["access_token"]).get("instagram_business_account")
+        if ig:
+            pon("TAMPICO_IG_ID", ig["id"])
+            print(f"✔ Instagram: @{ig.get('username', '')}")
+        else:
+            print("⚠️  Esa página no tiene Instagram de empresa vinculado. En Instagram: Configuración → Tipo de cuenta → "
+                  "cambia a Empresa/Creador y vincúlala a la página. Luego corre este asistente otra vez.")
+        if not actual("OFICINA_URL"):
+            print("⚠️  Falta OFICINA_URL en .env (la dirección pública de tu oficina): Instagram la necesita para bajar el video.")
+    print("\n— WhatsApp —")
+    plantilla = input(f"Nombre de la plantilla aprobada [{actual('TAMPICO_WA_PLANTILLA') or 'tampiqueando_colaboracion'}]: ").strip()
+    if plantilla or not actual("TAMPICO_WA_PLANTILLA"):
+        pon("TAMPICO_WA_PLANTILLA", plantilla or "tampiqueando_colaboracion")
+    if not (actual("WHATSAPP_PHONE_ID") and actual("WHATSAPP_TOKEN")):
+        print("⚠️  El WhatsApp de la oficina no está configurado: corre también --configurar-whatsapp.")
+    env.write_text(texto, encoding="utf-8")
+    os.chmod(env, 0o600)
+    print("\n✔ Guardado. Reinicia la oficina:  sudo systemctl restart oficina")
+    print("  y en la pestaña 🌮 Tampico deben salir las palomitas ✅.")
+
+
 def probar_wordpress() -> None:
     """Revisa la conexión con tu WordPress y explica qué falla, sin mostrar tu contraseña."""
     url = config.env("WP_URL").rstrip("/")
@@ -2819,6 +2890,7 @@ def main() -> None:
     p.add_argument("--probar-whatsapp", action="store_true", help="te manda un WhatsApp de prueba y sale")
     p.add_argument("--probar-wordpress", action="store_true", help="revisa la conexión con tu blog y sale")
     p.add_argument("--configurar-whatsapp", action="store_true", help="asistente para poner los datos de WhatsApp")
+    p.add_argument("--configurar-tampico", action="store_true", help="conecta Facebook, Instagram y WhatsApp de Tampiqueando")
     p.add_argument("--configurar-suscripcion", action="store_true",
                    help="conecta tu plan de Claude (Pro/Max) para no gastar créditos de la API")
     p.add_argument("--probar-miniatura", action="store_true", help="prueba la miniatura ilustrada con Gemini y sale")
@@ -2829,6 +2901,8 @@ def main() -> None:
         return configurar_suscripcion()
     if a.configurar_whatsapp:
         return configurar_whatsapp()
+    if a.configurar_tampico:
+        return configurar_tampico()
     if a.configurar_telegram:
         return configurar_telegram()
     if a.probar_whatsapp:
