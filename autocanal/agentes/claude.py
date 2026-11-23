@@ -45,7 +45,7 @@ TAREAS = {
     "miniatura_dibujo": ("claude-haiku-5-5", "medium"),  # dibujar la escena con código (SVG)    # conceptos de miniatura ilustrada (el dibujo lo hace Gemini)          # ver la grabación de la prueba (cuadros) y anotar anuncios      # plan de motion graphics escena por escena (fracciones de centavo)
     # oficina de TikTok Shop
     "ficha_shop": ("claude-haiku-5-5", "low"),      # Toño: ordenar lo que salió en Google del producto
-    "guion_shop": ("claude-haiku-5-5", "medium"),   # Sofi: guion que vende con 3 ganchos
+    "guion_shop": ("claude-opus-5-5", "high"),      # Sofi: guion que vende con 3 ganchos (lo creativo: Opus, ~10-15 ¢)
     "tomas_shop": ("claude-haiku-5-5", "low"),      # Diego: lista de tomas para grabar con el celular
     # sala de edición
     "sala": ("claude-sonnet-5-5", "medium"),        # editores de la sala: ven tus clips y arman la edición. Sonnet edita
@@ -76,7 +76,7 @@ TAREAS_SUSCRIPCION = {
     "ideas": "sonnet", "investigar": "sonnet", "guion": "sonnet", "blog": "sonnet", "edicion": "sonnet",
     "estilo": "sonnet", "leer_web": "haiku", "whatsapp": "haiku", "miniatura": "haiku",
     # oficina de TikTok Shop y sala de edición
-    "prueba": "sonnet", "miniatura_ia": "sonnet", "miniatura_dibujo": "sonnet", "ficha_shop": "haiku", "guion_shop": "sonnet", "tomas_shop": "sonnet", "sala": "sonnet", "sala_aprender": "haiku",
+    "prueba": "sonnet", "miniatura_ia": "sonnet", "miniatura_dibujo": "sonnet", "ficha_shop": "haiku", "guion_shop": "opus", "tomas_shop": "sonnet", "sala": "sonnet", "sala_aprender": "haiku",
     "robot": "sonnet",
 }
 LIMITE_PALABRAS = ("usage limit", "rate limit", "limit reached", "out of extra usage", "5-hour", "weekly limit")
