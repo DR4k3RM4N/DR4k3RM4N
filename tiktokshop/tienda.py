@@ -84,6 +84,7 @@ class Tienda:
         self.tareas: list = datos.get("tareas", [])
         self.log: list = datos.get("log", [])
         self.gasto: dict = datos.get("gasto", {})
+        self.reglas_guion: list = datos.get("reglas_guion", [])  # 📌 lo que pediste recordar para todos los guiones
         for p in self.productos.values():  # lo que quedó a medias al apagar
             if p["estado"] == "trabajando":
                 p["estado"], p["error"] = "error", "Se interrumpió al apagar la oficina. Dale Reintentar."
@@ -101,7 +102,8 @@ class Tienda:
     def _tocar(self) -> None:
         self.version += 1
         ESTADO.write_text(json.dumps({"productos": self.productos, "tareas": self.tareas[-200:],
-                                      "log": self.log[-200:], "gasto": dict(sorted(self.gasto.items())[-120:])},
+                                      "log": self.log[-200:], "gasto": dict(sorted(self.gasto.items())[-120:]),
+                                      "reglas_guion": self.reglas_guion[-20:]},
                                      ensure_ascii=False, indent=1), encoding="utf-8")
 
     def _hoy(self) -> str:
@@ -128,7 +130,8 @@ class Tienda:
                     "agentes": list(self.agentes.values()), "productos": productos,
                     "tareas": [t for t in self.tareas[-120:] if t["estado"] in ACTIVAS]
                               + [t for t in self.tareas[-120:] if t["estado"] not in ACTIVAS][-40:],
-                    "log": self.log[-30:], "gasto": self.resumen_gasto(), "disco": self.disco()}
+                    "log": self.log[-30:], "gasto": self.resumen_gasto(), "disco": self.disco(),
+                    "reglas_guion": self.reglas_guion}
 
     def disco(self) -> dict:
         """Espacio libre en el servidor y cuánto ocupan los clips subidos."""
@@ -288,6 +291,93 @@ class Tienda:
             threading.Thread(target=self._producir, args=(pid, desde), daemon=True).start()
             return {"ok": True}
         return {"error": "Acción inválida."}
+
+    def _aprendido(self) -> str:
+        return ("Reglas de Miguel (síguelas siempre):\n- " + "\n- ".join(self.reglas_guion)) if self.reglas_guion else ""
+
+    def regla(self, d: dict) -> dict:
+        """Quitar una regla recordada."""
+        texto = str(d.get("quitar") or "")
+        with self.lock:
+            self.reglas_guion = [r for r in self.reglas_guion if r != texto]
+            self._tocar()
+        return {"ok": True, "reglas": self.reglas_guion}
+
+    def chat_guion(self, pid: str, d: dict) -> dict:
+        """💬 Le pides un cambio a Sofi: todo el guion o solo un gancho. Si todavía no subes clips, Diego rehace las tomas."""
+        p = self.productos.get(pid)
+        if not p or not p.get("guion"):
+            return {"error": "Ese producto todavía no tiene guion."}
+        if p["estado"] == "trabajando":
+            return {"error": "Espera a que terminen de trabajar en él."}
+        texto = str(d.get("texto") or "").strip()[:1500]
+        cual = str(d.get("cual") or "todo")
+        cual = cual if cual in ("A", "B", "C") else "todo"
+        if len(texto) < 3:
+            return {"error": "Escribe qué quieres cambiar."}
+        with self.lock:
+            if d.get("recordar") and texto not in self.reglas_guion:
+                self.reglas_guion = (self.reglas_guion + [texto])[-20:]
+            p.setdefault("chat_guion", []).append({"quien": "jefe", "texto": texto, "cual": cual, "t": time.time()})
+            p["estado"], p["error"] = "trabajando", None  # el guion sigue a la vista mientras Sofi lo cambia
+            self._tocar()
+        threading.Thread(target=self._ajustar, args=(pid, texto, cual), daemon=True).start()
+        return {"ok": True}
+
+    def _ajustar(self, pid: str, texto: str, cual: str) -> None:
+        p = self.productos[pid]
+        t = {"id": uuid.uuid4().hex[:8], "agente": "tt_guionista", "etapa": "guion",
+             "accion": "Cambiar " + (f"el gancho {cual}" if cual != "todo" else "el guion") + " como pediste",
+             "proyecto": pid, "titulo": p["nombre"], "estado": "trabajando", "creado": time.time(),
+             "inicio": time.time(), "fin": None, "error": None}
+        with self.lock:
+            self.tareas.append(t)
+            self._tocar()
+        self.poner("tt_guionista", estado="trabajando", ubicacion="casa")
+        self.decir("tt_guionista", "Va, jefe, lo cambio…")
+        ia.contexto.proyecto, ia.contexto.etapa, ia.contexto.tarea = pid, "guion", t
+        clips = p.get("clips") or {}
+        con_clips = bool(clips.get("tomas") or clips.get("completo") or p.get("videos")
+                         or any(((p.get("local") or {}).get("asignacion") or {}).values()))
+        try:
+            r = shop.ajustar_guion(p, p["guion"], p.get("ficha") or {}, texto, cual, self.reglas_guion,
+                                   p.get("chat_guion", [])[:-1])
+            nuevas = None
+            if not con_clips:  # las tomas dependen del guion: Diego las rehace (si ya grabaste, no te las mueve)
+                with self.lock:
+                    p["etapas"]["tomas"] = "trabajando"
+                    self._tocar()
+                self.poner("tt_director", estado="trabajando")
+                try:
+                    nuevas = shop.tomas(p, r["guion"])
+                finally:
+                    self.poner("tt_director", estado="libre")
+        except Exception as exc:  # noqa: BLE001
+            with self.lock:
+                t.update(estado="fallo", fin=time.time(), error=str(exc)[:300])
+                p["etapas"]["guion"] = "hecha"
+                if p["etapas"].get("tomas") == "trabajando":
+                    p["etapas"]["tomas"] = "hecha"
+                p["estado"] = "listo"
+                p["chat_guion"].append({"quien": "sofi", "texto": f"No pude cambiarlo 😕 ({str(exc)[:150]}). Vuelve a pedírmelo.", "t": time.time()})
+                self._tocar()
+            self.poner("tt_guionista", estado="libre")
+            return
+        finally:
+            ia.contexto.tarea = None
+        respuesta = r["respuesta"] + ("" if not con_clips else " (Las tomas no las moví porque ya tienes clips; si cambié algo que ya grabaste, vuelve a grabar esa parte.)")
+        with self.lock:
+            p["guion"] = r["guion"]
+            if nuevas:
+                p["tomas"] = nuevas
+            p["etapas"]["guion"] = "hecha"
+            p["etapas"]["tomas"] = "hecha" if p.get("tomas") else p["etapas"].get("tomas")
+            p["estado"] = "listo"
+            p["chat_guion"].append({"quien": "sofi", "texto": respuesta, "t": time.time()})
+            t.update(estado="hecha", fin=time.time(), resultado="Guion cambiado")
+            self._tocar()
+        self.poner("tt_guionista", estado="libre")
+        self.decir("tt_guionista", "¡Listo, ya quedó el cambio! ✍️")
 
     def asignar_local(self, pid: str, d: dict) -> dict:
         """Qué es cada clip de la carpeta de tu compu: toma N, video completo o nada (no se sube ningún video)."""
@@ -569,7 +659,7 @@ class Tienda:
                     resultado = shop.ficha(p)
                     resumen = f"{len(resultado['datos'])} datos y {len(resultado['opiniones'])} opiniones con fuente"
                 elif etapa == "guion":
-                    resultado = shop.guion(p, p.get("ficha") or {})
+                    resultado = shop.guion(p, p.get("ficha") or {}, self._aprendido())
                     resumen = f"{shop.FORMATOS.get(resultado['formato'], resultado['formato'])} · {resultado['id']}"
                 else:
                     resultado = shop.tomas(p, p["guion"])
@@ -614,7 +704,7 @@ def activar_demo() -> None:
                 "publico": "Estudiantes y oficinistas", "objecion": "¿De qué tamaño es?", "precio": f"${p['precio']} MXN" if p.get("precio") else "",
                 "datos": [], "opiniones": [], "cuidado": "", "fuentes": 0}
 
-    def guion(p, f):
+    def guion(p, f, aprendido=""):
         time.sleep(random.uniform(4, 6))
         cuerpo = [("3–8 s", "puente", "Producto en la mano, lo giro a cámara", "PENSÉ QUE ERA PURO CHORO", "Neta pensé que era puro choro…"),
                   ("8–18 s", "problema", "Mochila revuelta, saco cables enredados", "SIEMPRE ASÍ 😩", "…porque siempre me pasa esto."),
@@ -657,7 +747,15 @@ def activar_demo() -> None:
         orden = ["gancho_A", "gancho_B", "gancho_C", *cris.BLOQUES]
         return [orden[min(i, len(orden) - 1)] for i in range(len(trozos))]
 
-    shop.ficha, shop.guion, shop.tomas = ficha, guion, tomas
+    def ajustar_guion(p, g, f, pedido, cual, reglas=None, historial=None):
+        time.sleep(random.uniform(2, 4))
+        nuevo = json.loads(json.dumps(g))
+        for x in nuevo["ganchos"]:
+            if cual in ("todo", x["letra"]):
+                x["voz"] = f"(demo, cambiado: {pedido[:40]}) " + x["voz"]
+        return {"respuesta": f"Listo, cambié {'el gancho ' + cual if cual != 'todo' else 'el guion'} (demo).", "guion": nuevo}
+
+    shop.ficha, shop.guion, shop.tomas, shop.ajustar_guion = ficha, guion, tomas, ajustar_guion
     cris.transcribir, cris.clasificar = transcribir, clasificar
     ia.json_estructurado = lambda *a, **k: (_ for _ in ()).throw(ia.ErrorIA("modo demo"))
 
@@ -742,6 +840,11 @@ def crear_servidor(tienda: Tienda, puerto: int) -> ThreadingHTTPServer:
             if ruta.startswith("/interno/clasificar/"):  # solo desde la sala (no pasa por internet)
                 r = tienda.clasificar(ruta.rsplit("/", 1)[-1], datos)
                 return self._json(r, 400 if "error" in r else 200)
+            if ruta.startswith("/api/chat_guion/"):
+                r = tienda.chat_guion(ruta.rsplit("/", 1)[-1], datos)
+                return self._json(r, 400 if "error" in r else 200)
+            if ruta == "/api/reglas_guion":
+                return self._json(tienda.regla(datos))
             if ruta == "/api/producto":
                 r = tienda.nuevo_producto(datos)
             elif ruta.startswith("/api/producto/"):

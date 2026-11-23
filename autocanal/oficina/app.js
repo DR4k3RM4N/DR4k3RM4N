@@ -1448,6 +1448,9 @@
     const fila = (c, etiqueta) => `<tr><td>${esc(c.tiempo)}<br><small>${esc(etiqueta)}</small></td><td>${esc(c.toma)}</td>
       <td class="texto-pantalla">${esc(c.texto_pantalla)}</td><td>${esc(c.voz || "(sin voz)")}</td></tr>`;
     const caja = $(".modal-caja"), scroll = caja.scrollTop;
+    // lo que llevas escrito en el chat no se borra cuando se actualiza la ventana
+    const borrador = { texto: $("#cg-texto")?.value, cual: $("#cg-cual")?.value, recordar: $("#cg-recordar")?.checked,
+                       foco: document.activeElement?.id === "cg-texto" };
     $("#modal-cuerpo").innerHTML = `<div class="guion-shop">
       <h2 id="modal-titulo">${esc(p.nombre)}</h2>
       <p class="id">ID: ${esc(g.id)}${gancho ? `-${esc(gancho.letra)}` : ""} · ${esc(FORMATO_TT[g.formato] || g.formato)} · ${g.duracion === "corta" ? "15–25 s" : "35–50 s"}</p>
@@ -1465,6 +1468,7 @@
       <table class="tabla-shop"><thead><tr><th>Tiempo</th><th>Toma</th><th>Texto en pantalla</th><th>Voz</th></tr></thead>
         <tbody>${gancho ? fila({ tiempo: "0–3 s", ...gancho }, `Gancho ${gancho.letra}`) : ""}
         ${g.cuerpo.map((c) => fila(c, BLOQUE_TT[c.bloque] || c.bloque)).join("")}</tbody></table>
+      ${chatGuionTT(p, elegido)}
       <h3>Caption <button class="btn btn-mini" data-copiar="caption">Copiar</button></h3>
       <div class="copiable" id="copiar-caption">${esc(caption)}</div>
       <h3>Comentario fijado <button class="btn btn-mini" data-copiar="comentario">Copiar</button></h3>
@@ -1490,7 +1494,38 @@
       ${p.costo ? `<p class="pista">💰 Este guion costó ${dinero(p.costo)}</p>` : ""}
     </div>`;
     caja.scrollTop = scroll;
+    if (borrador.texto != null && $("#cg-texto")) {
+      $("#cg-texto").value = borrador.texto; $("#cg-cual").value = borrador.cual; $("#cg-recordar").checked = borrador.recordar;
+      if (borrador.foco) $("#cg-texto").focus();
+    }
+    const log = $("#cg-log");
+    if (log) log.scrollTop = log.scrollHeight;
     pintarLocales();
+  }
+
+  // 💬 Chat con Sofi para cambiar el guion (todo o un solo gancho) sin rehacer el producto
+  function chatGuionTT(p, elegido) {
+    const trabajando = p.estado === "trabajando";
+    const msgs = p.chat_guion || [];
+    const reglas = estadoTT?.reglas_guion || [];
+    const def = ["A", "B", "C"].includes(elegido) ? elegido : "todo";
+    return `<section class="chat-guion">
+      <h3>💬 Pídele cambios a Sofi</h3>
+      <p class="pista">Ej. «no quiero salir a la calle, que todo sea en casa», «el gancho B más chistoso», «quita lo de la mochila». Cambia solo lo que pidas.</p>
+      ${msgs.length ? `<ol class="chat-sala" id="cg-log">${msgs.map((m) => `<li class="${m.quien === "jefe" ? "mio" : ""}"><b>${m.quien === "jefe" ? "Tú" : "Sofi"}${m.cual && m.cual !== "todo" ? ` · gancho ${esc(m.cual)}` : ""}:</b> ${esc(m.texto)}</li>`).join("")}</ol>` : ""}
+      ${trabajando ? `<p class="pista">✍️ Sofi está haciendo el cambio…</p>` : ""}
+      <div class="fila chat-guion-opciones">
+        <label>Cambiar: <select id="cg-cual">
+          <option value="todo" ${def === "todo" ? "selected" : ""}>Todo el guion (los 3 ganchos)</option>
+          ${["A", "B", "C"].map((l) => `<option value="${l}" ${def === l ? "selected" : ""}>Solo el gancho ${l}</option>`).join("")}
+        </select></label>
+        <label class="pista"><input type="checkbox" id="cg-recordar"> 📌 Recordarlo para los siguientes guiones</label>
+      </div>
+      <textarea id="cg-texto" rows="2" maxlength="1500" placeholder="¿Qué quieres cambiar?"></textarea>
+      <button type="button" class="btn btn-primario" data-chat-guion ${trabajando ? "disabled" : ""}>Enviar a Sofi</button>
+      ${reglas.length ? `<details class="reglas-guion"><summary>📌 Lo que Sofi recuerda para todos tus guiones (${reglas.length})</summary>
+        <ul>${reglas.map((r) => `<li>${esc(r)} <button type="button" class="btn btn-mini" data-quitar-regla="${esc(r)}" aria-label="Olvidar">✕</button></li>`).join("")}</ul></details>` : ""}
+    </section>`;
   }
 
   const hayCompus = () => (estadoSala?.compus || []).length > 0;
@@ -1597,6 +1632,22 @@
       apiTT(`/api/producto/${encodeURIComponent(guionAbierto.id)}`, { accion: editar.dataset.editarEsperar !== undefined ? "editar_esperar" : "editar", desde: modo })
         .then(() => { window.Oficina.verAla("tiktok"); return refrescarGuionTT(); })
         .catch((err) => { alert(err.message); editar.disabled = false; });
+      return;
+    }
+    const cg = e.target.closest("[data-chat-guion]");
+    if (cg && guionAbierto) {
+      const texto = $("#cg-texto").value.trim();
+      if (texto.length < 3) { $("#cg-texto").focus(); return; }
+      cg.disabled = true;
+      apiTT(`/api/chat_guion/${encodeURIComponent(guionAbierto.id)}`, { texto, cual: $("#cg-cual").value, recordar: $("#cg-recordar").checked })
+        .then(() => { $("#cg-texto").value = ""; $("#cg-recordar").checked = false; return refrescarGuionTT(); })
+        .catch((err) => { alert(err.message); cg.disabled = false; });
+      return;
+    }
+    const qr = e.target.closest("[data-quitar-regla]");
+    if (qr) {
+      if (!confirm("¿Que Sofi olvide esta regla?")) return;
+      apiTT("/api/reglas_guion", { quitar: qr.dataset.quitarRegla }).then(async () => { await consultarTT(); pintarGuionTT(); }).catch((err) => alert(err.message));
       return;
     }
     const gb = e.target.closest("[data-gancho]");

@@ -188,6 +188,47 @@ def guion(p: dict, f: dict, aprendido: str = "") -> dict:
     return r
 
 
+AJUSTE = {"type": "object", "additionalProperties": False, "required": ["respuesta", "guion"],
+          "properties": {"respuesta": {"type": "string", "description": "a Miguel, 1-2 frases: qué cambiaste"},
+                         "guion": GUION}}
+
+
+def ajustar_guion(p: dict, g: dict, f: dict, pedido: str, cual: str, reglas: list[str] | None = None,
+                  historial: list[dict] | None = None) -> dict:
+    """💬 Miguel pide un cambio: Sofi toca SOLO lo que pidió. cual = "todo" o la letra del gancho (A/B/C)."""
+    actual = {k: g.get(k) for k in GUION["properties"]}
+    alcance = ("Cambia SOLO el gancho " + cual + ". Los otros ganchos, el cuerpo, caption, hashtags y comentario "
+               "déjalos EXACTAMENTE iguales." if cual in ("A", "B", "C") else
+               "Aplica el cambio en todo el guion donde haga falta (los 3 ganchos, el cuerpo, caption…), pero lo que "
+               "no tenga que ver con el pedido déjalo igual.")
+    texto = (_texto_producto(p) + "\n\nFicha de Toño (lo único que puedes afirmar como hecho):\n"
+             + json.dumps({k: f.get(k) for k in ("resumen", "problema", "publico", "objecion", "precio", "datos",
+                                                  "opiniones", "cuidado")}, ensure_ascii=False)
+             + (("\n\nReglas que Miguel ya te pidió para todos sus guiones:\n- " + "\n- ".join(reglas)) if reglas else "")
+             + (("\n\nLo que ya platicaron de este guion:\n" + "\n".join(
+                 f"- {'Miguel' if h['quien'] == 'jefe' else 'Sofi'}: {h['texto']}" for h in historial[-8:])) if historial else "")
+             + "\n\nGUION ACTUAL:\n" + json.dumps(actual, ensure_ascii=False)
+             + f"\n\nMIGUEL PIDE: {pedido}\n\n{alcance} Si pide quitar algo que no quiere hacer (una toma, una "
+               "acción, un lugar), reemplázalo por otra cosa que él sí pueda grabar y que siga vendiendo. Devuelve el "
+               "guion COMPLETO ya corregido (3 ganchos A/B/C y todo el cuerpo).")
+    r = ia.json_estructurado(REGLAS, texto, AJUSTE, tarea="guion_shop", que=f"ajustar guion ({cual})")
+    nuevo = r["guion"]
+    orden = {"A": 0, "B": 1, "C": 2}
+    nuevo["ganchos"] = sorted(nuevo.get("ganchos") or [], key=lambda x: orden.get(x["letra"], 9))[:3]
+    if cual in ("A", "B", "C"):  # aunque Claude se pase, solo cambia el gancho elegido
+        nuevo_g = next((x for x in nuevo["ganchos"] if x["letra"] == cual), None)
+        if not nuevo_g:
+            raise ia.ErrorIA("Sofi no regresó el gancho. Vuelve a pedirlo.")
+        final = dict(g)
+        final["ganchos"] = [nuevo_g if x["letra"] == cual else x for x in g["ganchos"]]
+    else:
+        if len(nuevo["ganchos"]) < 3 or not nuevo.get("cuerpo"):
+            raise ia.ErrorIA("El guion salió incompleto. Vuelve a pedirlo.")
+        nuevo["hashtags"] = [h if h.startswith("#") else f"#{h}" for h in nuevo["hashtags"]][:5]
+        final = {**g, **nuevo, "id": g.get("id") or nuevo.get("id")}
+    return {"respuesta": r["respuesta"], "guion": final}
+
+
 # ---------- Diego: lista de tomas ----------
 TOMAS = {
     "type": "object", "additionalProperties": False, "required": ["material", "tomas", "consejos"],
