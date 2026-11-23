@@ -45,7 +45,7 @@ TAREAS = {
     "miniatura_dibujo": ("claude-haiku-5-5", "medium"),  # dibujar la escena con código (SVG)    # conceptos de miniatura ilustrada (el dibujo lo hace Gemini)          # ver la grabación de la prueba (cuadros) y anotar anuncios      # plan de motion graphics escena por escena (fracciones de centavo)
     # oficina de TikTok Shop
     "ficha_shop": ("claude-haiku-5-5", "low"),      # Toño: ordenar lo que salió en Google del producto
-    "guion_shop": ("claude-opus-5-5", "high"),      # Sofi: guion que vende con 3 ganchos (lo creativo: Opus, ~10-15 ¢)
+    "guion_shop": ("claude-opus-5-5", "high"),      # Sofi: guion que vende con 3 ganchos (Opus; solo por tu plan salvo la casilla 💳)
     "tomas_shop": ("claude-haiku-5-5", "low"),      # Diego: lista de tomas para grabar con el celular
     # sala de edición
     "sala": ("claude-sonnet-5-5", "medium"),        # editores de la sala: ven tus clips y arman la edición. Sonnet edita
@@ -227,11 +227,26 @@ def _por_suscripcion(system: str, contenido, schema: dict, tarea: str, que: str,
     return resultado["structured_output"]
 
 
+# 🔒 Tareas que SOLO usan tu plan de Claude: nunca gastan centavos de la API, salvo que el jefe lo permita
+# (casilla en la oficina → permitir_api(tarea, True)).
+SOLO_PLAN = {"guion_shop"}
+_api_permitida: set[str] = set()
+
+
+def permitir_api(tarea: str, si: bool) -> None:
+    (_api_permitida.add if si else _api_permitida.discard)(tarea)
+
+
 def json_estructurado(system: str, contenido, schema: dict, tarea: str = "guion", effort: str | None = None,
                       que: str | None = None) -> dict:
     """Pide a Claude un JSON que cumple `schema`. `contenido` puede ser texto o bloques (imágenes).
     Usa tu suscripción si está configurada; si no (o si se acabó el límite), la API."""
     modelo, esfuerzo = modelo_de(tarea)
+    if tarea in SOLO_PLAN and tarea not in _api_permitida:
+        if not suscripcion_lista():
+            raise ErrorIA("Esto solo se hace con tu plan de Claude y no está conectado (oficina.py "
+                          "--configurar-suscripcion). Para usar la API (cuesta centavos) prende la casilla 💳 en la oficina.")
+        return _por_suscripcion(system, contenido, schema, tarea, que or tarea, effort or esfuerzo)
     if usar_suscripcion():
         try:
             return _por_suscripcion(system, contenido, schema, tarea, que or tarea, effort or esfuerzo)

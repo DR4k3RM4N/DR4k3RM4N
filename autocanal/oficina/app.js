@@ -1287,12 +1287,18 @@
     }
   }
 
+  $("#shop-api").addEventListener("change", async (e) => {
+    if (e.target.checked && !confirm("¿Dejar que Sofi use la API cuando tu plan no responda? Cada guion cuesta unos 10-15 centavos de dólar.")) { e.target.checked = false; return; }
+    try { await apiTT("/api/ajustes", { api_guion: e.target.checked }); consultarTT(); } catch (err) { alert(err.message); }
+  });
   function pintarShop() {
     $("#shop-apagada").hidden = !!estadoTT;
     $("#form-producto").hidden = !estadoTT;
+    $("#shop-api").parentElement.hidden = !estadoTT;
     if (!estadoTT) { $("#shop-lista").innerHTML = ""; $("#shop-gasto").textContent = ""; $("#cuenta-shop").hidden = true; return; }
     const g = estadoTT.gasto;
     const disco = estadoTT.disco || {};
+    if (document.activeElement !== $("#shop-api")) $("#shop-api").checked = !!estadoTT.api_guion;
     $("#shop-gasto").innerHTML = `💰 Oficina TikTok hoy <b>${dinero(g.hoy)}</b>${g.tope ? ` / tope ${dinero(g.tope)}` : ""} · mes ${dinero(g.mes)}`
       + (disco.libre_gb != null ? ` · <span class="${disco.libre_gb < 3 ? "poco-disco" : ""}" title="Clips subidos: ${disco.clips_gb} GB">💾 ${disco.libre_gb} GB libres</span>` : "")
       + (estadoTT.demo ? ` · <span class="chip chip-demo">DEMO</span>` : "")

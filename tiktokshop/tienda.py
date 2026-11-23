@@ -85,6 +85,8 @@ class Tienda:
         self.log: list = datos.get("log", [])
         self.gasto: dict = datos.get("gasto", {})
         self.reglas_guion: list = datos.get("reglas_guion", [])  # 📌 lo que pediste recordar para todos los guiones
+        self.api_guion: bool = bool(datos.get("api_guion", False))  # 💳 Sofi puede usar la API (centavos) si el plan falla
+        ia.permitir_api("guion_shop", self.api_guion)
         for p in self.productos.values():  # lo que quedó a medias al apagar
             if p["estado"] == "trabajando":
                 p["estado"], p["error"] = "error", "Se interrumpió al apagar la oficina. Dale Reintentar."
@@ -103,7 +105,7 @@ class Tienda:
         self.version += 1
         ESTADO.write_text(json.dumps({"productos": self.productos, "tareas": self.tareas[-200:],
                                       "log": self.log[-200:], "gasto": dict(sorted(self.gasto.items())[-120:]),
-                                      "reglas_guion": self.reglas_guion[-20:]},
+                                      "reglas_guion": self.reglas_guion[-20:], "api_guion": self.api_guion},
                                      ensure_ascii=False, indent=1), encoding="utf-8")
 
     def _hoy(self) -> str:
@@ -131,7 +133,7 @@ class Tienda:
                     "tareas": [t for t in self.tareas[-120:] if t["estado"] in ACTIVAS]
                               + [t for t in self.tareas[-120:] if t["estado"] not in ACTIVAS][-40:],
                     "log": self.log[-30:], "gasto": self.resumen_gasto(), "disco": self.disco(),
-                    "reglas_guion": self.reglas_guion}
+                    "reglas_guion": self.reglas_guion, "api_guion": self.api_guion}
 
     def disco(self) -> dict:
         """Espacio libre en el servidor y cuánto ocupan los clips subidos."""
@@ -294,6 +296,14 @@ class Tienda:
 
     def _aprendido(self) -> str:
         return ("Reglas de Miguel (síguelas siempre):\n- " + "\n- ".join(self.reglas_guion)) if self.reglas_guion else ""
+
+    def ajustes(self, d: dict) -> dict:
+        with self.lock:
+            if "api_guion" in d:
+                self.api_guion = bool(d["api_guion"])
+                ia.permitir_api("guion_shop", self.api_guion)
+            self._tocar()
+        return {"ok": True, "api_guion": self.api_guion}
 
     def regla(self, d: dict) -> dict:
         """Quitar una regla recordada."""
@@ -843,6 +853,8 @@ def crear_servidor(tienda: Tienda, puerto: int) -> ThreadingHTTPServer:
             if ruta.startswith("/api/chat_guion/"):
                 r = tienda.chat_guion(ruta.rsplit("/", 1)[-1], datos)
                 return self._json(r, 400 if "error" in r else 200)
+            if ruta == "/api/ajustes":
+                return self._json(tienda.ajustes(datos))
             if ruta == "/api/reglas_guion":
                 return self._json(tienda.regla(datos))
             if ruta == "/api/producto":
