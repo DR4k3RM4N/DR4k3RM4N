@@ -2545,9 +2545,11 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                         datos = oficina.snapshot()
                         visto = datos["version"]
                         self.wfile.write(f"data: {json.dumps(datos, ensure_ascii=False)}\n\n".encode())
+                        self.wfile.flush()
+                        time.sleep(1)  # ⚡ máx. 1 envío por segundo: los cambios seguidos se juntan en uno
                     else:
                         self.wfile.write(b": ping\n\n")
-                    self.wfile.flush()
+                        self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
 

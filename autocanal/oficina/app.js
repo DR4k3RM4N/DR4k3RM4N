@@ -53,7 +53,20 @@
   document.addEventListener("touchend", soltarDedo, { passive: true, capture: true });
   document.addEventListener("touchcancel", soltarDedo, { passive: true, capture: true });
 
+  // ⚡ Llegan muchas actualizaciones seguidas: se juntan (máx. ~3 por segundo), no se pinta nada con la pestaña del
+  // navegador escondida, y de los paneles solo se repinta el que tienes abierto (los demás, al abrirlos).
+  let porPintar = null, relojPintar = null, ultimoPinte = 0;
   function pintar(nuevo) {
+    porPintar = nuevo;
+    if (relojPintar || document.hidden) return;
+    const espera = Math.max(0, 350 - (Date.now() - ultimoPinte));
+    relojPintar = setTimeout(() => { relojPintar = null; if (porPintar && !document.hidden) { const n = porPintar; porPintar = null; ultimoPinte = Date.now(); pintarYa(n); } }, espera);
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && porPintar) pintar(porPintar); });
+  const abierta = (tab) => !$(`#tab-${tab}`)?.hidden;
+  const sucias = new Set();
+  function panel(tab, fn) { if (abierta(tab)) { sucias.delete(tab); fn(); } else sucias.add(tab); }
+  function pintarYa(nuevo) {
     if (tocando && estado) { estadoGuardado = nuevo; return; }
     estado = nuevo;
     window.Oficina.actualizar(nuevo);
@@ -69,12 +82,17 @@
       b.hidden = false;
       b.textContent = v.pedida ? "🔄 actualizando… (~1 min)" : `🔄 servidor: ${v.ultima || "—"}${v.esperando ? " · versión nueva esperando" : ""}`;
     }
-    pintarBandeja();
-    pintarProyectos();
-    pintarIdeasAuto();
-    pintarEquipo();
-    pintarChat();
-    pintarResultados();
+    contarBandeja();
+    panel("bandeja", () => { pintarBandeja(); pintarIdeasAuto(); });
+    panel("proyectos", pintarProyectos);
+    if (agenteVisto) pintarEquipo(); else panel("equipo", pintarEquipo);
+    panel("chat", pintarChat);
+    panel("resultados", pintarResultados);
+  }
+  function contarBandeja() { // el numerito de la pestaña siempre al día, aunque no esté abierta
+    const total = estado.propuestas.length + estado.proyectos.filter((p) => p.estado === "revision" || p.estado === "error").length;
+    $("#cuenta").hidden = !total;
+    $("#cuenta").textContent = total;
   }
 
   // ---------- bandeja ----------
@@ -548,7 +566,7 @@
     e.preventDefault();
     tpAccion({ accion: "buscar", tipo: $("#tp-tipo").value, zona: $("#tp-zona").value }, e.target.querySelector("button"), "Buscando…");
   });
-  setInterval(() => pintarTampico(), 30000);
+  setInterval(() => { if (!document.hidden) pintarTampico(); }, 30000);
 
   // ---------- 📊 resultados ----------
   const PASOS_PERMISO = (cid) => `<ol class="pasos">
@@ -688,6 +706,12 @@
   function abrirPestana(nombre) {
     document.querySelectorAll(".pestana").forEach((x) => x.classList.toggle("activa", x.dataset.tab === nombre));
     document.querySelectorAll(".contenido").forEach((c) => (c.hidden = c.id !== `tab-${nombre}`));
+    if (estado && sucias.has(nombre)) { // se quedó sin pintar mientras estaba cerrada
+      sucias.delete(nombre);
+      if (nombre === "bandeja") { pintarBandeja(); pintarIdeasAuto(); }
+      if (nombre === "proyectos") pintarProyectos();
+      if (nombre === "chat") pintarChat();
+    }
     if (nombre === "chat") $("#chat").scrollTop = $("#chat").scrollHeight;
     if (nombre === "equipo") pintarEquipo();
     if (nombre === "estilo") pintarEstilo();
@@ -2101,8 +2125,8 @@
   api("/api/estado").then(pintar).catch(() => {});
   conectar();
   consultarTT();
-  setInterval(consultarTT, 2000);
+  setInterval(() => { if (!document.hidden) consultarTT(); }, 2000);
   consultarSala();
-  setInterval(consultarSala, 3000);
+  setInterval(() => { if (!document.hidden) consultarSala(); }, 3000);
   setInterval(() => { if (!$("#modal").hidden && $("#locales-tt")) cargarLocales(); }, 5000);
 })();

@@ -1039,11 +1039,34 @@
 
   // ---------- bucle ----------
   let ultimo = performance.now();
+  // ⚡ Para no alentar la compu ni el cel: el edificio se dibuja a pocos cuadros por segundo (es pixel art, no hace
+  // falta más), solo la parte que se ve, y se detiene si la pestaña está escondida, si el edificio no está en
+  // pantalla o si el jefe prende el "Modo ligero" (sin edificio).
+  const FPS = 12;
+  let siguienteCuadro = 0, corriendo = false, enVista = true;
+  const movil = window.matchMedia?.("(max-width: 900px)").matches;
+  let ligera;
+  try { const g0 = localStorage.getItem("ligera"); ligera = g0 === null ? !!movil : g0 === "1"; } catch { ligera = !!movil; }
+  const debeCorrer = () => !ligera && !document.hidden && enVista;
+  function arrancar() {
+    if (corriendo || !debeCorrer()) return;
+    corriendo = true;
+    ultimo = performance.now();
+    siguienteCuadro = 0;
+    requestAnimationFrame(cuadro);
+  }
   function cuadro(ahora) {
-    const dt = Math.min(0.1, (ahora - ultimo) / 1000);
+    if (!debeCorrer()) { corriendo = false; return; }
+    requestAnimationFrame(cuadro);
+    if (ahora < siguienteCuadro) return;
+    siguienteCuadro = Math.max(siguienteCuadro + 1000 / FPS, ahora - 1000 / FPS);
+    const dt = Math.min(0.15, (ahora - ultimo) / 1000);
     ultimo = ahora;
     const t = ahora / 1000;
+    moverCamara(dt);
     g.clearRect(0, 0, ANCHO, ALTO);
+    g.save();
+    g.beginPath(); g.rect(cam.x - 2, cam.y - 2, cam.w + 4, cam.h + 4); g.clip(); // solo se pinta lo que se ve
     piso(estado, t);
     muros(t, estado);
 
@@ -1187,8 +1210,8 @@
       g.restore();
       brilloFoquitos();
     }
+    g.restore();
 
-    moverCamara(dt);
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     reflector(ahora);
@@ -1196,7 +1219,6 @@
     ctx.clearRect(0, 0, lienzo.width, lienzo.height);
     ctx.drawImage(buf, cam.x, cam.y, cam.w, cam.h, offX, offY, cam.w * escala, cam.h * escala);
     capasDom(ahora);
-    requestAnimationFrame(cuadro);
   }
 
   // Al elegir un agente: la oficina se oscurece un momento con un reflector sobre él y le queda una flechita encima
@@ -1337,8 +1359,12 @@
     escala = Math.min(lienzoW / cam.w, lienzoH / cam.h, 1.6);
     offX = (lienzoW - cam.w * escala) / 2;
     offY = (lienzoH - cam.h * escala) / 2;
-    capas.style.setProperty("--tag", `${Math.max(9, Math.min(13, 11 * escala))}px`);
-    capas.style.setProperty("--globo", `${Math.max(11, Math.min(13.5, 12.5 * escala))}px`);
+    const tag = `${Math.max(9, Math.min(13, 11 * escala)).toFixed(1)}px`, globo = `${Math.max(11, Math.min(13.5, 12.5 * escala)).toFixed(1)}px`;
+    if (tag !== capas.dataset.tag || globo !== capas.dataset.globo) { // tocar el estilo cada cuadro alenta la página
+      capas.dataset.tag = tag; capas.dataset.globo = globo;
+      capas.style.setProperty("--tag", tag);
+      capas.style.setProperty("--globo", globo);
+    }
   }
   const aPantalla = (px, py) => [(px - cam.x) * escala + offX, (py - cam.y) * escala + offY];
 
@@ -1370,7 +1396,27 @@
   window.addEventListener("resize", ajustar);
   verAla(ala);
   Object.assign(cam, VISTAS[ala]);
-  requestAnimationFrame(cuadro);
+
+  const escenario = lienzo.closest(".escenario");
+  const botonLigera = document.getElementById("ligera");
+  function ponerLigera(si) {
+    ligera = si;
+    try { localStorage.setItem("ligera", si ? "1" : "0"); } catch { /* sin almacenamiento */ }
+    document.body.classList.toggle("ligera", si);
+    if (botonLigera) {
+      botonLigera.classList.toggle("activa", si);
+      botonLigera.textContent = si ? "🏢 Ver edificio" : "⚡ Modo ligero";
+      botonLigera.title = si ? "Mostrar el edificio animado" : "Esconder el edificio animado para que todo vaya más rápido";
+    }
+    if (!si) { ajustar(); arrancar(); }
+  }
+  botonLigera?.addEventListener("click", () => ponerLigera(!ligera));
+  document.addEventListener("visibilitychange", arrancar);
+  if ("IntersectionObserver" in window && escenario) {
+    new IntersectionObserver((es) => { enVista = es.some((e) => e.isIntersecting); arrancar(); }).observe(escenario);
+  }
+  ponerLigera(ligera);
+  arrancar();
 
   function agenteEn(clientX, clientY) {
     const r = lienzo.getBoundingClientRect();

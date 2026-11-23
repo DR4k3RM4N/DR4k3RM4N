@@ -595,3 +595,11 @@ img, video, svg, canvas { max-width: 100%; }
 .tp-formato.elegido { border-color: var(--acento); }
 .tp-plan { border: 1px solid rgba(255,255,255,.1); border-radius: 10px; padding: 8px 10px; margin: 6px 0; }
 #tampico textarea, #tampico input:not([type=checkbox]) { width: 100%; margin: 4px 0; }
+
+/* ⚡ Modo ligero: sin edificio animado, solo los paneles (lo más rápido, sobre todo en el cel) */
+
+.ala-ligera.activa { background: #22c55e; }
+body.ligera .escenario, body.ligera .ayuda { display: none; }
+body.ligera .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+body.ligera .sala { padding: 8px 12px 0; }
+body.ligera .panel { border-left: 0; width: 100%; max-width: 1100px; margin: 0 auto; }
