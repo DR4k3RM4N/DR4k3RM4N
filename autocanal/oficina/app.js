@@ -1262,7 +1262,8 @@
                      ["video", "Cris edita"], ["portada", "Vale: portada"]];
   const ESTADO_TT = { trabajando: "En proceso", listo: "Listo para grabar", error: "Con problema", video_listo: "🎬 Video listo" };
   const FORMATO_TT = { problema_solucion: "Problema → solución", antes_despues: "Antes y después", resena: "Reseña",
-                       unboxing: "Unboxing", tutorial: "Tutorial", objecion: "Objeción / FAQ", asmr: "ASMR" };
+                       unboxing: "Unboxing", tutorial: "Tutorial", objecion: "Objeción / FAQ", asmr: "ASMR",
+                       cara_a_camara: "A cámara", voz_en_off: "Voz en off", respuesta_comentario: "Respondiendo comentario", comparacion: "Comparación" };
   const BLOQUE_TT = { puente: "Puente", problema: "Problema", solucion: "Solución / demo", beneficios: "Beneficios", cta: "Carrito naranja" };
   const leerVistos = () => { try { return JSON.parse(localStorage.getItem("shop_vistos") || "[]"); } catch { return []; } };
 
@@ -1459,7 +1460,7 @@
                        foco: document.activeElement?.id === "cg-texto" };
     $("#modal-cuerpo").innerHTML = `<div class="guion-shop">
       <h2 id="modal-titulo">${esc(p.nombre)}</h2>
-      <p class="id">ID: ${esc(g.id)}${gancho ? `-${esc(gancho.letra)}` : ""} · ${esc(FORMATO_TT[g.formato] || g.formato)} · ${g.duracion === "corta" ? "15–25 s" : "35–50 s"}</p>
+      <p class="id">ID: ${esc(g.id)}${gancho ? `-${esc(gancho.letra)}` : ""} · ${esc(FORMATO_TT[g.formato] || g.formato)} · ${g.duracion === "corta" ? "12–20 s" : "25–40 s"}</p>
       <p><b>Ángulo:</b> ${esc(g.angulo)}</p>
       ${g.supuestos ? `<p class="pista">Supuse: ${esc(g.supuestos)}</p>` : ""}
       ${p.de_marca ? `<p class="marca-aviso">🏷️ Al subirlo, actívale <b>"Contenido de marca"</b> en TikTok (te lo mandó una marca).</p>` : ""}
