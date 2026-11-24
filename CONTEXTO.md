@@ -291,7 +291,7 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   · 2) ala TikTok con servidor propio ✅ (gancho elegible A/B/C/los 3; Diego filtra tomas por gancho) (`tiktokshop/tienda.py` + `shop.py`; pestaña Shop con "📦 Me llegó un producto";
   Toño ficha con fuentes → Sofi guion 3 ganchos → Diego lista de tomas; `oficina.py` hace de puerta en `/tiktok/api/…`
   hacia `TIENDA_URL` y en `--demo` prende la tienda sola; el edificio consulta su estado cada 2 s)
-  Sofi escribe con Opus SOLO por el plan (`claude.SOLO_PLAN`; la API solo si Miguel prende la casilla 💳 → `api_guion` en tienda, `ia.permitir_api`). Reglas en `shop.REGLAS`: escena concreta, detalles, pregunta abierta, reenganche a medio video, lista de frases prohibidas, ejemplos plano→con vida; chat `/api/chat_guion/<id>` y `reglas_guion` recordadas.
+  Toda la oficina Shop (ficha_shop, guion_shop, tomas_shop) va con Opus SOLO por el plan (`claude.SOLO_PLAN`; la API solo si Miguel prende la casilla 💳 → `api_guion` en tienda, `ia.permitir_api`). Reglas en `shop.REGLAS`: escena concreta, detalles, pregunta abierta, reenganche a medio video, lista de frases prohibidas, ejemplos plano→con vida; chat `/api/chat_guion/<id>` y `reglas_guion` recordadas.
   · 3) editor vertical ✅ (Miguel habla en sus clips; sube un clip por toma O el video completo; `tiktokshop/cris.py`:
   Whisper local `faster-whisper` (WHISPER_MODELO, default small) para karaoke de su voz, piezas en orden del guion,
   cortes con acercamiento cada ~2.2 s, texto de Sofi arriba en zona segura, loudnorm, un video por gancho elegido;

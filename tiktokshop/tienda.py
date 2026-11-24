@@ -85,8 +85,9 @@ class Tienda:
         self.log: list = datos.get("log", [])
         self.gasto: dict = datos.get("gasto", {})
         self.reglas_guion: list = datos.get("reglas_guion", [])  # 📌 lo que pediste recordar para todos los guiones
-        self.api_guion: bool = bool(datos.get("api_guion", False))  # 💳 Sofi puede usar la API (centavos) si el plan falla
-        ia.permitir_api("guion_shop", self.api_guion)
+        self.api_guion: bool = bool(datos.get("api_guion", False))  # 💳 el equipo de Shop puede usar la API (centavos) si el plan falla
+        for tarea in ("ficha_shop", "guion_shop", "tomas_shop"):
+            ia.permitir_api(tarea, self.api_guion)
         for p in self.productos.values():  # lo que quedó a medias al apagar
             if p["estado"] == "trabajando":
                 p["estado"], p["error"] = "error", "Se interrumpió al apagar la oficina. Dale Reintentar."
@@ -301,7 +302,8 @@ class Tienda:
         with self.lock:
             if "api_guion" in d:
                 self.api_guion = bool(d["api_guion"])
-                ia.permitir_api("guion_shop", self.api_guion)
+                for tarea in ("ficha_shop", "guion_shop", "tomas_shop"):
+                    ia.permitir_api(tarea, self.api_guion)
             self._tocar()
         return {"ok": True, "api_guion": self.api_guion}
 

@@ -1288,7 +1288,7 @@
   }
 
   $("#shop-api").addEventListener("change", async (e) => {
-    if (e.target.checked && !confirm("¿Dejar que Sofi use la API cuando tu plan no responda? Cada guion cuesta unos 10-15 centavos de dólar.")) { e.target.checked = false; return; }
+    if (e.target.checked && !confirm("¿Dejar que el equipo de Shop (Toño, Sofi, Diego y Cris) use la API cuando tu plan no responda? Cada producto cuesta unos 10-20 centavos de dólar.")) { e.target.checked = false; return; }
     try { await apiTT("/api/ajustes", { api_guion: e.target.checked }); consultarTT(); } catch (err) { alert(err.message); }
   });
   function pintarShop() {

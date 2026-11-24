@@ -76,7 +76,7 @@ TAREAS_SUSCRIPCION = {
     "ideas": "sonnet", "investigar": "sonnet", "guion": "sonnet", "blog": "sonnet", "edicion": "sonnet",
     "estilo": "sonnet", "leer_web": "haiku", "whatsapp": "haiku", "miniatura": "haiku",
     # oficina de TikTok Shop y sala de edición
-    "prueba": "sonnet", "miniatura_ia": "sonnet", "miniatura_dibujo": "sonnet", "ficha_shop": "haiku", "guion_shop": "opus", "tomas_shop": "sonnet", "sala": "sonnet", "sala_aprender": "haiku",
+    "prueba": "sonnet", "miniatura_ia": "sonnet", "miniatura_dibujo": "sonnet", "ficha_shop": "opus", "guion_shop": "opus", "tomas_shop": "opus", "sala": "sonnet", "sala_aprender": "haiku",
     "robot": "sonnet",
 }
 LIMITE_PALABRAS = ("usage limit", "rate limit", "limit reached", "out of extra usage", "5-hour", "weekly limit")
@@ -229,7 +229,7 @@ def _por_suscripcion(system: str, contenido, schema: dict, tarea: str, que: str,
 
 # 🔒 Tareas que SOLO usan tu plan de Claude: nunca gastan centavos de la API, salvo que el jefe lo permita
 # (casilla en la oficina → permitir_api(tarea, True)).
-SOLO_PLAN = {"guion_shop"}
+SOLO_PLAN = {"ficha_shop", "guion_shop", "tomas_shop"}  # toda la oficina de TikTok Shop
 _api_permitida: set[str] = set()
 
 
