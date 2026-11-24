@@ -794,6 +794,24 @@ def crear_servidor(tienda: Tienda, puerto: int) -> ThreadingHTTPServer:
                 return self._json(r, 200 if r.get("id") else 404)
             if ruta.startswith("/salida/"):
                 return self._archivo(ruta[len("/salida/"):])
+            if ruta.startswith("/api/pdf/"):  # 📄 el guion en PDF para el cel
+                p = tienda.productos.get(ruta.rsplit("/", 1)[-1])
+                if not p or not p.get("guion"):
+                    return self._json({"error": "Ese producto todavía no tiene guion."}, 404)
+                try:
+                    import pdf_guion
+                    datos = pdf_guion.armar(p, parse_qs(urlparse(self.path).query).get("gancho", [""])[0])
+                except ImportError:
+                    return self._json({"error": "Falta instalar reportlab en el servidor (se instala solo al actualizar)."}, 500)
+                nombre = f"guion-{shop.slug(p['nombre'], 40)}.pdf"
+                self.send_response(200)
+                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Disposition", f'inline; filename="{nombre}"')
+                self.send_header("Content-Length", str(len(datos)))
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                self.wfile.write(datos)
+                return
             self._json({"error": "no encontrado"}, 404)
 
         def _archivo(self, relativa: str):

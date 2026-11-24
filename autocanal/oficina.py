@@ -2468,7 +2468,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 quien = "La sala de edición" if ruta.path.startswith("/sala/") else "La oficina de TikTok Shop"
                 return self._json({"error": f"{quien} está apagada.", "apagada": True}, 503)
             self.send_response(r.status_code)
-            for clave in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control"):
+            for clave in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control", "Content-Disposition"):
                 if r.headers.get(clave):
                     self.send_header(clave, r.headers[clave])
             self.end_headers()

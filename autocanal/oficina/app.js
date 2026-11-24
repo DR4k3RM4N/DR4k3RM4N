@@ -1460,6 +1460,8 @@
                        foco: document.activeElement?.id === "cg-texto" };
     $("#modal-cuerpo").innerHTML = `<div class="guion-shop">
       <h2 id="modal-titulo">${esc(p.nombre)}</h2>
+      <p><a class="btn btn-primario btn-pdf" href="/tiktok/api/pdf/${encodeURIComponent(p.id)}?gancho=${encodeURIComponent(elegido)}" target="_blank" rel="noopener">📄 Guion en PDF ${gancho ? `(gancho ${esc(gancho.letra)})` : "(los 3 ganchos)"}</a>
+        <span class="pista">para tenerlo en el cel mientras grabas</span></p>
       <p class="id">ID: ${esc(g.id)}${gancho ? `-${esc(gancho.letra)}` : ""} · ${esc(FORMATO_TT[g.formato] || g.formato)} · ${g.duracion === "corta" ? "12–20 s" : "25–40 s"}</p>
       <p><b>Ángulo:</b> ${esc(g.angulo)}</p>
       ${g.supuestos ? `<p class="pista">Supuse: ${esc(g.supuestos)}</p>` : ""}
