@@ -22,14 +22,14 @@ body.agencia {
 .ag-layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 460px); min-height: 0; }
 .ag-edificio { padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .ag-plano { position: relative; width: 100%; max-width: 1100px; margin: 0 auto; }
-#ag-lienzo { display: block; width: 100%; height: auto; image-rendering: pixelated; border: 3px solid #000; border-radius: 6px;
+#ag-lienzo { display: block; width: 100%; height: auto; border: 3px solid #000; border-radius: 6px;
   box-shadow: 0 10px 30px rgba(0,0,0,.5); cursor: pointer; }
 .ag-capas { position: absolute; inset: 3px; pointer-events: none; }
 .ag-letrero { position: absolute; transform: translate(-50%, 0); font: 400 clamp(9px, 1.25vw, 13px)/1 "Silkscreen", monospace;
   background: rgba(0,0,0,.72); color: var(--exp-amarillo); padding: 3px 6px; border-radius: 3px; white-space: nowrap; letter-spacing: .04em; }
 .ag-letrero small { display: block; color: var(--exp-blanco); font-size: .85em; margin-top: 2px; text-align: center; }
 .ag-letrero.obra { color: #999; }
-.ag-globo { position: absolute; transform: translate(-50%, -100%); max-width: 22%; background: #fff; color: #111;
+.ag-globo { position: absolute; transform: translate(-50%, -100%); max-width: 24%; z-index: 2; background: #fff; color: #111;
   font: 500 clamp(9px, 1.05vw, 12px)/1.25 Inter, sans-serif; padding: 4px 7px; border-radius: 8px; box-shadow: 0 2px 0 #000; }
 .ag-globo::after { content: ""; position: absolute; left: 50%; bottom: -5px; border: 5px solid transparent; border-top-color: #fff; border-bottom: 0; transform: translateX(-50%); }
 .ag-ficha { max-width: 1100px; width: 100%; margin: 0 auto; background: #1b1b1d; border: 1px solid #2c2c30; border-left: 4px solid var(--exp-amarillo);
@@ -46,5 +46,6 @@ body.agencia {
   .ag-panel { border-left: 0; border-top: 3px solid #000; overflow: visible; }
   .ag-edificio { padding: 10px; }
   .ag-serie { font-size: 26px; }
-  .ag-globo { max-width: 40%; }
+  .ag-globo { max-width: 42%; }
+  .ag-letrero { font-size: 8px; padding: 2px 4px; }
 }
