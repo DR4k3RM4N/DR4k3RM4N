@@ -1023,9 +1023,9 @@
   setInterval(() => { if (agenteVisto || !$("#tab-equipo").hidden) pintarEquipo(); }, 1000);
   window.addEventListener("ala", () => pintarEquipo(true));
   // A la derecha solo los menús de la oficina que estás viendo (en "Todo", todos)
-  const PESTANAS_ALA = { youtube: ["bandeja", "proyectos", "resultados", "estilo", "equipo", "chat", "tampico", "expedientes"],
+  const PESTANAS_ALA = { youtube: ["bandeja", "proyectos", "resultados", "estilo", "equipo", "chat", "tampico"],
                          tiktok: ["shop", "equipo", "chat", "tampico"], edicion: ["sala", "equipo", "tampico"],
-                         tampico: ["tampico", "equipo", "chat"], expedientes: ["expedientes", "equipo"] };
+                         tampico: ["tampico", "equipo", "chat"] };
   function menusDelAla(ala) {
     const visibles = PESTANAS_ALA[ala];
     document.querySelectorAll(".pestana").forEach((b) => (b.hidden = !!visibles && !visibles.includes(b.dataset.tab)));

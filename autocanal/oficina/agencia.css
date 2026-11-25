@@ -1,0 +1,50 @@
+/* 🕵️ Agencia de Expedientes («¿Quién MATÓ a…?»): su propia página, con los colores del canal */
+body.agencia {
+  --exp-fondo: #121212; --exp-amarillo: #FFD60A; --exp-rojo: #E63946; --exp-verde: #2DC653; --exp-blanco: #F5F5F5;
+  /* los colores de la oficina principal, cambiados a los del canal (tarjetas, botones, textos) */
+  --fondo: #121212; --fondo2: #18181a; --panel: #1d1d20; --panel2: #27272b; --borde: #000; --texto: #F5F5F5;
+  --suave: #a3a29d; --acento: #FFD60A; --verde: #2DC653; --rojo: #E63946;
+  background: var(--exp-fondo); color: var(--exp-blanco); min-height: 100vh; display: flex; flex-direction: column;
+  overflow-x: clip;
+}
+.cinta-crimen { height: 10px; background: repeating-linear-gradient(-45deg, var(--exp-amarillo) 0 26px, #111 26px 34px); flex: none; }
+.ag-barra { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left)); border-bottom: 2px solid #222; }
+.ag-marca { display: flex; flex-direction: column; line-height: 1; }
+.ag-serie { font: 400 32px/1 "Bebas Neue", Impact, sans-serif; letter-spacing: .02em; }
+.ag-serie b { font-weight: 400; color: var(--exp-rojo); }
+.ag-sub { font: 400 11px/1.4 "Silkscreen", monospace; color: var(--exp-amarillo); letter-spacing: .08em; text-transform: uppercase; }
+.ag-derecha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ag-caso { font: 400 16px/1 "Bebas Neue", sans-serif; letter-spacing: .06em; background: var(--exp-amarillo); color: #111; padding: 6px 10px 4px; }
+.ag-volver { color: var(--exp-blanco); text-decoration: none; font-size: 13px; border: 1px solid #333; border-radius: 8px; padding: 6px 10px; }
+.ag-volver:hover { border-color: var(--exp-amarillo); }
+
+.ag-layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 460px); min-height: 0; }
+.ag-edificio { padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ag-plano { position: relative; width: 100%; max-width: 1100px; margin: 0 auto; }
+#ag-lienzo { display: block; width: 100%; height: auto; image-rendering: pixelated; border: 3px solid #000; border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.5); cursor: pointer; }
+.ag-capas { position: absolute; inset: 3px; pointer-events: none; }
+.ag-letrero { position: absolute; transform: translate(-50%, 0); font: 400 clamp(9px, 1.25vw, 13px)/1 "Silkscreen", monospace;
+  background: rgba(0,0,0,.72); color: var(--exp-amarillo); padding: 3px 6px; border-radius: 3px; white-space: nowrap; letter-spacing: .04em; }
+.ag-letrero small { display: block; color: var(--exp-blanco); font-size: .85em; margin-top: 2px; text-align: center; }
+.ag-letrero.obra { color: #999; }
+.ag-globo { position: absolute; transform: translate(-50%, -100%); max-width: 22%; background: #fff; color: #111;
+  font: 500 clamp(9px, 1.05vw, 12px)/1.25 Inter, sans-serif; padding: 4px 7px; border-radius: 8px; box-shadow: 0 2px 0 #000; }
+.ag-globo::after { content: ""; position: absolute; left: 50%; bottom: -5px; border: 5px solid transparent; border-top-color: #fff; border-bottom: 0; transform: translateX(-50%); }
+.ag-ficha { max-width: 1100px; width: 100%; margin: 0 auto; background: #1b1b1d; border: 1px solid #2c2c30; border-left: 4px solid var(--exp-amarillo);
+  border-radius: 8px; padding: 10px 14px; }
+.ag-ficha h3 { font: 400 24px/1 "Bebas Neue", sans-serif; letter-spacing: .03em; margin: 2px 0 4px; }
+.ag-ficha .rol { color: var(--exp-amarillo); font-size: 13px; margin: 0 0 6px; }
+.ag-ficha p { margin: 4px 0; font-size: 14px; }
+
+.ag-panel { background: #18181a; border-left: 3px solid #000; min-height: 0; overflow: auto; }
+.ag-panel .contenido { padding: 12px; }
+
+@media (max-width: 900px) {
+  .ag-layout { grid-template-columns: minmax(0, 1fr); }
+  .ag-panel { border-left: 0; border-top: 3px solid #000; overflow: visible; }
+  .ag-edificio { padding: 10px; }
+  .ag-serie { font-size: 26px; }
+  .ag-globo { max-width: 40%; }
+}

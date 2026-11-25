@@ -2610,6 +2610,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     return self._json(expedientes.detalle(ruta.rsplit("/", 1)[-1]))
                 except ValueError as exc:
                     return self._json({"error": str(exc)}, 404)
+            if ruta in ("/expedientes", "/expedientes/"):  # 🕵️ la agencia de Expedientes, en su propia página
+                return self._archivo(WEB / "expedientes.html", WEB)
             if ruta.startswith("/expedientes/"):  # el PDF de la narración y las partes del paquete
                 partes = ruta.split("/")
                 try:

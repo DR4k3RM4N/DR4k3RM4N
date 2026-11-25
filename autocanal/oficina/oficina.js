@@ -1348,8 +1348,7 @@
     return { x: izq - m, y: arriba - m, w: der - izq + m * 2, h: abajo - arriba + m * 2 };
   }
   const VISTAS = { todo: { x: 0, y: 0, w: ANCHO, h: ALTO }, youtube: marco(0, ALA_TT), tiktok: marco(PASILLO, ALA_SALA + 1),
-                   edicion: marco(ALA_SALA - 2, ALA_TAMP + 1), tampico: marco(ALA_TAMP - 2, COLS),
-                   expedientes: { x: 0, y: 0, w: ANCHO, h: ALTO } }; // 🕵️ sin cuarto propio: se ve todo el edificio
+                   edicion: marco(ALA_SALA - 2, ALA_TAMP + 1), tampico: marco(ALA_TAMP - 2, COLS) };  // 🕵️ Expedientes tiene su propia página: /expedientes
   const leerAla = () => { try { return localStorage.getItem("ala"); } catch { return null; } };
   let ala = VISTAS[leerAla()] ? leerAla() : (window.innerWidth < 760 ? "youtube" : "todo");
   const cam = { ...VISTAS[ala] };

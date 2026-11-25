@@ -566,9 +566,12 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
 
 ## 3n. 🕵️ Expedientes: serie «¿Quién MATÓ a [Marca]?» (nov 2026)
 - Documentales de ~15–20 min sobre marcas que murieron (o están por morir) y qué pasó con ellas en México; cada video es
-  un expediente (#001, #002…). Título fijo: «¿Quién MATÓ a [Marca]?». Vive dentro de la oficina principal: pestaña y
-  botón de ala «🕵️ Expedientes» **sin cuarto en el edificio** (la vista del ala = edificio completo; su equipo `ex_*`
-  sale solo en la pestaña Equipo, con retrato, no camina). Pedido original: `autocanal/despliegue/PEDIDO_OFICINA_EXPEDIENTES.md`.
+  un expediente (#001, #002…). Título fijo: «¿Quién MATÓ a [Marca]?». Vive en **su propia página `/expedientes`** (Miguel no la
+  quería mezclada con las demás): `oficina/expedientes.html` + `agencia.css` + `agencia.js` (plano pixel art de la
+  «Agencia» por cuartos, uno por área: Interrogatorios/Ramos, Archivo/Inés, Laboratorio/Nico, Estudio/Mina, Cabina/Miguel,
+  Edición/Beto, Subtítulos/Sol, Publicación/Pepe; 4×2 con pasillo en compu, 2×4 en cel; colores del canal; se anima a
+  6 cuadros/s solo si alguien trabaja; cuartos «🚧 en obra» con cinta) y el panel `expedientes.js` a la derecha. En la
+  oficina principal solo queda el enlace «🕵️ Expedientes ↗» arriba (sin ala ni pestaña). Pedido original: `autocanal/despliegue/PEDIDO_OFICINA_EXPEDIENTES.md`.
 - **Paquete** (Miguel lo arma con Claude en el chat: HTML de Artifact o ZIP con .md) → «📥 Importar paquete»
   (`/api/expedientes/importar`, octet-stream). `agentes/paquete_expediente.py`: HTML → Markdown (secciones `#brief`,
   `#guion`, `#publicacion`, `#fuentes`; `p.voz` = `> `; chips = `[PROPIA]`, `[STOCK: "…"]`, `[GRÁFICA G#]`) y un solo
