@@ -18,7 +18,8 @@
   const esTT = (id) => id.startsWith("tt_");
   const esSala = (id) => id.startsWith("sala_");
   const esTamp = (id) => id.startsWith("tp_");
-  const alaDe = (id) => (esTT(id) ? "tiktok" : esSala(id) ? "edicion" : esTamp(id) ? "tampico" : "youtube");
+  const esExp = (id) => id.startsWith("ex_"); // 🕵️ Expedientes: sin cuarto en el edificio, su equipo vive en la pestaña
+  const alaDe = (id) => (esTT(id) ? "tiktok" : esSala(id) ? "edicion" : esTamp(id) ? "tampico" : esExp(id) ? "expedientes" : "youtube");
 
   // ---------- el equipo de TikTok Shop (su oficina se conecta en el siguiente paso) ----------
   const EQUIPO_TT = [
@@ -1347,7 +1348,8 @@
     return { x: izq - m, y: arriba - m, w: der - izq + m * 2, h: abajo - arriba + m * 2 };
   }
   const VISTAS = { todo: { x: 0, y: 0, w: ANCHO, h: ALTO }, youtube: marco(0, ALA_TT), tiktok: marco(PASILLO, ALA_SALA + 1),
-                   edicion: marco(ALA_SALA - 2, ALA_TAMP + 1), tampico: marco(ALA_TAMP - 2, COLS) };
+                   edicion: marco(ALA_SALA - 2, ALA_TAMP + 1), tampico: marco(ALA_TAMP - 2, COLS),
+                   expedientes: { x: 0, y: 0, w: ANCHO, h: ALTO } }; // 🕵️ sin cuarto propio: se ve todo el edificio
   const leerAla = () => { try { return localStorage.getItem("ala"); } catch { return null; } };
   let ala = VISTAS[leerAla()] ? leerAla() : (window.innerWidth < 760 ? "youtube" : "todo");
   const cam = { ...VISTAS[ala] };
@@ -1435,7 +1437,7 @@
 
   // retrato para el panel del equipo
   function retrato(id, canvas) {
-    const a = estado.agentes[id];
+    const a = estado.agentes[id] || (esExp(id) ? (ultimoYT?.expedientes_agentes || []).find((x) => x.id === id) : null);
     if (!a) return;
     const c = canvas.getContext("2d");
     c.imageSmoothingEnabled = false;
@@ -1487,6 +1489,7 @@
     equipoSala: () => equipoSala,
     equipoTT: () => equipoTT,
     equipoTamp: () => equipoTamp(ultimoYT),
+    equipoExp: () => ultimoYT?.expedientes_agentes || [],
     encima: (id) => { encima = id; },
     verAla,
   };

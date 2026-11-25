@@ -355,6 +355,10 @@ def activar() -> None:
     from . import temas
     temas.recolectar = recolectar_tema
 
+    from . import expedientes  # 🕵️ los expedientes de la demo van en otra carpeta
+    expedientes.CARPETA = config.BASE / "expedientes_demo"
+    expedientes.AJUSTES = expedientes.CARPETA / "ajustes.json"
+
     from . import analitica
     analitica.DEMO = True
     analitica.ARCHIVO = config.ESTILO_DIR / "analitica_demo.json"

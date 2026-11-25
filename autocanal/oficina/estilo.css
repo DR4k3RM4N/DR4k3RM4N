@@ -612,3 +612,49 @@ body.ligera .panel { border-left: 0; width: 100%; max-width: 1100px; margin: 0 a
 .reglas-guion li { margin: 4px 0; }
 .chat-guion-opciones label { display: inline-flex; align-items: center; gap: 6px; }
 .chat-guion-opciones input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--acento); }
+
+/* 🕵️ Expedientes («¿Quién MATÓ a…?»): cinta amarilla de expediente sobre el panel de siempre */
+.exp-portada { border-top: 6px solid transparent; border-image: repeating-linear-gradient(-45deg, var(--acento) 0 14px, #1b1a26 14px 20px) 6 0 0 0; }
+.exp-item { cursor: pointer; }
+.exp-item:hover, .exp-item:focus-visible { border-color: var(--acento); outline: none; }
+.exp-pasos { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 8px 0 4px; }
+.exp-paso { font-size: 11.5px; padding: 2px 7px; border-radius: 4px; background: #3b4570; color: var(--suave); white-space: nowrap; }
+.exp-paso-listo { background: #1e3a2c; color: #86efac; }
+.exp-paso-espera_ok { background: var(--acento); color: #1b1a26; font-weight: 700; }
+.exp-paso-trabajando { background: var(--verde); color: #08210f; font-weight: 700; }
+.exp-paso-error { background: var(--rojo); color: #fff; }
+.exp-paso-en_obra, .exp-paso-bloqueado { opacity: .65; }
+.exp-flecha { color: var(--suave); font-style: normal; font-size: 11px; }
+.exp-cuentas { font-size: 13px; }
+.exp-barra { height: 8px; border-radius: 4px; background: rgba(0,0,0,.3); overflow: hidden; margin: 4px 0 8px; }
+.exp-barra b { display: block; height: 100%; background: var(--acento); transition: width .4s ease-out; }
+.exp-filtros { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.exp-filtros .btn-mini { margin-left: 0; }
+.exp-grupo { margin: 14px 0 6px; font-size: 13px; color: var(--acento); font-family: var(--pixel); font-weight: 400; }
+.exp-dato { background: rgba(0,0,0,.18); border: 2px solid var(--borde); border-left: 5px solid #64748b; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.exp-dato.exp-confirmado { border-left-color: var(--verde); }
+.exp-dato.exp-corregir { border-left-color: #f59e0b; }
+.exp-dato.exp-no_confirmado { border-left-color: var(--rojo); }
+.exp-dato.exp-original .exp-nueva { opacity: .45; text-decoration: line-through; }
+.exp-dato-cab { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.exp-dato-cab small { color: var(--suave); }
+.exp-dato p { margin: 5px 0; }
+.exp-frase { font-size: 13.5px; }
+.exp-nueva { font-size: 13.5px; color: #bbf7d0; font-weight: 600; }
+.exp-quita { color: #fca5a5; }
+.exp-explica { margin: 4px 0; }
+.exp-cita { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--acento); background: rgba(255,210,63,.07); font-size: 12.5px; color: var(--texto); }
+.exp-cita a, .exp-fuentes a, .exp-dato a { color: var(--acento); }
+.exp-nota { font-size: 12.5px; background: rgba(245,158,11,.12); border-radius: 6px; padding: 5px 8px; }
+.exp-dato textarea { margin-top: 6px; }
+.exp-dato .acciones { align-items: center; }
+.exp-dato .acciones .btn-mini { margin-left: 0; }
+.exp-fuentes, .exp-lista { padding-left: 18px; margin: 6px 0; font-size: 12.5px; }
+.exp-fuentes li, .exp-lista li { margin: 3px 0; overflow-wrap: anywhere; }
+.exp-check { margin: 5px 0; align-items: flex-start; }
+.exp-check input { margin-top: 3px; }
+.exp-chat { max-height: 320px; }
+.exp-colores { display: flex; flex-wrap: wrap; gap: 6px; }
+.exp-colores span { font-size: 11px; padding: 2px 6px 2px 18px; border-radius: 4px; background: rgba(0,0,0,.25); position: relative; }
+.exp-colores span::before { content: ""; position: absolute; left: 5px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 2px; background: var(--c); }
+@media (prefers-reduced-motion: reduce) { .exp-barra b { transition: none; } }

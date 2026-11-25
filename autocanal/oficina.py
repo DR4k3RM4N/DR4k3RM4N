@@ -32,6 +32,7 @@ from agentes import manual as manual_canal
 from agentes import whatsapp as wa
 from agentes import config
 from agentes import editor, estilo
+from agentes import expedientes
 from agentes import telegram as tg
 
 WEB = config.BASE / "oficina"
@@ -158,6 +159,8 @@ class Oficina:
             threading.Thread(target=tg.escuchar, args=(self.recibir_telegram,), daemon=True).start()
         self.cupo_lleno: dict[str, float] = {}  # canal → hasta cuándo no intentar subir (límite de YouTube)
         self.tamp_agentes: dict[str, dict] = {}  # 🌮 quién del equipo de Tampiqueando trabaja y qué dice
+        expedientes.al_cambiar = self._tocar  # 🕵️ Expedientes: la pantalla se actualiza cuando trabaja su equipo
+        expedientes.al_avisar = self._aviso_expediente
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
         threading.Thread(target=self._ciclo_deseos, daemon=True).start()
@@ -200,6 +203,7 @@ class Oficina:
                     "a_la_vez": self.a_la_vez(),
                     "version": self._version(),
                     "tampico": self._tampico_cuenta(), "tampico_agentes": list(self.tamp_agentes.values()),
+                    "expedientes_agentes": expedientes.agentes(), "expedientes_tareas": expedientes.tareas(),
                     "tareas": [t for t in self.tareas[-250:] if t["estado"] in ACTIVAS]
                               + [t for t in self.tareas[-250:] if t["estado"] not in ACTIVAS][-120:]}
 
@@ -232,6 +236,13 @@ class Oficina:
             if any(texto in l for _, l, _, _ in self.chat_cola):
                 return
             self.chat_cola.append((time.time(), linea, importante, botones))
+
+    def _aviso_expediente(self, nombre: str, texto: str) -> None:
+        """🕵️ Aviso del equipo de Expedientes por Telegram/WhatsApp (se junta con los demás avisos)."""
+        if not (wa.activo() or tg.activo()):
+            return
+        with self.chat_lock:
+            self.chat_cola.append((time.time(), f"🕵️ *{nombre}*: {texto}", True, False))
 
     def _chat_despachar(self) -> None:
         while True:
@@ -2330,6 +2341,27 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"error": str(exc)}, 400)
             return self._json({"ok": True, "archivo": p.name})
 
+        def _importar_expediente(self):
+            """🕵️ El paquete de producción de un expediente (HTML de claude.ai o ZIP con los .md)."""
+            from agentes import paquete_expediente
+            if "application/octet-stream" not in self.headers.get("Content-Type", ""):
+                return self._json({"error": "tipo no permitido"}, 403)
+            origen = self.headers.get("Origin")
+            if origen and urlparse(origen).netloc != self.headers.get("Host"):
+                return self._json({"error": "origen no permitido"}, 403)
+            nombre = parse_qs(urlparse(self.path).query).get("nombre", ["paquete.html"])[0][:200]
+            if not nombre.lower().endswith((".html", ".htm", ".zip", ".md")):
+                return self._json({"error": "Sube el paquete en .html o .zip"}, 400)
+            largo = int(self.headers.get("Content-Length") or 0)
+            if largo <= 0 or largo > paquete_expediente.MAX_ZIP:
+                return self._json({"error": "El paquete debe pesar menos de 25 MB."}, 400)
+            try:
+                return self._json(expedientes.importar(nombre, self.rfile.read(largo)))
+            except paquete_expediente.ErrorPaquete as exc:
+                return self._json({"error": str(exc)}, 400)
+            except Exception as exc:  # noqa: BLE001
+                return self._json({"error": f"No pude leer el paquete: {str(exc)[:200]}"}, 500)
+
         def _subir_tampico(self):
             """🌮 Un video o foto para publicar en Tampiqueando (Facebook, Instagram y TikTok)."""
             from agentes import tampico
@@ -2571,6 +2603,22 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
             if ruta == "/api/tampico":  # 🌮 Tampiqueando
                 from agentes import tampico
                 return self._json(tampico.resumen())
+            if ruta == "/api/expedientes":  # 🕵️ Expedientes («¿Quién MATÓ a…?»)
+                return self._json(expedientes.resumen())
+            if ruta.startswith("/api/expedientes/"):
+                try:
+                    return self._json(expedientes.detalle(ruta.rsplit("/", 1)[-1]))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 404)
+            if ruta.startswith("/expedientes/"):  # el PDF de la narración y las partes del paquete
+                partes = ruta.split("/")
+                try:
+                    archivo = expedientes.archivo(partes[2], partes[3]) if len(partes) == 4 else None
+                except ValueError:
+                    archivo = None
+                if not archivo:
+                    return self._json({"error": "no encontrado"}, 404)
+                return self._archivo(archivo, expedientes.CARPETA)
             if ruta.startswith("/tampico/medio/"):  # bajar un video/foto (para subirlo tú a TikTok)
                 from agentes import tampico
                 return self._archivo(tampico.MEDIOS / Path(ruta).name, tampico.MEDIOS)
@@ -2664,6 +2712,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._subir_video_chat()
             if urlparse(self.path).path == "/api/tampico/subir":
                 return self._subir_tampico()
+            if urlparse(self.path).path == "/api/expedientes/importar":
+                return self._importar_expediente()
             if urlparse(self.path).path in ("/tiktok/api/subir", "/sala/api/subir"):
                 return self._tienda_subir()
             if not self._mismo_origen():
@@ -2745,6 +2795,17 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     return self._json(oficina.tampico_accion(datos))
                 except Exception as exc:  # noqa: BLE001
                     return self._json({"error": str(exc)[:300]}, 500)
+            if ruta == "/api/expedientes/ajustes":  # 💳 que el equipo de Expedientes pueda usar la API
+                return self._json(expedientes.cambiar_ajustes(datos))
+            if ruta.startswith("/api/expedientes/"):
+                eid = ruta.rsplit("/", 1)[-1]
+                try:
+                    r = expedientes.borrar(eid) if datos.get("accion") == "borrar" else expedientes.accion(eid, datos)
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 404)
+                except Exception as exc:  # noqa: BLE001
+                    return self._json({"error": str(exc)[:300]}, 500)
+                return self._json(r, 400 if "error" in r and not r.get("confirmar") else 200)
             if ruta == "/api/sala/probar_ssh":  # 🔑 ¿esa compu ya entra al servidor con su llave?
                 r = oficina.probar_ssh(str(datos.get("compu") or ""))
                 return self._json(r, 400 if "error" in r else 200)

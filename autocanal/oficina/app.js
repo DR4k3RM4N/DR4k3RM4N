@@ -717,6 +717,7 @@
     if (nombre === "estilo") pintarEstilo();
     if (nombre === "resultados") pintarResultados();
     if (nombre === "tampico") pintarTampico();
+    window.dispatchEvent(new CustomEvent("pestana", { detail: nombre })); // 🕵️ expedientes.js se pinta solo
     if (nombre === "chat" && window.matchMedia("(max-width: 900px)").matches) {  // 📱 directo a lo más reciente
       setTimeout(() => window.scrollTo({ top: document.body.scrollHeight }), 60);
     }
@@ -893,19 +894,22 @@
   }
   // Los dos equipos juntos (YouTube + TikTok Shop) y el filtro según el ala que estás viendo
   const esTT = (id) => id.startsWith("tt_");
-  const todasLasTareas = () => [...(estado.tareas || []), ...(estadoTT?.tareas || []), ...(estadoSala?.tareas || [])];
+  const todasLasTareas = () => [...(estado.tareas || []), ...(estadoTT?.tareas || []), ...(estadoSala?.tareas || []),
+                                ...(estado.expedientes_tareas || [])];
   const tareasDe = (id) => todasLasTareas().filter((t) => t.agente === id);
   // (las tareas de los editores de la sala vienen en estadoSala.tareas)
   const equipoCompleto = () => [...estado.agentes, ...(window.Oficina.equipoTT?.() || []), ...(window.Oficina.equipoSala?.() || []),
-                                 ...(window.Oficina.equipoTamp?.() || [])];
+                                 ...(window.Oficina.equipoTamp?.() || []), ...(window.Oficina.equipoExp?.() || [])];
   function equipoVisible() {
     const ala = window.Oficina.ala?.() || "todo";
     if (ala === "edicion") return equipoCompleto().filter((a) => ["editor", "tt_editor", "jefe"].includes(a.id) || a.id.startsWith("sala_"));
     if (ala === "tampico") return equipoCompleto().filter((a) => a.id === "jefe" || a.id.startsWith("tp_"));
-    return equipoCompleto().filter((a) => !a.id.startsWith("tp_") && (ala === "todo" || a.id === "jefe" || (ala === "tiktok") === esTT(a.id)));
+    if (ala === "expedientes") return equipoCompleto().filter((a) => a.id === "jefe" || a.id.startsWith("ex_"));
+    return equipoCompleto().filter((a) => !a.id.startsWith("tp_") && !a.id.startsWith("ex_") && (ala === "todo" || a.id === "jefe" || (ala === "tiktok") === esTT(a.id)));
   }
   const TITULO_ALA = { todo: "Todo el edificio", youtube: "▶ Equipo YouTube", tiktok: "🛒 Equipo TikTok Shop",
-                       edicion: "🎬 Los editores (y tus compus en la pestaña Sala)", tampico: "🌮 Equipo Tampiqueando" };
+                       edicion: "🎬 Los editores (y tus compus en la pestaña Sala)", tampico: "🌮 Equipo Tampiqueando",
+                       expedientes: "🕵️ Equipo Expedientes (¿Quién MATÓ a…?)" };
   function estadoAgente(a) {
     const ts = tareasDe(a.id);
     if (ts.some((t) => t.estado === "trabajando")) return ["Trabajando", "trab"];
@@ -940,7 +944,7 @@
             <span class="agente-info">
               <b>${esc(a.id === "jefe" ? "Tú" : a.nombre)}</b> <small>${esc(a.rol)}</small>
               <span class="estado-chip ${cls}">${esc(txt)}</span>
-              <span class="agente-ahora">${actual ? `${esc(actual.accion)} · ${esc(actual.titulo)}` : a.id === "jefe" ? "Revisa tu bandeja" : a.enObra ? "🚧 Su oficina está apagada" : "—"}</span>
+              <span class="agente-ahora">${actual ? `${esc(actual.accion)} · ${esc(actual.titulo)}` : a.id === "jefe" ? "Revisa tu bandeja" : a.enObra ? "🚧 Su oficina está apagada" : a.obra ? `🚧 ${esc(a.obra)}` : "—"}</span>
               ${fila ? `<span class="agente-fila">${fila} en fila</span>` : ""}
             </span>
           </button>`;
@@ -974,6 +978,7 @@
             <p class="rol">${esc(a.rol)}</p>
             <span class="estado-chip ${cls}">${esc(txt)}</span>
             <p class="desc">${esc(DESCRIPCION[a.id] || a.desc || "")}</p>
+            ${a.obra ? `<p class="pista">🚧 ${esc(a.obra)}</p>` : ""}
           </div>
         </div>
         ${a.id === "jefe" ? `<p class="vacio">Tus pendientes están en la Bandeja.</p>` : a.enObra ? `<p class="vacio">🚧 La oficina de TikTok Shop está apagada: ${esc(a.nombre)} trabaja cuando esté prendida.</p>` : `
@@ -1018,9 +1023,9 @@
   setInterval(() => { if (agenteVisto || !$("#tab-equipo").hidden) pintarEquipo(); }, 1000);
   window.addEventListener("ala", () => pintarEquipo(true));
   // A la derecha solo los menús de la oficina que estás viendo (en "Todo", todos)
-  const PESTANAS_ALA = { youtube: ["bandeja", "proyectos", "resultados", "estilo", "equipo", "chat", "tampico"],
+  const PESTANAS_ALA = { youtube: ["bandeja", "proyectos", "resultados", "estilo", "equipo", "chat", "tampico", "expedientes"],
                          tiktok: ["shop", "equipo", "chat", "tampico"], edicion: ["sala", "equipo", "tampico"],
-                         tampico: ["tampico", "equipo", "chat"] };
+                         tampico: ["tampico", "equipo", "chat"], expedientes: ["expedientes", "equipo"] };
   function menusDelAla(ala) {
     const visibles = PESTANAS_ALA[ala];
     document.querySelectorAll(".pestana").forEach((b) => (b.hidden = !!visibles && !visibles.includes(b.dataset.tab)));

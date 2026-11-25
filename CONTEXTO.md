@@ -563,3 +563,38 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   usuario/compu); `actualizar.sh` (root) las agrega a `~ubuntu/.ssh/authorized_keys` sin duplicar. Trabajo de sala
   fijo `probar_ssh` (la compu corre solo `ssh -o BatchMode=yes ubuntu@HOST echo ENTRE_OK`); botón «🔑 Probar SSH»
   en Sala → `/api/sala/probar_ssh` (host: `SSH_HOST` o el de `OFICINA_URL` sslip). La sala acepta hasta 12 tipos.
+
+## 3n. 🕵️ Expedientes: serie «¿Quién MATÓ a [Marca]?» (nov 2026)
+- Documentales de ~15–20 min sobre marcas que murieron (o están por morir) y qué pasó con ellas en México; cada video es
+  un expediente (#001, #002…). Título fijo: «¿Quién MATÓ a [Marca]?». Vive dentro de la oficina principal: pestaña y
+  botón de ala «🕵️ Expedientes» **sin cuarto en el edificio** (la vista del ala = edificio completo; su equipo `ex_*`
+  sale solo en la pestaña Equipo, con retrato, no camina). Pedido original: `autocanal/despliegue/PEDIDO_OFICINA_EXPEDIENTES.md`.
+- **Paquete** (Miguel lo arma con Claude en el chat: HTML de Artifact o ZIP con .md) → «📥 Importar paquete»
+  (`/api/expedientes/importar`, octet-stream). `agentes/paquete_expediente.py`: HTML → Markdown (secciones `#brief`,
+  `#guion`, `#publicacion`, `#fuentes`; `p.voz` = `> `; chips = `[PROPIA]`, `[STOCK: "…"]`, `[GRÁFICA G#]`) y un solo
+  lector de Markdown para HTML y ZIP: brief (entregables, tareas, guía/colores, gráficas G#, tomas T#, reglas, lista
+  final, palabras difíciles), escenas (visual con tipos/términos/gráficas, texto en pantalla, audio, narración),
+  publicación (título, miniaturas A/B/C, descripción, capítulos, etiquetas, comentario fijado, pantalla final, Shorts
+  S#), fuentes (enlaces por escena + lista de datos por verificar). Se guarda en `autocanal/expedientes/<num>-<marca>/`
+  (ignorado en git; demo: `expedientes_demo/`): `paquete.json`, `trabajo.json`, `original.*`, las partes `.md`.
+- **🔎 Detective Ramos** (`agentes/expedientes.py`): arma la lista de datos al importar (lista por verificar + cada
+  oración de la narración con cifra/fecha + texto en pantalla con cifras que no están en la voz + datos de cada gráfica).
+  `expedientes_previos.py` trae lo ya verificado en el chat para el #002 (no se repite; solo relee el original donde dice
+  `pendiente_original`). Verificar: baja las páginas de Fuentes (caché 7 días en `fuentes/`; `SEC_USER_AGENT` opcional
+  para sec.gov), busca los pasajes de cada dato (cifras normalizadas, también en palabras: «dieciocho» → 18), si no hay
+  buen pasaje busca con Serper (máx. 30), y por escena pide a Claude (tarea `verificar_exp`) ✅ confirmado / ⚠️ corregir /
+  ❌ no confirmado / ➖ no es dato, con cita literal y [F#]. **Validación en código**: la cita tiene que estar tal cual en
+  el texto de la fuente; la frase nueva no puede traer cifras que no estén en la frase original o en la cita (si no, se
+  quita); «confirmado» sin cita real → «🔎 revísalo tú» (no se toca la frase hasta que Miguel decida). Los enlaces de
+  Fuentes se revisan sin Claude (¿abre?, ¿la fecha de la página coincide con la del enlace?).
+- **Aprobar cambios** aplica las frases (palomita «Aplicar el cambio» por dato; editar frase con el mismo candado de
+  cifras) → `02-narracion-corregida.md`, `narracion-corregida.json` y `narracion-corregida.pdf` (`expediente_pdf.py`,
+  página de cel, lo cambiado resaltado, `escena-01.wav`… por escena). Cualquier cambio después regresa a «te toca».
+- Chat por expediente (tarea `chat_exp`): contesta el del equipo que toque; acciones reales: cambiar_frase,
+  usar_original/usar_propuesta, reverificar, editar_narracion, nota (para los agentes que todavía no arrancan).
+- Costo: `verificar_exp` y `chat_exp` en `claude.SOLO_PLAN` (Opus por el plan); casilla 💳 en la pestaña →
+  `expedientes/ajustes.json` → `permitir_api`. Aviso por Telegram/WhatsApp cuando Ramos termina.
+- **Obra por partes**: 1) importar + verificación + chat ✅ · 2) gráficas (Remotion, composición «Expediente», G14 como
+  plantilla de la serie) + stock (Pexels/Pixabay API, Wikimedia; Mixkit sin API) + miniaturas · 3) voz por escena +
+  edición en las compus + subtítulos (Whisper) + Shorts · 4) subida a YouTube SIEMPRE privada (subtítulos por API
+  piden el permiso `youtube.force-ssl`: hay que reconectar el canal una vez) y preguntar a Miguel a qué canal sube.
