@@ -17,7 +17,7 @@
 
   // ---------- quién está en cada cubículo ----------
   const AREAS = {
-    ex_ramos: { cuarto: "Interrogatorios", icono: "🔎" }, ex_archivista: { cuarto: "Archivo", icono: "🗄️" },
+    ex_guion: { cuarto: "Redacción", icono: "✍️" }, ex_ramos: { cuarto: "Interrogatorios", icono: "🔎" }, ex_archivista: { cuarto: "Archivo", icono: "🗄️" },
     ex_graficas: { cuarto: "Laboratorio", icono: "📊" }, ex_miniaturas: { cuarto: "Estudio", icono: "🖼️" },
     ex_editor: { cuarto: "Edición", icono: "✂️" }, ex_subtitulos: { cuarto: "Subtítulos", icono: "💬" },
     ex_publicacion: { cuarto: "Publicación", icono: "📤" }, jefe: { cuarto: "Despacho del jefe", icono: "🎙️" },
@@ -29,14 +29,14 @@
   const PLANOS = {
     ancho: { w: 1000, h: 640, cub: [150, 112], jefe: { x: 330, y: 150, w: 340, h: 300 },
              cubs: { ex_ramos: [40, 80], ex_archivista: [40, 222], ex_graficas: [40, 364], ex_miniaturas: [810, 80],
-                     ex_editor: [810, 222], ex_subtitulos: [810, 364], ex_publicacion: [425, 500] },
+                     ex_editor: [810, 222], ex_subtitulos: [810, 364], ex_guion: [250, 500], ex_publicacion: [600, 500] },
              ventanas: [[90, 150], [330, 340], [760, 150]], neon: [500, 92],
-             adornos: [["planta", 300, 520], ["planta", 690, 520], ["cafe", 120, 540], ["sillon", 820, 535], ["archivero", 230, 90], ["archivero", 735, 90]] },
+             adornos: [["planta", 440, 600], ["planta", 560, 470], ["cafe", 120, 540], ["sillon", 860, 560], ["archivero", 230, 90], ["archivero", 735, 90]] },
     alto: { w: 600, h: 1000, cub: [135, 112], jefe: { x: 50, y: 370, w: 500, h: 280 },
             cubs: { ex_ramos: [20, 80], ex_miniaturas: [445, 80], ex_archivista: [20, 222], ex_editor: [445, 222],
-                    ex_graficas: [20, 700], ex_subtitulos: [445, 700], ex_publicacion: [232, 860] },
+                    ex_graficas: [20, 700], ex_subtitulos: [445, 700], ex_guion: [90, 860], ex_publicacion: [375, 860] },
             ventanas: [[40, 110], [190, 220], [450, 110]], neon: [300, 160],
-            adornos: [["planta", 200, 300], ["planta", 385, 300], ["cafe", 60, 890], ["archivero", 470, 880], ["planta", 520, 960]] },
+            adornos: [["planta", 200, 300], ["planta", 385, 300], ["planta", 300, 960]] },
   };
   let P = PLANOS.ancho, escala = 1, dpr = 1;
   let equipo = [], expedientes = [], elegido = null, t = 0, baseLista = false;
@@ -227,6 +227,7 @@
     if (id === "ex_miniaturas") { c.fillStyle = "#9fb9c9"; c.fillRect(x + 4, y + 5, 12, 12); c.fillStyle = BLANCO; c.fillRect(x + 19, y + 5, w - 24, 4); c.fillStyle = AM; c.fillRect(x + 19, y + 11, (w - 24) * (0.5 + 0.5 * Math.sin(t * 3)), 4); }
     if (id === "ex_editor") { [[AM, 4], [VERDE, 9], [ROJO, 14]].forEach(([col, dy]) => { c.fillStyle = col; c.fillRect(x + 3, y + dy, w * 0.35, 3); c.fillRect(x + w * 0.42, y + dy, w * 0.4, 3); }); c.fillStyle = "#fff"; c.fillRect(x + 3 + (w - 6) * k, y + 2, 1.5, h - 4); }
     if (id === "ex_subtitulos") for (let i = 0; i < 4; i++) { const on2 = Math.floor(t * 2.5) % 4 === i; c.fillStyle = on2 ? AM : "#9fb0c3"; c.fillRect(x + 4, y + 4 + i * 5, on2 ? w - 8 : w - 14 - i * 4, 2); }
+    if (id === "ex_guion") for (let i = 0; i < 4; i++) { const largo = i === 3 ? (w - 8) * ((t * 0.7) % 1) : w - 8 - (i * 9) % 14; c.fillStyle = i === 3 ? AM : "#c7d2de"; c.fillRect(x + 4, y + 4 + i * 5, largo, 1.8); }
     if (id === "ex_publicacion") { c.fillStyle = ROJO; c.fillRect(x + w / 2 - 6, y + 4, 12, 9); c.fillStyle = "#fff"; c.beginPath(); c.moveTo(x + w / 2 - 2, y + 6); c.lineTo(x + w / 2 + 3, y + 8.5); c.lineTo(x + w / 2 - 2, y + 11); c.fill(); c.fillStyle = VERDE; c.fillRect(x + 4, y + h - 5, (w - 8) * k, 2); }
   }
   function lluvia(c) {

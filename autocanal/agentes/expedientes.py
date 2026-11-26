@@ -41,9 +41,11 @@ from .expedientes_previos import ORIGEN as ORIGEN_PREVIO, PREVIOS
 
 CARPETA = Path(os.environ.get("AUTOCANAL_EXPEDIENTES") or config.BASE / "expedientes")
 AJUSTES = CARPETA / "ajustes.json"
-TAREAS_IA = ("verificar_exp", "chat_exp")
+TAREAS_IA = ("verificar_exp", "chat_exp", "fabrica_exp")
 
 EQUIPO = [  # id, nombre, rol, color, peinado, qué hace (los retratos de la pestaña Equipo)
+    ("ex_guion", "Vera", "Investigación y guion", "#38bdf8", "largo",
+     "Investiga la marca en Google con fuentes reales (cita literal de cada dato) y escribe el guion técnico del caso."),
     ("ex_ramos", "Detective Ramos", "Verificación", "#facc15", "gorra",
      "Revisa cada dato y cada cifra del guion contra sus fuentes: ✅ confirmado, ⚠️ corregir o ❌ no confirmado."),
     ("ex_graficas", "Nico", "Gráficas", "#e63946", "copete",
@@ -90,11 +92,15 @@ def _avisa_pantalla() -> None:
 
 
 # ---------------------------------------------------------------- el equipo en pantalla
+FABRICA_AGENTES = {"ex_guion", "ex_ramos", "ex_archivista", "ex_graficas", "ex_editor", "ex_miniaturas", "ex_subtitulos",
+                   "ex_publicacion"}  # 🏭 los que ya trabajan en la fábrica (no están «en obra»)
+
+
 def agentes() -> list[dict]:
     salida = []
     for i, nombre, rol, color, pelo, desc in EQUIPO:
         a = _agentes.get(i, {})
-        parte = min((pa for _, _, q, pa in PASOS if q == i), default=1)
+        parte = 1 if i in FABRICA_AGENTES else min((pa for _, _, q, pa in PASOS if q == i), default=1)
         salida.append({"id": i, "nombre": nombre, "rol": rol, "color": color, "pelo": pelo, "desc": desc,
                        "estado": a.get("estado", "libre"), "dice": a.get("dice", ""), "dice_t": a.get("dice_t", 0),
                        "ubicacion": "casa", "obra": f"Llega en la parte {parte} de la obra" if parte > 1 else ""})
@@ -236,6 +242,9 @@ def _cuenta(datos: list[dict]) -> dict:
 
 
 def pasos(p: dict, t: dict) -> list[dict]:
+    if t.get("fabrica"):  # 🏭 los casos de la fábrica tienen sus propios pasos
+        from . import expedientes_fabrica
+        return expedientes_fabrica.pasos(t)
     v = t["verificacion"].get("estado")
     estado_v = {"sin_empezar": "pendiente", "trabajando": "trabajando", "interrumpida": "pendiente",
                 "lista": "espera_ok", "aprobada": "listo", "error": "error"}.get(v, "pendiente")

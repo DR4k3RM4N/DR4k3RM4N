@@ -16,7 +16,7 @@
   }
 
   // ---------- pestañas ----------
-  const PANELES = { bandeja: "#tab-exp-bandeja", casos: "#tab-expedientes", equipo: "#tab-exp-equipo", agenda: "#tab-exp-agenda",
+  const PANELES = { bandeja: "#tab-exp-bandeja", temas: "#tab-exp-temas", casos: "#tab-expedientes", equipo: "#tab-exp-equipo", agenda: "#tab-exp-agenda",
                     canales: "#tab-exp-canales", chat: "#tab-exp-chat" };
   let tab = PANELES[leer("exp_tab", "bandeja")] ? leer("exp_tab", "bandeja") : "bandeja";
   function abrir(nombre) {
@@ -29,7 +29,7 @@
   document.querySelectorAll("[data-exp-tab]").forEach((b) => b.addEventListener("click", () => abrir(b.dataset.expTab)));
   const abrirCaso = (id) => { abrir("casos"); window.dispatchEvent(new CustomEvent("exp-abrir", { detail: id })); };
 
-  let resumen = null, agendaDatos = null;
+  let resumen = null, agendaDatos = null, fabrica = null;
   const nombreDe = (id) => (id === "jefe" ? "Tú" : (resumen?.equipo || []).find((a) => a.id === id)?.nombre || id);
 
   // ---------- 📥 Bandeja: lo que te toca a ti ----------
@@ -43,10 +43,13 @@
       else if (paso("verificacion") === "pendiente") pendientes.push({ c, ico: "▶️", txt: "Caso importado: pídele a Ramos que verifique los datos", btn: "Abrir" });
       else if (paso("verificacion") === "error") pendientes.push({ c, ico: "⚠️", txt: "Algo falló en la verificación", btn: "Ver" });
     }
-    $("#exp-cuenta").hidden = !pendientes.length;
-    $("#exp-cuenta").textContent = pendientes.length;
+    const revisar = (fabrica?.casos || []).filter((c) => c.paso === "revision");
+    const total = pendientes.length + revisar.length;
+    $("#exp-cuenta").hidden = !total;
+    $("#exp-cuenta").textContent = total;
     const ag = (agendaDatos?.canales || [])[0];
-    $("#exp-bandeja").innerHTML = `
+    if (document.activeElement?.closest?.("#exp-bandeja") || [...document.querySelectorAll("#exp-bandeja video")].some((v) => !v.paused)) return;
+    $("#exp-bandeja").innerHTML = tarjetaFabrica() + revisar.map(tarjetaVideo).join("") + `
       <section class="tarjeta">
         <h4>📥 Lo que te toca</h4>
         ${pendientes.length ? pendientes.map((x) => `<article class="exp-pendiente">
@@ -68,6 +71,81 @@
         <button class="btn btn-mini" data-ir="casos">📥 Importar paquete</button>
       </section>`;
   }
+  // 🏭 la fábrica: prendida/pausada, qué está haciendo y cuánto material hay por delante
+  const PASO_TXT = { investigacion: "🔎 Vera investiga", guion: "✍️ Vera escribe el guion", material: "🗄️ Inés busca material libre",
+                     storyboard: "📊 Nico arma el storyboard", verificacion: "🔎 Ramos verifica", render: "🎬 Tu compu hace el video",
+                     revision: "👀 Te toca revisar", programado: "📤 Programado" };
+  function tarjetaFabrica() {
+    if (!fabrica) return "";
+    const e = fabrica.estado, enCurso = fabrica.temas.find((x) => x.id === e.en_curso);
+    const trabajando = fabrica.casos.filter((c) => c.paso && !["revision", "programado"].includes(c.paso));
+    const sig = fabrica.temas.find((x) => x.estado === "pendiente");
+    return `<section class="tarjeta fab">
+      <div class="cabeza"><h4>🏭 Fábrica de videos</h4>
+        <label class="fab-switch"><input type="checkbox" data-fab-activa ${e.activa ? "checked" : ""}> ${e.activa ? "Prendida" : "Pausada"}</label></div>
+      <p class="pista">Cuando tu plan de Claude tiene uso libre, el equipo toma el siguiente tema, lo investiga con fuentes, escribe el guion
+        y el storyboard; tu compu hace el video y te lo deja aquí para revisar. Cero centavos de la API.</p>
+      ${!fabrica.plan ? `<p class="error">🧠 Tu plan de Claude no está conectado en el servidor (o está en pausa por el límite): la fábrica espera.</p>` : ""}
+      ${e.nota ? `<p class="pista">⏳ ${esc(e.nota)}</p>` : ""}
+      ${enCurso ? `<p>⚙️ Produciendo: <b>${esc(enCurso.marca)}</b></p>` : ""}
+      ${trabajando.map((c) => `<p>• #${esc(c.numero)} ${esc(c.marca)} — ${esc(PASO_TXT[c.paso] || c.paso)}${c.paso === "render" && c.render_paso ? ` · ${esc(c.render_paso)} (${Math.round((c.render_avance || 0) * 100)} %)` : ""}${c.error ? ` <span class="error">· ${esc(c.error)}</span>` : ""}</p>`).join("")}
+      <p>📦 Material por delante: <b>${fabrica.por_delante}</b> de ${fabrica.meta} videos
+        <label class="pista">· juntar para <select data-fab-meta>${[30, 60, 90, 180].map((n) => `<option value="${n}" ${+e.meta_dias === n ? "selected" : ""}>${n} días</option>`).join("")}</select></label></p>
+      <div class="fila">${sig && !e.en_curso ? `<button class="btn btn-mini btn-primario" data-producir="${esc(sig.id)}">▶ Producir ya: ${esc(sig.marca)}</button>` : ""}
+        <button class="btn btn-mini" data-ir="temas">🧾 Temas (${fabrica.temas.filter((x) => x.estado === "pendiente").length} en fila)</button></div>
+      ${!fabrica.pexels ? `<p class="pista">🎞️ Sin clave de Pexels en el servidor: solo fotos de Wikimedia (opcional).</p>` : ""}
+    </section>`;
+  }
+  function tarjetaVideo(c) {
+    const libre = (agendaDatos?.canales?.[0]?.fechas || []).find((f) => !f.caso);
+    const ruta = (n) => `/expedientes-render/${encodeURIComponent(c.id)}/${encodeURIComponent(n)}`;
+    return `<section class="tarjeta fab-video">
+      <h4>🎬 #${esc(c.numero)} · ¿Quién MATÓ a ${esc(c.marca)}? <span class="chip">listo para revisar</span></h4>
+      ${c.video ? `<video controls preload="metadata" src="${ruta(c.video)}" poster="${ruta("miniatura-A.jpg")}"></video>
+        <p class="pista"><a href="${ruta("miniatura-A.jpg")}" target="_blank">Miniatura A</a> · <a href="${ruta("miniatura-B.jpg")}" target="_blank">Miniatura B</a></p>`
+        : `<p class="pista">${esc(c.render_nota || "Sin video")}</p>`}
+      <p class="pista">${c.palabras || "?"} palabras · ${c.material || 0} archivos libres · Ramos: ✅ ${c.cuenta?.confirmado || 0} · ⚠️ ${c.cuenta?.corregir || 0} · ❌ ${c.cuenta?.no_confirmado || 0}
+        · <button class="link" data-abrir-caso="${esc(c.id)}">ver verificación</button></p>
+      ${c.error ? `<p class="error">${esc(c.error)}</p>` : ""}
+      <div class="fila">
+        <button class="btn btn-primario" data-fab-revisar="programar" data-eid="${esc(c.id)}">✅ Aprobar y programar${libre ? ` (${esc(fechaBonita(libre.fecha))} ${esc(libre.hora)})` : ""}</button>
+        <button class="btn" data-fab-revisar="privado" data-eid="${esc(c.id)}">🔒 Subir privado sin fecha</button>
+        <button class="btn btn-mini" data-fab-revisar="rehacer_video" data-eid="${esc(c.id)}">🔁 Rehacer video</button>
+      </div>
+      <p class="pista">Se sube en PRIVADO. Con fecha, YouTube lo publica solo ese día; sin fecha, tú lo haces público cuando quieras.</p>
+    </section>`;
+  }
+
+  // ---------- 🧾 Temas ----------
+  const ESTADO_TEMA = { produciendo: "⚙️ Produciendo", pendiente: "🕒 En fila", propuesto: "💡 Propuesto (apruébalo)", listo: "📦 Ya es caso",
+                        hecho: "✅ Hecho", saltado: "⏭️ Saltado" };
+  function pintarTemas() {
+    if (!fabrica || document.activeElement?.closest?.("#exp-temas")) return;
+    const orden = ["produciendo", "pendiente", "propuesto", "listo", "hecho", "saltado"];
+    const lista = [...fabrica.temas].sort((a, b) => orden.indexOf(a.estado) - orden.indexOf(b.estado));
+    let n = 0;
+    $("#exp-temas").innerHTML = `<section class="tarjeta">
+        <h4>🧾 Temas de ¿Quién MATÓ a…?</h4>
+        <p class="pista">La fábrica toma el primero «En fila». Súbelo, sáltalo o agrega los tuyos. Cuando se acaben, el equipo propone más (tú los apruebas).</p>
+        <form class="fila" id="fab-nuevo"><input name="marca" maxlength="80" placeholder="Marca (ej. Kmart México)"><input name="gancho" maxlength="300" placeholder="El gancho (opcional)">
+          <button class="btn btn-mini btn-primario" type="submit">Agregar</button></form>
+        <p><button class="btn btn-mini" data-fab-proponer>💡 Que el equipo proponga 6 temas</button></p>
+      </section>
+      <ol class="fab-temas">${lista.map((x) => `<li class="fab-tema fab-${esc(x.estado)}">
+        <div><b>${x.estado === "pendiente" ? `${++n}. ` : ""}${esc(x.marca)}</b> <span class="chip">${esc(ESTADO_TEMA[x.estado] || x.estado)}</span>
+          <p class="pista">${esc(x.gancho)}${x.grupo ? ` · ${esc(x.grupo)}` : ""}</p>
+          ${x.error ? `<p class="error">Último intento: ${esc(x.error)}</p>` : ""}</div>
+        <div class="fab-botones">
+          ${x.estado === "pendiente" && !fabrica.estado.en_curso ? `<button class="btn btn-mini btn-primario" data-producir="${esc(x.id)}">▶ Ya</button>` : ""}
+          ${x.estado === "pendiente" ? `<button class="btn btn-mini" data-tema="primero" data-id="${esc(x.id)}" title="Que sea el siguiente">⬆</button>
+            <button class="btn btn-mini" data-tema="saltar" data-id="${esc(x.id)}">Saltar</button>` : ""}
+          ${x.estado === "propuesto" ? `<button class="btn btn-mini btn-primario" data-tema="aprobar" data-id="${esc(x.id)}">👍 Aprobar</button>` : ""}
+          ${x.estado === "saltado" ? `<button class="btn btn-mini" data-tema="reactivar" data-id="${esc(x.id)}">Regresar a la fila</button>` : ""}
+          ${["propuesto", "saltado"].includes(x.estado) ? `<button class="btn btn-mini btn-no" data-tema="borrar" data-id="${esc(x.id)}">✕</button>` : ""}
+          ${x.eid ? `<button class="btn btn-mini" data-abrir-caso="${esc(x.eid)}">Ver caso</button>` : ""}
+        </div></li>`).join("")}</ol>`;
+  }
+
   function estadoCaso(c) {
     const p = Object.fromEntries((c.pasos || []).map((x) => [x.clave, x.estado]));
     if (p.subida === "listo") return "✅ Subido (privado)";
@@ -143,6 +221,25 @@
     catch (err) { alert(err.message); }
   });
 
+  document.querySelector(".ag-panel").addEventListener("change", async (e) => {
+    const t = e.target;
+    if (t.matches("[data-fab-activa]")) {
+      try { await api("/api/expedientes/fabrica", { accion: "ajustar", activa: t.checked }); } catch (err) { alert(err.message); }
+      t.blur(); cargar(true);
+    }
+    if (t.matches("[data-fab-meta]")) {
+      try { await api("/api/expedientes/fabrica", { accion: "ajustar", meta_dias: +t.value }); } catch (err) { alert(err.message); }
+      t.blur(); cargar(true);
+    }
+  });
+  document.querySelector(".ag-panel").addEventListener("submit", async (e) => {
+    if (e.target.id !== "fab-nuevo") return;
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target));
+    try { await api("/api/expedientes/fabrica", { accion: "tema", op: "nuevo", ...d }); e.target.reset(); document.activeElement?.blur(); cargar(true); }
+    catch (err) { alert(err.message); }
+  });
+
   // ---------- 💬 Chat (con el equipo, sobre un caso) ----------
   let chatCaso = leer("exp_chat_caso", ""), chatDatos = null;
   async function pintarChat(forzar) {
@@ -181,6 +278,30 @@
   document.querySelector(".ag-panel").addEventListener("click", async (e) => {
     const a = e.target.closest("[data-abrir-caso]"); if (a) return abrirCaso(a.dataset.abrirCaso);
     const ir = e.target.closest("[data-ir]"); if (ir) return abrir(ir.dataset.ir);
+    const fab = async (datos, boton, ok) => {
+      if (boton) boton.disabled = true;
+      try { const r = await api("/api/expedientes/fabrica", datos); if (ok) alert(ok(r)); } catch (err) { alert(err.message); }
+      if (boton) boton.disabled = false;
+      await cargar(true);
+    };
+    const pr = e.target.closest("[data-producir]");
+    if (pr) return fab({ accion: "producir", id: pr.dataset.producir }, pr, () => "Arrancó la producción ⚙️ Mira el avance en la Bandeja.");
+    const tm = e.target.closest("[data-tema]");
+    if (tm) {
+      if (tm.dataset.tema === "borrar" && !confirm("¿Quitar este tema de la lista?")) return;
+      return fab({ accion: "tema", id: tm.dataset.id, op: tm.dataset.tema }, tm);
+    }
+    const pp = e.target.closest("[data-fab-proponer]");
+    if (pp) { pp.textContent = "Pensando…"; return fab({ accion: "proponer" }, pp, (r) => `Listo: ${r.nuevos} tema(s) nuevo(s) para que los apruebes.`); }
+    const rv = e.target.closest("[data-fab-revisar]");
+    if (rv) {
+      const a = rv.dataset.fabRevisar;
+      const msg = { programar: "¿Aprobar este video? Se sube en PRIVADO y YouTube lo publica solo en la fecha que toca.",
+                    privado: "¿Aprobar y subirlo en PRIVADO sin fecha? Tú lo haces público cuando quieras.",
+                    rehacer_video: "¿Mandar a tu compu a hacer el video otra vez?" }[a];
+      if (!confirm(msg)) return;
+      return fab({ accion: a, eid: rv.dataset.eid }, rv, (r) => a === "programar" ? `Subiendo en privado, programado para el ${r.fecha} ✔` : "Va ✔");
+    }
     const b = e.target.closest("[data-borrar-canal]");
     if (b && confirm("¿Quitar este canal de la agencia? (No borra nada en YouTube)")) {
       try { await api("/api/expedientes/canal", { id: b.dataset.borrarCanal, borrar: true }); await cargarAgenda(); pintar(true); } catch (err) { alert(err.message); }
@@ -189,11 +310,11 @@
 
   // ---------- datos ----------
   async function cargarAgenda() { try { agendaDatos = await api("/api/expedientes/agenda"); } catch { /* sigue */ } }
-  async function cargar() {
+  async function cargar(forzar) {
     if (document.hidden) return;
-    try { resumen = await api("/api/expedientes"); } catch { return; }
+    try { [resumen, fabrica] = await Promise.all([api("/api/expedientes"), api("/api/expedientes/fabrica")]); } catch { return; }
     if (tab === "agenda" || tab === "bandeja" || tab === "canales" || !agendaDatos) await cargarAgenda();
-    pintar();
+    pintar(forzar);
   }
   function pintar(forzar) {
     if (!resumen) return;
@@ -202,6 +323,7 @@
       $("#exp-cuenta").hidden = !n; $("#exp-cuenta").textContent = n;
     }
     if (tab === "equipo") pintarEquipo();
+    if (tab === "temas") pintarTemas();
     if (tab === "agenda") pintarAgenda();
     if (tab === "canales") pintarCanales();
     if (tab === "chat") pintarChat(forzar);

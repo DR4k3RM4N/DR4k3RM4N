@@ -74,3 +74,17 @@ body.agencia {
 .ag-chat-log { max-height: 55vh; overflow-y: auto; }
 .ag-chat-log li.mio { background: rgba(255,214,10,.07); }
 #tab-exp-chat textarea { width: 100%; }
+
+/* 🏭 la fábrica */
+.fab .cabeza { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.fab-switch { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--exp-amarillo); }
+.fab-switch input { width: 18px; height: 18px; accent-color: var(--exp-verde); }
+.fab-video video { width: 100%; border-radius: 8px; background: #000; margin: 6px 0; }
+.fab-video .fila, .fab .fila { flex-wrap: wrap; gap: 6px; }
+.fab-temas { list-style: none; padding: 0; margin: 0; }
+.fab-tema { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #26262a; flex-wrap: wrap; }
+.fab-tema p { margin: 2px 0; }
+.fab-botones { display: flex; gap: 4px; flex-wrap: wrap; align-items: flex-start; }
+.fab-hecho, .fab-saltado, .fab-listo { opacity: .6; }
+.fab-produciendo { border-left: 3px solid var(--exp-amarillo); }
+#fab-nuevo input { flex: 1; min-width: 120px; }

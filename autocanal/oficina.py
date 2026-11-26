@@ -161,6 +161,8 @@ class Oficina:
         self.tamp_agentes: dict[str, dict] = {}  # 🌮 quién del equipo de Tampiqueando trabaja y qué dice
         expedientes.al_cambiar = self._tocar  # 🕵️ Expedientes: la pantalla se actualiza cuando trabaja su equipo
         expedientes.al_avisar = self._aviso_expediente
+        from agentes import expedientes_fabrica
+        expedientes_fabrica.iniciar()  # 🏭 la fábrica de expedientes: una vuelta cada minuto
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
         threading.Thread(target=self._ciclo_deseos, daemon=True).start()
@@ -2605,6 +2607,19 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json(tampico.resumen())
             if ruta == "/api/expedientes":  # 🕵️ Expedientes («¿Quién MATÓ a…?»)
                 return self._json(expedientes.resumen())
+            if ruta == "/api/expedientes/fabrica":  # 🏭 temas, casos en producción y estado de la fábrica
+                from agentes import expedientes_fabrica
+                return self._json(expedientes_fabrica.resumen())
+            if ruta.startswith("/expedientes-render/"):  # 🎬 el video, las miniaturas y los subtítulos que hizo tu compu
+                from agentes import expedientes_fabrica
+                partes = ruta.split("/")
+                try:
+                    archivo = expedientes_fabrica.archivo_render(partes[2], partes[3]) if len(partes) == 4 else None
+                except ValueError:
+                    archivo = None
+                if not archivo:
+                    return self._json({"error": "no encontrado"}, 404)
+                return self._archivo(archivo, archivo.parent)
             if ruta == "/api/expedientes/agenda":  # 📅 canales y días de publicación
                 from agentes import expedientes_agenda
                 return self._json(expedientes_agenda.agenda())
@@ -2800,6 +2815,27 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     return self._json(oficina.tampico_accion(datos))
                 except Exception as exc:  # noqa: BLE001
                     return self._json({"error": str(exc)[:300]}, 500)
+            if ruta == "/api/expedientes/fabrica":  # 🏭 prender/pausar, temas, producir ya, revisar el video
+                from agentes import expedientes_fabrica as fb
+                a = str(datos.get("accion") or "")
+                try:
+                    if a == "ajustar":
+                        r = fb.ajustar(datos)
+                    elif a == "tema":
+                        r = fb.mover_tema(datos)
+                    elif a == "proponer":
+                        r = fb.proponer_temas(str(datos.get("canal") or "quien_mato"))
+                    elif a == "producir":
+                        r = fb.producir(str(datos.get("id") or ""))
+                    elif a in ("programar", "privado", "rehacer_video"):
+                        r = fb.revisar(str(datos.get("eid") or ""), datos)
+                    else:
+                        r = {"error": "¿Qué hago?"}
+                except ValueError as exc:
+                    r = {"error": str(exc)}
+                except Exception as exc:  # noqa: BLE001
+                    r = {"error": str(exc)[:300]}
+                return self._json(r, 400 if "error" in r else 200)
             if ruta == "/api/expedientes/canal":  # 📺 crear/cambiar un canal de la agencia
                 from agentes import expedientes_agenda
                 r = expedientes_agenda.guardar_canal(datos)

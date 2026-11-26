@@ -605,10 +605,23 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   (Bahnschrift/Segoe) → **renderiza en las compus de Miguel** (las compus de la sala se actualizan solas del repo).
   Claves NUNCA en el repo: `.azure_speech` y `.pexels_key` van en la carpeta `canal-youtube` de cada compu
   (`canal-youtube/.gitignore`). Voz: Azure es-MX-JorgeNeural +12 % (Miguel regraba con su voz las que quiera).
-- **Pendiente (parte 2, la fábrica):** faltan de Miguel `01-sears/` y `02-tupperware/` (guion técnico, storyboard.py,
-  04-fuentes.md, miniatura.py; sin render/ ni material/) y `plan-del-canal.md` (24 temas). Con eso: tema → investigar
-  con fuentes → guion técnico → storyboard.py (Claude, por el plan) → trabajo «expediente» en la compu (material
-  libre + motor --render + miniatura) → Bandeja para revisar → agenda cada 3 días en privado/programado.
+- **🏭 Fábrica** (`agentes/expedientes_fabrica.py`, ciclo cada minuto desde `oficina.py`): temas de
+  `canal-youtube/plan-del-canal.md` → `expedientes/temas.json` (Sears/Tupperware = hecho; pestaña 🧾 Temas: subir,
+  saltar, agregar, «proponer 6» con Claude → «propuesto» hasta que Miguel aprueba). Por tema: Vera (`ex_guion`, agente
+  nuevo con cubículo «Redacción») investiga con Serper + lee páginas → hechos con cita literal (se valida que la cita
+  esté en la página) → guion técnico (formato del motor, cifras solo de hechos; las que no → lista «por verificar»)
+  → Inés: búsquedas Commons (+Pexels si `canal-youtube/.pexels_key` en el servidor), solo licencias libres, Claude
+  escoge → manifiestos → Nico: `storyboard.py` (Claude, con sb.py + ejemplo Tupperware; **revisión AST**
+  `codigo_seguro` = sin os/open/escritura; se prueba en subproceso `-I` que cuadren frases/cards y archivos; 3
+  intentos) + `miniatura.py` (plantilla) → `ex.importar` (ZIP de .md) → Ramos verifica. Sin ⚠️/❌ → render directo;
+  si no, cuando Miguel aprueba (usa la narración corregida, misma cantidad de frases). Render: trabajo de sala
+  **«expediente»** (`compu.py render_expediente`: solo Windows con Bahnschrift, `canal-youtube/.azure_speech` en el
+  clon de la sala y Python con OpenCV; baja material con `fuentes_libres.py`, `motor.py --render`, `miniatura.py`,
+  sube mp4/srt/capítulos/créditos/miniaturas) → Bandeja «🎬 listo para revisar» (video + botones) → «Aprobar y
+  programar» = `youtube.subir(..., privacidad="private", publicar_en=siguiente fecha libre)` o «privado sin fecha».
+  Meta: material por delante (por defecto 90 días ≈ 30 videos a cada 3 días). Sin plan o con límite → espera 1 h.
+  Todo en `claude.SOLO_PLAN` (tarea `fabrica_exp`, Opus). Rutas: `GET/POST /api/expedientes/fabrica`,
+  `/expedientes-render/<eid>/<archivo>`.
 - **Obra por partes**: 1) importar + verificación + chat ✅ · 2) gráficas (Remotion, composición «Expediente», G14 como
   plantilla de la serie) + stock (Pexels/Pixabay API, Wikimedia; Mixkit sin API) + miniaturas · 3) voz por escena +
   edición en las compus + subtítulos (Whisper) + Shorts · 4) subida a YouTube SIEMPRE privada (subtítulos por API

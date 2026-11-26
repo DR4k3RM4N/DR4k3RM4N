@@ -877,6 +877,8 @@ def hacer(of: Oficina, t: dict) -> None:
             return editar_libre(of, t, carpeta, avance)
         if t["tipo"] in ("edu", "edu_ia"):  # 🎬 un video de YouTube de la oficina (edu_ia: lo dirige Claude)
             return editar_edu(of, t, carpeta, avance, con_claude=t["tipo"] == "edu_ia")
+        if t["tipo"] == "expediente":  # 🕵️ un video de «¿Quién MATÓ a…?» con el motor de canal-youtube
+            return render_expediente(of, t, carpeta, avance)
         if t["tipo"] == "probar_ssh":  # 🔑 ¿esta compu ya entra al servidor con su llave?
             return probar_ssh(of, t)
         if t["tipo"] == "probar_app":  # 📱 el robot prueba la app en tu Android
@@ -922,6 +924,103 @@ def hacer(of: Oficina, t: dict) -> None:
         shutil.rmtree(carpeta, ignore_errors=True)
 
 
+# ---------- 🕵️ Expedientes: el motor de video de «¿Quién MATÓ a…?» (canal-youtube/motor, en el repo) ----------
+CANAL_YT = REPO / "canal-youtube"
+_PY_MOTOR: list = []
+
+
+def python_motor() -> list[str] | None:
+    """El Python que tiene OpenCV/NumPy/Pillow (el motor los necesita). Prueba el de la sala y luego el de Windows."""
+    if _PY_MOTOR and (_PY_MOTOR[0] or time.time() - _PY_MOTOR[1] < 600):  # si no hubo, se vuelve a probar cada 10 min
+        return _PY_MOTOR[0]
+    _PY_MOTOR[:] = [None, time.time()]
+    import editor_ia
+    for cand in ([editor_ia.python_exe()], ["py", "-3"], ["python"]):
+        try:
+            r = subprocess.run([*cand, "-c", "import cv2, numpy, PIL"], capture_output=True, timeout=60,
+                               creationflags=0x08000000 if WINDOWS else 0)
+            if r.returncode == 0:
+                _PY_MOTOR[:] = [cand, time.time()]
+                return cand
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return None
+
+
+def motor_expedientes() -> dict:
+    """¿Esta compu puede hacer videos de Expedientes? (Windows con sus fuentes, motor en el repo y clave de Azure)."""
+    if not WINDOWS or not Path("C:/Windows/Fonts/bahnschrift.ttf").exists():
+        return {"listo": False, "texto": "solo en Windows"}
+    if not (CANAL_YT / "motor" / "motor.py").exists():
+        return {"listo": False, "texto": "falta el motor (actualiza la sala)"}
+    if not (CANAL_YT / ".azure_speech").exists():
+        return {"listo": False, "texto": f"falta la clave de Azure en {CANAL_YT}"}
+    if not python_motor():
+        return {"listo": False, "texto": "falta OpenCV (pip install opencv-python numpy pillow)"}
+    return {"listo": True, "texto": "listo"}
+
+
+def render_expediente(of: "Oficina", t: dict, temporal: Path, avance) -> None:
+    """Baja el paquete del caso (guion + storyboard + manifiestos), baja el material libre, hace la voz con Azure y
+    el video con el motor, saca las miniaturas y regresa todo a la oficina."""
+    import re as _re
+    import zipfile as _zip
+    tid, par = t["id"], t["parametros"]
+    nombre_dir = str(par.get("carpeta") or "")
+    if not _re.fullmatch(r"[0-9]{2}-[a-z0-9-]{1,40}", nombre_dir):
+        raise RuntimeError("Nombre de carpeta del episodio inválido.")
+    py = python_motor()
+    if not py:
+        raise RuntimeError("Esta compu no tiene OpenCV para el motor (pip install opencv-python numpy pillow).")
+    if not (CANAL_YT / ".azure_speech").exists():
+        raise RuntimeError(f"Falta la clave de Azure: pon el archivo .azure_speech en {CANAL_YT}")
+    avance("Bajando el caso", 0.01)
+    paquete = temporal / "caso.zip"
+    of.bajar(tid, 0, paquete)
+    ep = CANAL_YT / nombre_dir
+    ep.mkdir(parents=True, exist_ok=True)
+    with _zip.ZipFile(paquete) as z:
+        for n in z.namelist():
+            if "/" in n or "\\" in n or n.startswith(".") or not n.endswith((".md", ".py", ".json")):
+                continue
+            (ep / n).write_bytes(z.read(n))
+    shutil.rmtree(ep / "render", ignore_errors=True)
+    sin_ventana = 0x08000000 if WINDOWS else 0
+
+    def correr(cmd, desde, hasta, que):
+        p = subprocess.Popen([*py, "-E", "-P", *cmd], cwd=str(CANAL_YT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, encoding="utf-8", errors="replace", creationflags=sin_ventana)
+        ultimas, va = [], desde
+        for linea in p.stdout:
+            linea = linea.strip()
+            if not linea:
+                continue
+            ultimas = (ultimas + [linea])[-15:]
+            m = _re.search(r"(\d+)/(\d+)", linea)
+            if m:
+                va = max(va, desde + (hasta - desde) * min(1, int(m.group(1)) / max(1, int(m.group(2)))))
+            avance(f"{que}: {linea[:70]}", va)
+        if p.wait() != 0:
+            raise RuntimeError(f"{que} falló: " + " | ".join(ultimas[-4:])[-400:])
+
+    for sub in ("fotos", "videos"):
+        man = ep / f"manifiesto-{sub}.json"
+        if man.exists() and json.loads(man.read_text(encoding="utf-8")):
+            correr(["motor/fuentes_libres.py", "descargar", str(man), str(ep / "material" / sub)], 0.03, 0.2,
+                   f"Bajando {sub} libres")
+    correr(["motor/motor.py", nombre_dir, "--render"], 0.2, 0.93, "Haciendo el video")
+    correr([f"{nombre_dir}/miniatura.py"], 0.93, 0.96, "Miniaturas")
+    render = ep / "render"
+    video = next((v for v in sorted(render.glob("*.mp4")) if "solo-video" not in v.name), None)
+    if not video:
+        raise RuntimeError("El motor terminó pero no encontré el MP4.")
+    avance("Subiendo el video a la oficina", 0.96)
+    for f in [video, *render.glob("*.srt"), *render.glob("*-capitulos.txt"), *render.glob("*-creditos.txt"),
+              *render.glob("miniatura-*.jpg")]:
+        of.subir(tid, f)
+    log(f"Expediente {nombre_dir}: video listo ({round(video.stat().st_size / 1e6)} MB).")
+
+
 def actualizarme() -> None:
     """Cada rato revisa si hay versión nueva en GitHub; si la hay (y no está editando), se actualiza y se reinicia."""
     try:
@@ -961,7 +1060,9 @@ def trabajar() -> None:
         cel = robot_cel.celular()  # 📱 ¿tu Android viejo está conectado? Entonces también prueba apps
         datos["celular"] = cel.get("modelo") or ("falta autorizar" if cel.get("pendiente")
                                                   else robot_cel.MOTIVOS.get(cel.get("motivo"), ""))
+        datos["expedientes"] = motor_expedientes()["texto"]
         datos["tipos"] = ["cris", "libre", "edu", "probar_ssh", *(["pensar", "claude_libre"] if datos["claude_code"] == "listo" else []),
+                          *(["expediente"] if motor_expedientes()["listo"] else []),
                           *(["edu_ia"] if datos["claude_code"] == "listo" and ESTADO_MOTION["texto"] == "listo" else []),
                           # 📱 el robot paso a paso no necesita Claude Code aquí (lo piensa la oficina)
                           *(["probar_app"] if cel.get("serie") and (os.environ.get("ROBOT_MODO") != "claude_code"
