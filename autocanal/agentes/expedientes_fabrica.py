@@ -1260,6 +1260,14 @@ def _revisar_render(eid: str) -> None:
     except (requests.RequestException, ValueError):
         return
     est = e.get("estado")
+    if est == "en_cola":
+        motivo = _motivo_sin_compu()
+        if motivo != (f.get("render_paso") or "") and (motivo or f.get("render_paso", "").startswith(("Ninguna", "Tu compu", "La sala"))):
+            _poner(eid, render_paso=motivo or "En fila para tu compu")
+            if motivo and ex.al_avisar and not f.get("avisado_compu"):
+                ex.al_avisar("Beto", f"¿Quién MATÓ a {f.get('marca')}? espera a tu compu: {motivo}")
+                _poner(eid, avisado_compu=True)
+        return
     if est in ("asignado", "trabajando"):
         ex._decir("ex_editor", "trabajando", f"{e.get('compu') or 'Tu compu'}: {e.get('paso') or 'renderizando'}"[:120])
         _poner(eid, render_paso=e.get("paso") or "", render_avance=e.get("avance") or 0)
@@ -1574,7 +1582,7 @@ def archivo_render(eid: str, nombre: str) -> Path | None:
 
 # ---------------------------------------------------------------- 💬 el chat de la agencia (instrucciones reales)
 CHAT = ex.CARPETA / "chat_agencia.json"
-ACCIONES = ["continuar", "pausar", "prender", "producir", "agregar_tema", "primero", "saltar", "aprobar_tema",
+ACCIONES = ["continuar", "pausar", "prender", "producir", "hacer_video", "agregar_tema", "primero", "saltar", "aprobar_tema",
             "proponer_temas", "reintentar", "rehacer_video", "subir", "meta_dias", "ritmo", "hora", "subir_solo",
             "mensaje_caso", "ninguna"]
 ESQ_CHAT = {"type": "object", "additionalProperties": False, "required": ["quien", "respuesta", "acciones"], "properties": {
@@ -1621,8 +1629,11 @@ def _contexto_chat() -> str:
               f"meta {e['meta_dias']} días ({r['meta']} videos) · por delante {r['por_delante']} · plan de Claude "
               f"{'disponible' if r['plan'] else 'NO disponible (límite o sin conectar)'} · produciendo: {e.get('en_curso') or 'nada'}"
               + (f" · nota: {e['nota']}" if e.get("nota") else "")]
+    for x in ex.lista():
+        if not ex.trabajo(x["id"]).get("fabrica"):
+            lineas.append(f"CASO #{x['numero']} {x['marca']} ({x['id']}): {situacion_caso(x['id'])}")
     for c in r["casos"]:
-        lineas.append(f"CASO #{c['numero']} {c['marca']}: paso {c['paso']}, verificación {c['verificacion']}, "
+        lineas.append(f"CASO #{c['numero']} {c['marca']}: {situacion_caso(c['id'])} · paso {c['paso']}, verificación {c['verificacion']}, "
                       f"video {c.get('render_estado') or '-'}, subida {c.get('subida') or '-'}"
                       + (f", programado {c['programado']['fecha']}" if c.get("programado") else "")
                       + (f", ERROR: {c['error']}" if c.get("error") else ""))
@@ -1683,7 +1694,9 @@ def _ejecutar(a: dict) -> str:
     eid = _caso(a["caso"])
     if not eid:
         return f"✖ No encontré el caso «{a['caso']}»."
-    if tipo == "reintentar":
+    if tipo == "hacer_video":
+        r = convertir(eid)
+    elif tipo == "reintentar":
         r = reintentar(eid)
     elif tipo == "rehacer_video":
         r = revisar(eid, {"accion": "rehacer_video"})
@@ -1695,7 +1708,8 @@ def _ejecutar(a: dict) -> str:
     else:
         return ""
     return f"✖ {r['error']}" if "error" in r else {"reintentar": "🔁 Reintentando", "rehacer_video": "🎬 Rehaciendo el video de",
-                                                    "subir": "📤 Subiendo", "mensaje_caso": "💬 Le pasé tu mensaje al equipo del"}[tipo] + f" caso {eid}."
+                                                    "subir": "📤 Subiendo", "mensaje_caso": "💬 Le pasé tu mensaje al equipo del",
+                                                    "hacer_video": "🎬 Preparando el video del"}[tipo] + f" caso {eid}."
 
 
 def _demo_chat(texto: str) -> dict:
@@ -1735,7 +1749,7 @@ def _responder_agencia(texto: str) -> None:
                 "y cómo. No inventes estados: usa la SITUACIÓN de abajo. Si pregunta algo, contéstalo con esos datos.\n\n"
                 "ACCIONES: continuar (destrabar y seguir ya), pausar, prender, producir {marca}, agregar_tema {marca, "
                 "gancho}, primero {marca}, saltar {marca}, aprobar_tema {marca}, proponer_temas {numero}, reintentar "
-                "{caso}, rehacer_video {caso}, subir {caso, si=con fecha}, meta_dias {numero}, ritmo {numero de días}, "
+                "{caso}, hacer_video {caso} (convierte en video un caso importado, o reintenta), rehacer_video {caso}, subir {caso, si=con fecha}, meta_dias {numero}, ritmo {numero de días}, "
                 "hora {texto HH:MM}, subir_solo {si}, mensaje_caso {caso, texto} (para cambiar frases o datos de un "
                 "guion: lo atiende Ramos), ninguna.\n\nEQUIPO:\n" + equipo,
                 f"SITUACIÓN AHORA:\n{_contexto_chat()}\n\nPLÁTICA RECIENTE:\n{previos or '(nada)'}\n\nMIGUEL: {texto}",
@@ -1757,3 +1771,132 @@ def _responder_agencia(texto: str) -> None:
                                                     "Mientras, el botón «▶ Continuar ahora» sí funciona.") if limite
                      else f"Uy, no pude contestar: {str(exc)[:200]}"})
         ex._fin_tarea(tarea, error=str(exc)[:200])
+
+
+# ---------------------------------------------------------------- 🎬 hacer video de un caso importado (paquete propio)
+def _guion_de_md(md: str) -> dict:
+    """El guion técnico (.md) de un paquete como lo usa la fábrica: escenas con sus frases «> »."""
+    escenas, cur = [], None
+    for linea in md.splitlines():
+        m = re.match(r"^## ESCENA\s+(\d+)\s*·\s*(.*)$", linea)
+        if m:
+            cur = {"titulo": m.group(2).strip(), "capitulo": m.group(2).strip(), "visual": [], "texto_pantalla": [],
+                   "audio": "", "frases": []}
+            escenas.append(cur)
+        elif cur is not None and linea.startswith("> "):
+            cur["frases"].append({"texto": linea[2:].strip(), "hechos": []})
+        elif cur is not None and linea.startswith("- ") and not cur["frases"]:
+            cur["visual"].append(linea[2:].strip())
+        elif cur is not None and linea.startswith("**Texto en pantalla:**"):
+            cur["texto_pantalla"] = re.findall(r'"([^"]+)"', linea)
+    return {"escenas": escenas}
+
+
+def convertir(eid: str) -> dict:
+    """🎬 Un caso que importaste (con su guion ya verificado) se vuelve video con la fábrica: material libre,
+    storyboard, miniaturas, voz de Azure en tu compu y subida en privado."""
+    if fab(eid).get("hechos_pasos"):
+        return reintentar(eid)
+    with _candado:
+        if _hilo.get(f"convertir-{eid}") and _hilo[f"convertir-{eid}"].is_alive():
+            return {"error": "Ya lo estoy preparando."}
+        _hilo[f"convertir-{eid}"] = threading.Thread(target=_convertir, args=(eid,), daemon=True)
+        _hilo[f"convertir-{eid}"].start()
+    return {"ok": True}
+
+
+def _convertir(eid: str) -> None:
+    p = ex.paquete(eid)
+    c = ex.carpeta(eid)
+    tema = {"id": _slug(p["marca"]), "marca": p["marca"], "gancho": ""}
+    numero = p["numero"]
+    tarea = ex._tarea("ex_archivista", "Preparar el video", f"#{numero} · {p['marca']}")
+    claude.contexto.proyecto, claude.contexto.etapa, claude.contexto.tarea = None, "expedientes", tarea
+    try:
+        md = (c / "01-guion-tecnico.md").read_text(encoding="utf-8")
+        g = _guion_de_md(md)
+        if not g["escenas"]:
+            raise RuntimeError("El guion del paquete no trae escenas «## ESCENA N · …» con frases «> ».")
+        pub = p.get("publicacion") or {}
+        desc = "\n".join(ln for ln in (pub.get("descripcion") or "").splitlines()
+                         if not re.match(r"^\s*\d{1,2}:\d{2}", ln) and "CAPÍTULOS" not in ln.upper())
+        g.update(descripcion=desc.strip(), etiquetas=pub.get("etiquetas") or [], comentario_fijado=pub.get("comentario_fijado") or "",
+                 miniatura_a=[], miniatura_b=[], proximo="")
+        destino = c / "fabrica"
+        destino.mkdir(exist_ok=True)
+        (destino / "01-guion-tecnico.md").write_text(md, encoding="utf-8")
+        _poner(eid, tema=tema["id"], canal="quien_mato", numero=numero, marca=p["marca"],
+               carpeta=f"{numero[-2:]}-{_slug(p['marca'], 30)}", hechos_pasos=["investigacion", "guion"], paso="material",
+               creado=time.time(), palabras=sum(len(f["texto"].split()) for e in g["escenas"] for f in e["frases"]))
+        _paso(eid, "material", "ex_archivista", "Buscando fotos y videos libres 🗄️", tarea)
+        material = buscar_material(tema, g)
+        ex._decir("ex_archivista", "libre", f"{len(material['lista'])} archivos libres ✔")
+        _paso(eid, "storyboard", "ex_graficas", "Armando el storyboard 📊", tarea)
+        escribir_storyboard(tema, numero, g, material, destino)
+        ex._decir("ex_graficas", "libre", "Storyboard listo ✔")
+        (destino / "miniatura.py").write_text(MINIATURA_PY, encoding="utf-8")
+        disenar_miniaturas(tema, g, material, destino)
+        _escribir(destino / "manifiesto-fotos.json", material["fotos"])
+        _escribir(destino / "manifiesto-videos.json", material["videos"])
+        _escribir(destino / "guion.json", g)
+        f = fab(eid)
+        _poner(eid, hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"material", "storyboard"}), paso="verificacion",
+               material=len(material["lista"]))
+        ex._fin_tarea(tarea, resultado="Listo para hacer el video")
+        t = ex.trabajo(eid)
+        if t["verificacion"].get("estado") in ("sin_empezar", "interrumpida"):
+            ex.verificar(eid)
+    except Exception as exc:  # noqa: BLE001
+        _poner(eid, error=f"No pude preparar el video: {str(exc)[:250]}")
+        ex._fin_tarea(tarea, error=str(exc)[:300])
+        ex._decir("ex_archivista", "libre", "Uy, algo falló 😕")
+    finally:
+        claude.contexto.tarea = None
+
+
+# ---------------------------------------------------------------- ¿por qué tu compu no lo toma?
+def _motivo_sin_compu() -> str:
+    import requests
+    try:
+        compus = requests.get(f"{SALA_URL}/api/estado", timeout=5).json().get("compus") or []
+    except (requests.RequestException, ValueError):
+        return "La sala de edición no contesta."
+    vivas = [c for c in compus if c.get("viva")]
+    if not vivas:
+        return "Ninguna compu de la sala está prendida: prende tu PC china con el programa de la sala."
+    if any("expediente" in (c.get("tipos") or []) for c in vivas):
+        return ""
+    return "Tu compu todavía no puede hacer videos de Expedientes: " + "; ".join(
+        f"{c.get('nombre') or c.get('id')}: {c.get('expedientes') or 'versión vieja (se actualiza sola en unos minutos)'}" for c in vivas)
+
+
+def situacion_caso(eid: str) -> str:
+    """En qué va un caso, en palabras (para el chat)."""
+    t = ex.trabajo(eid)
+    f = t.get("fabrica") or {}
+    if not f:
+        return ("Este caso es un PAQUETE IMPORTADO: todavía no se ha convertido en video. Con la acción «hacer_video» la "
+                "fábrica busca material libre, arma el storyboard y las miniaturas, y tu compu lo hace con voz de Azure "
+                f"(verificación: {t['verificacion'].get('estado')}).")
+    pasos_txt = ", ".join(f"{p['etiqueta']}: {p['estado']}" for p in pasos(t))
+    extra = []
+    if f.get("render_estado") == "en_fila":
+        extra.append(f"video: esperando/en tu compu ({f.get('render_paso') or 'en fila'})")
+    if f.get("video"):
+        extra.append(f"video listo: {f['video']}")
+    if f.get("url"):
+        extra.append(f"subido: {f['url']}" + (f" programado {t.get('programado', {}).get('fecha')}" if t.get("programado") else ""))
+    if f.get("error"):
+        extra.append(f"ERROR: {f['error']}")
+    if f.get("nota_auto"):
+        extra.append(f"espera a Miguel: {f['nota_auto']}")
+    return f"Caso de la FÁBRICA. Pasos → {pasos_txt}. " + " · ".join(extra)
+
+
+def subir_ya(eid: str, con_fecha: bool = True) -> dict:
+    """Subir ya el video hecho (desde el chat): con la siguiente fecha libre o en privado sin fecha."""
+    f = fab(eid)
+    if not f.get("video") and not _demo():
+        return {"error": "Todavía no hay video: primero hay que hacerlo (hacer_video)."}
+    _poner(eid, paso="revision")
+    return revisar(eid, {"accion": "programar" if con_fecha else "privado"})

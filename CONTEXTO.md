@@ -637,6 +637,13 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   o un caso): Claude (plan) contesta con la situación real y ejecuta acciones (`_ejecutar`): continuar, pausar,
   prender, producir/agregar/primero/saltar/aprobar tema, proponer_temas, reintentar, rehacer_video, subir, meta_dias,
   ritmo, hora, subir_solo, mensaje_caso (lo pasa al chat del caso con Ramos). Lo hecho sale en verde bajo la respuesta.
+- **Chat de cada caso** (`ex._sistema_chat`) ya NO habla de «partes de la obra»: recibe `fb.situacion_caso(eid)` (en qué
+  va de verdad) y tiene acciones reales: hacer_video (`fb.convertir`: un paquete IMPORTADO se vuelve video — material,
+  storyboard, miniaturas desde su 01-guion-tecnico.md), reintentar, rehacer_video, subir_programado/subir_privado
+  (`fb.subir_ya`), continuar. Voz de Azure por defecto (Miguel puede regrabar escenas, no es obligatorio).
+- **Por qué no lo toma tu compu**: con el trabajo en fila, `_motivo_sin_compu` lee la sala (`expedientes` y `tipos` de
+  cada compu: «falta la clave de Azure…», «falta OpenCV…», «versión vieja», «ninguna prendida») → `render_paso` en la
+  Bandeja y aviso por WhatsApp/Telegram una vez. Botón «🎬 Hacer video» en los casos importados (Bandeja → Casos).
 - **Miniaturas (Mina, `ex_miniaturas`)**: `disenar_miniaturas` con `REGLAS_MINIATURA` (1 sujeto, 1-3 palabras
   gigantes con número/contraste, foto de fachada/producto en B/N, cinta/sello, nada abajo a la derecha, B = pantalla
   dividida) → `miniatura.json`; si no hay foto buena, `_dibujar_realista` con Gemini (~4 ¢, solo si hay

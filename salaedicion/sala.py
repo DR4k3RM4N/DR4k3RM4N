@@ -99,7 +99,7 @@ class Sala(Aprendizaje, Proyectos):
                 varios = len(c.get("activos") or []) + (1 if c.get("trabajo_cel") else 0)
                 compus.append({k: c.get(k) for k in ("id", "nombre", "slot", "gpu", "sistema", "version", "ultimo",
                                                      "nvenc", "oido", "editados", "estado_texto", "claude_code", "motion",
-                                                     "celular")}
+                                                     "celular", "expedientes", "tipos")}
                               | {"viva": self.viva(c),
                                  "trabajo": {k: t.get(k) for k in ("id", "etiqueta", "origen", "paso", "avance")} if t else None,
                                  "a_la_vez": varios})
@@ -263,7 +263,8 @@ class Sala(Aprendizaje, Proyectos):
                      version=str(d.get("version") or "")[:12], nvenc=bool(d.get("nvenc")), oido=str(d.get("oido") or "")[:40],
                      tipos=[x for x in (d.get("tipos") or ["cris"]) if isinstance(x, str)][:12],
                      claude_code=str(d.get("claude_code") or "")[:20], motion=str(d.get("motion") or "")[:20],
-                     celular=str(d.get("celular") or "")[:40])
+                     celular=str(d.get("celular") or "")[:40],
+                     expedientes=str(d.get("expedientes") or "sin actualizar")[:120])  # 🕵️ ¿puede hacer videos de Expedientes?
             extra = {}
             if not d.get("pulso"):  # «📂 Elegir carpeta…»: se entrega en el latido normal (no en el pulso)
                 pedir = next((pid for pid, x in self.pedidos_carpeta.items() if x["compu"] == c["id"] and x["estado"] == "nuevo"), None)

@@ -2831,6 +2831,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                         r = fb.continuar()
                     elif a == "reintentar":
                         r = fb.reintentar(str(datos.get("eid") or ""))
+                    elif a == "hacer_video":
+                        r = fb.convertir(str(datos.get("eid") or ""))
                     elif a == "chat":
                         r = fb.chat_agencia(str(datos.get("texto") or ""))
                     elif a in ("programar", "privado", "rehacer_video"):

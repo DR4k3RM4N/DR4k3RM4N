@@ -67,7 +67,8 @@
       <section class="tarjeta">
         <h4>🗂️ Casos</h4>
         ${casos.length ? `<ul class="exp-lista-mini">${casos.map((c) => `<li><button class="link" data-abrir-caso="${esc(c.id)}">#${String(c.numero).padStart(3, "0")} · ${esc(c.marca)}</button>
-          <span class="pista">${esc(estadoCaso(c))}</span></li>`).join("")}</ul>` : `<p class="vacio">Sin casos todavía. Importa un paquete en la pestaña Casos.</p>`}
+          <span class="pista">${esc(estadoCaso(c))}</span>
+          ${!(fabrica?.casos || []).some((f) => f.id === c.id) ? `<button class="btn btn-mini btn-primario" data-fab-video="${esc(c.id)}" title="La fábrica busca material, arma el storyboard y tu compu lo hace con voz de Azure">🎬 Hacer video</button>` : ""}</li>`).join("")}</ul>` : `<p class="vacio">Sin casos todavía. Importa un paquete en la pestaña Casos.</p>`}
         <button class="btn btn-mini" data-ir="casos">📥 Importar paquete</button>
       </section>`;
   }
@@ -310,6 +311,8 @@
     };
     const co = e.target.closest("[data-fab-continuar]");
     if (co) return fab({ accion: "continuar" }, co, (r) => `▶ Seguimos. ${r.reintentos ? `Reintenté ${r.reintentos} caso(s) atorado(s).` : "No había nada atorado."}`);
+    const hv = e.target.closest("[data-fab-video]");
+    if (hv) return fab({ accion: "hacer_video", eid: hv.dataset.fabVideo }, hv, () => "🎬 Va: Inés busca material, Nico arma el storyboard y luego tu compu hace el video.");
     const re = e.target.closest("[data-fab-reintentar]");
     if (re) return fab({ accion: "reintentar", eid: re.dataset.fabReintentar }, re, () => "🔁 Lo estoy reintentando.");
     const pr = e.target.closest("[data-producir]");

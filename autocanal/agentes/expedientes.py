@@ -1114,7 +1114,9 @@ ESQUEMA_CHAT = {
         "acciones": {"type": "array", "items": {
             "type": "object",
             "properties": {"tipo": {"type": "string", "enum": ["cambiar_frase", "usar_original", "usar_propuesta",
-                                                               "reverificar", "editar_narracion", "nota"]},
+                                                               "reverificar", "editar_narracion", "nota", "hacer_video",
+                                                               "reintentar", "rehacer_video", "subir_programado",
+                                                               "subir_privado", "continuar"]},
                            "dato": {"type": "string"}, "escena": {"type": "integer"}, "frase": {"type": "string"},
                            "frase_nueva": {"type": "string"}, "para": {"type": "string"}, "nota": {"type": "string"}},
             "required": ["tipo", "dato", "escena", "frase", "frase_nueva", "para", "nota"], "additionalProperties": False}},
@@ -1124,32 +1126,38 @@ ESQUEMA_CHAT = {
 
 
 def _sistema_chat(p: dict) -> str:
+    from . import expedientes_fabrica as fb
     equipo = "\n".join(f"- {i} = {n} ({r}): {desc}" for i, n, r, _, _, desc in EQUIPO)
-    hoy = "\n".join(f"- {n}: {'ya trabaja' if parte == 1 else f'llega en la parte {parte} de la obra (todavía no)'}"
-                    for _, n, _, parte in PASOS)
-    return f"""Eres el equipo de la oficina «🕵️ Expedientes», que produce la serie de YouTube «¿Quién MATÓ a…?» con \
-Miguel (el jefe). Contesta UNO del equipo (el que toque según el tema), en español de México, casual y corto (2–4 \
-frases), de tú. Hoy trabajan en el expediente #{p['numero']} «{p['titulo']}».
+    return f"""Eres el equipo de la Agencia de Expedientes, que produce la serie de YouTube «¿Quién MATÓ a…?» con \
+Miguel (el jefe). Contesta UNO del equipo (el que toque), en español de México, casual y corto (2–4 frases), de tú. \
+Hablan del expediente #{p['numero']} «{p['titulo']}».
 
 El equipo:
 {equipo}
 
-Qué ya funciona y qué no (por pasos):
-{hoy}
-Si te piden algo de un paso que todavía no funciona, NO prometas hacerlo: déjalo como "nota" para ese agente y dilo \
-así ("te lo dejo anotado para cuando arranque Nico").
+CÓMO TRABAJA LA AGENCIA HOY (todo esto YA funciona, no digas que «llega después»): la fábrica investiga, escribe el \
+guion, busca material libre, arma el storyboard y las miniaturas; Ramos verifica; la compu de Miguel (sala de edición) \
+hace el video con su motor y la voz de Azure (es-MX-JorgeNeural; Miguel puede regrabar con su voz las escenas que \
+quiera, pero NO es obligatorio); Pepe lo sube a YouTube en PRIVADO (con fecha o sin fecha) y solo Miguel lo hace público.
 
-Acciones que SÍ puedes hacer (en "acciones"; si no aplica ninguna, lista vacía):
+EN QUÉ VA ESTE CASO (dato real, úsalo para contestar y no inventes otro estado):
+{fb.situacion_caso(p['id'])}
+
+Acciones (en "acciones"; si no aplica ninguna, lista vacía). Si Miguel pide que algo pase, HAZLO con una acción, no
+lo dejes «anotado»:
+- hacer_video: convertir este caso en video (si es un paquete importado) o reintentar lo que falte para el video.
+- reintentar: volver a intentar el paso que falló. rehacer_video: que la compu haga el video otra vez.
+- subir_programado / subir_privado: subir el video ya hecho, con la siguiente fecha de la agenda o sin fecha.
+- continuar: destrabar la fábrica y seguir (si se quedó esperando).
 - cambiar_frase: cambiar la frase nueva propuesta de un dato de la verificación (dato = su id, frase_nueva).
-- usar_original: que en ese dato se quede la frase original del guion. usar_propuesta: que sí se use la propuesta.
+- usar_original / usar_propuesta: en ese dato se queda la frase original o la propuesta.
 - reverificar: que Ramos vuelva a revisar ese dato con las fuentes.
-- editar_narracion: cambiar una frase de la narración que no está en la lista (escena, frase = copia exacta de la \
-narración, frase_nueva).
-- nota: dejar una nota/pedido para un agente (para = su id) que la usará al trabajar.
-Reglas: ningún dato sin fuente (no metas cifras que no estén en el guion o en las citas de Ramos); nunca prometas \
-publicar en público (siempre se sube privado y solo Miguel lo hace público); la voz final es la de Miguel; no se \
-acusa a nadie de delitos; el título siempre es «¿Quién MATÓ a [Marca]?». Nunca digas que hiciste algo que no está \
-en "acciones"."""
+- editar_narracion: cambiar una frase de la narración (escena, frase = copia exacta, frase_nueva).
+- nota: solo para algo que de verdad ninguna acción hace.
+Si algo está esperando a la compu, di EXACTAMENTE por qué (está en «en qué va») y qué tiene que hacer Miguel.
+Reglas: ningún dato sin fuente (no metas cifras que no estén en el guion o en las citas de Ramos); nunca publiques en \
+público; no se acusa a nadie de delitos; el título siempre es «¿Quién MATÓ a [Marca]?». Nunca digas que hiciste algo \
+que no está en "acciones"."""
 
 
 def _contexto_chat(p: dict, t: dict) -> str:
@@ -1183,9 +1191,11 @@ def _responder(eid: str, p: dict, texto: str) -> None:
         t = trabajo(eid)
         if _demo():
             time.sleep(1.5)
-            r = {"quien": "ex_ramos", "acciones": [{"tipo": "nota", "dato": "", "escena": 0, "frase": "", "frase_nueva": "",
-                                                    "para": "ex_ramos", "nota": texto[:300]}],
-                 "respuesta": "(DEMO) Anotado, jefe. En el servidor real te contesta Claude con tu plan."}
+            tipo = "hacer_video" if any(k in texto.lower() for k in ("video", "súbelo", "subelo", "haz")) else "nota"
+            r = {"quien": "ex_publicacion" if tipo == "hacer_video" else "ex_ramos",
+                 "acciones": [{"tipo": tipo, "dato": "", "escena": 0, "frase": "", "frase_nueva": "",
+                               "para": "ex_ramos", "nota": texto[:300]}],
+                 "respuesta": "(DEMO) Va, jefe. En el servidor real te contesta Claude con tu plan."}
         else:
             r = claude.json_estructurado(_sistema_chat(p), _contexto_chat(p, t) + f"\n\nMIGUEL DICE AHORA: {texto}",
                                          ESQUEMA_CHAT, tarea="chat_exp", que="Chat de Expedientes")
@@ -1241,6 +1251,28 @@ def _responder(eid: str, p: dict, texto: str) -> None:
             t["chat"].append({"quien": quien, "t": time.time(),
                               "texto": (r.get("respuesta") or "").strip() + ("\n" + "\n".join(notas_resultado) if notas_resultado else "")})
             _guardar_trabajo(eid, t)
+        # 🏭 lo que hace la fábrica (fuera del candado: arrancan sus propios hilos)
+        from . import expedientes_fabrica as fb
+        hechos = []
+        for ac in r.get("acciones", [])[:8]:
+            tipo = ac.get("tipo")
+            try:
+                x = (fb.convertir(eid) if tipo == "hacer_video" else fb.reintentar(eid) if tipo == "reintentar"
+                     else fb.revisar(eid, {"accion": "rehacer_video"}) if tipo == "rehacer_video"
+                     else fb.subir_ya(eid, con_fecha=tipo == "subir_programado") if tipo in ("subir_programado", "subir_privado")
+                     else fb.continuar() if tipo == "continuar" else None)
+            except Exception as exc:  # noqa: BLE001
+                x = {"error": str(exc)[:200]}
+            if x is not None:
+                hechos.append(f"✖ {x['error']}" if "error" in x else {
+                    "hacer_video": "🎬 Arranqué la preparación del video.", "reintentar": "🔁 Lo estoy reintentando.",
+                    "rehacer_video": "🎬 Mandé a hacer el video otra vez.", "subir_programado": "📤 Subiendo en privado con fecha.",
+                    "subir_privado": "📤 Subiendo en privado.", "continuar": "▶ La fábrica sigue."}[tipo])
+        if hechos:
+            with _candado:
+                t = trabajo(eid)
+                t["chat"][-1]["texto"] += "\n" + "\n".join(hechos)
+                _guardar_trabajo(eid, t)
         _fin_tarea(tarea, resultado=(r.get("respuesta") or "")[:120])
         _decir(quien, "libre", (r.get("respuesta") or "")[:90])
         if reverificar:
