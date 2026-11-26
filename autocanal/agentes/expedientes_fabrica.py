@@ -72,8 +72,9 @@ def _escribir(ruta: Path, datos) -> None:
 def estado() -> dict:
     with _candado:
         e = _leer(ESTADO, None) or {}
-        e.setdefault("activa", False)
-        e.setdefault("meta_dias", 90)  # juntar material para ~3 meses
+        e.setdefault("activa", True)   # Miguel: «que continúe haciendo y haciendo en automático»
+        e.setdefault("subir_solo", True)  # al terminar el video lo sube en PRIVADO programado (tú lo haces público)
+        e.setdefault("meta_dias", 180)  # juntar material para ~6 meses
         e.setdefault("en_curso", None)
         e.setdefault("espera_hasta", 0)
         e.setdefault("nota", "")
@@ -91,6 +92,8 @@ def ajustar(d: dict) -> dict:
     if "activa" in d:
         e["activa"] = bool(d["activa"])
         e["nota"] = "" if e["activa"] else "Pausada por ti."
+    if "subir_solo" in d:
+        e["subir_solo"] = bool(d["subir_solo"])
     if "meta_dias" in d:
         try:
             e["meta_dias"] = max(6, min(365, int(d["meta_dias"])))
@@ -758,69 +761,199 @@ def escribir_storyboard(tema: dict, numero: str, g: dict, material: dict, carpet
     raise RuntimeError(f"El storyboard no quedó bien después de 3 intentos: {error[:400]}")
 
 
-def miniatura_py(tema: dict, numero: str, g: dict) -> str:
-    """El miniatura.py del episodio (como el de Tupperware): A = 2-3 renglones gigantes; B = comparación."""
-    a = (g.get("miniatura_a") or [tema["marca"].upper(), "¿QUIÉN LA MATÓ?"])[:3]
-    b = (g.get("miniatura_b") or ["ANTES", "HOY", "", ""]) + ["", "", "", ""]
-    colores = ["ink", "tape", "red"]
-    lineas = "\n".join(f"texto(d, (930, {150 + i * 250}), {json.dumps(t[:18], ensure_ascii=False)}, {240 if i == 0 else 210}, \"{colores[i]}\")"
-                       for i, t in enumerate(a))
-    return f'''"""Miniaturas A y B del Expediente #{numero} (1280×720 JPG). Hecho por la Agencia (Mina).
+# ---------------------------------------------------------------- 🖼️ Mina: miniaturas que jalan
+REGLAS_MINIATURA = """Reglas de miniaturas que SÍ jalan (lo que funciona en YouTube y en este tipo de canales):
+- UN sujeto y UN mensaje. Se tiene que entender en el celular en 1 segundo, aunque se vea chiquita.
+- 1 a 3 palabras GIGANTES, de preferencia con un NÚMERO o un contraste ("QUEDAN 5", "5 vs 96", "LA MATARON",
+  "QUEBRÓ… Y VIVE", "$23 M → $250 M"). Nunca repitas el título del video: lo complementa.
+- La foto: la FACHADA, el PRODUCTO o el LOGO histórico de la marca, en blanco y negro o deslavada (muerte, nostalgia),
+  con mucho contraste. Algo de escena del crimen: cinta amarilla, sello rojo de "CASO CERRADO"/"QUEBRÓ", silueta.
+- Texto en amarillo, rojo y blanco con borde negro; del lado que la foto deje libre. Nada en la esquina de abajo a la
+  derecha (ahí YouTube pone la duración).
+- Curiosidad sin mentir: lo que promete la miniatura tiene que estar en el video. No deformes logos ni des a entender
+  que el video es de la marca. Nada de personas privadas; figuras públicas solo con foto libre.
+- Variante B diferente para probar en «Probar y comparar»: pantalla dividida (ALLÁ en blanco y negro vs AQUÍ/MÉXICO a
+  color, o ANTES vs HOY) con 1 palabra o número grande de cada lado."""
+
+ESQ_MINI = {"type": "object", "additionalProperties": False, "required": ["a", "b"], "properties": {
+    "a": {"type": "object", "additionalProperties": False,
+          "required": ["fondo", "archivo", "prompt_ia", "lineas", "elemento", "sello", "lado_texto"],
+          "properties": {
+              "fondo": {"type": "string", "enum": ["foto", "ia"], "description": "foto = una del material; ia = imagen realista nueva (solo si no hay una foto buena)"},
+              "archivo": {"type": "string", "description": "si fondo=foto: la ruta material/fotos/… exacta de la lista"},
+              "prompt_ia": {"type": "string", "description": "si fondo=ia: la foto en inglés, realista, SIN texto, logos ni personas reconocibles"},
+              "lineas": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["texto", "color"],
+                         "properties": {"texto": {"type": "string"}, "color": {"type": "string", "enum": ["amarillo", "rojo", "blanco", "verde"]}}}},
+              "elemento": {"type": "string", "enum": ["cinta", "sello", "ninguno"]},
+              "sello": {"type": "string", "description": "texto del sello rojo (1-2 palabras), si elemento=sello"},
+              "lado_texto": {"type": "string", "enum": ["izquierda", "derecha"]}}},
+    "b": {"type": "object", "additionalProperties": False, "required": ["izq_archivo", "izq_texto", "izq_etiqueta", "der_archivo", "der_texto", "der_etiqueta"],
+          "properties": {"izq_archivo": {"type": "string"}, "izq_texto": {"type": "string"}, "izq_etiqueta": {"type": "string"},
+                         "der_archivo": {"type": "string"}, "der_texto": {"type": "string"}, "der_etiqueta": {"type": "string"}}}}}
+
+
+def _dibujar_realista(prompt: str, destino: Path) -> bool:
+    """Una foto realista con Gemini (~4 centavos) cuando no hay una foto libre que sirva. Sin texto ni logos."""
+    import base64
+    from PIL import Image, ImageOps
+    from . import ilustrador
+    if not config.env("GEMINI_API_KEY"):
+        return False
+    texto = (prompt + "\n\nPhotorealistic documentary photograph, cinematic lighting, 16:9 (1920x1080), shallow depth "
+             "of field, slightly desaturated, high contrast, moody. Leave one side calm for a big headline. "
+             "ABSOLUTELY NO text, letters, numbers, signs with words, logos, brand names or watermarks. No recognizable "
+             "real people.")
+    modelo = config.env("GEMINI_MODELO_IMAGEN", "gemini-2.5-flash-image")
+    for con_formato in (True, False):
+        r = ilustrador._pedir(modelo, [{"text": texto}], con_formato)
+        if r.status_code != 200:
+            continue
+        for cand in r.json().get("candidates", []):
+            for parte in (cand.get("content") or {}).get("parts", []):
+                datos = (parte.get("inlineData") or parte.get("inline_data") or {}).get("data")
+                if datos:
+                    img = Image.open(io.BytesIO(base64.b64decode(datos))).convert("RGB")
+                    ImageOps.fit(img, (1920, 1080)).save(destino, quality=95)
+                    gasto = float(config.env("PRECIO_IMAGEN", "0.04") or 0)
+                    if claude.al_gastar and gasto:
+                        claude.al_gastar(None, "miniatura", "gemini (imagen)", gasto, 0, 0, "miniatura realista (Expedientes)")
+                    return True
+    return False
+
+
+def disenar_miniaturas(tema: dict, g: dict, material: dict, destino: Path) -> dict:
+    """Mina decide las dos miniaturas (A y B) con las reglas que jalan; si no hay foto buena, una imagen realista."""
+    fotos = [m for m in material["lista"] if not m["video"]]
+    lista = "\n".join(f"- {m['archivo']}: {m['describe']}" for m in fotos) or "(no hay fotos libres)"
+    if _demo():
+        cfg = {"a": {"fondo": "foto", "archivo": fotos[0]["archivo"] if fotos else "", "prompt_ia": "", "elemento": "cinta",
+                     "sello": "", "lado_texto": "derecha",
+                     "lineas": [{"texto": x, "color": c} for x, c in zip(g.get("miniatura_a") or ["LA MATÓ", "NETFLIX?"], ["blanco", "amarillo", "rojo"])]},
+               "b": {"izq_archivo": "", "izq_texto": (g.get("miniatura_b") or ["ANTES"])[0], "izq_etiqueta": "EE.UU.",
+                     "der_archivo": "", "der_texto": ((g.get("miniatura_b") or ["", "HOY"]) + ["HOY"])[1], "der_etiqueta": "MÉXICO"}}
+    else:
+        cfg = claude.json_estructurado(
+            "Eres Mina, diseñadora de miniaturas del canal «¿Quién MATÓ a…?».\n\n" + REGLAS_MINIATURA,
+            f"VIDEO: ¿Quién MATÓ a {tema['marca']}?\nGANCHO: {tema.get('gancho', '')}\n"
+            f"IDEAS DEL GUION: A = {' / '.join(g.get('miniatura_a') or [])} · B = {' vs '.join((g.get('miniatura_b') or [])[:2])}\n"
+            f"FOTOS LIBRES DISPONIBLES:\n{lista}\n\nDiseña la A (la principal) y la B (para probar). Usa archivos de la "
+            "lista tal cual; si ninguna foto sirve para la A, pide fondo=ia con un prompt realista.",
+            ESQ_MINI, tarea=TAREA, que=f"miniaturas {tema['marca']}")
+    validas = {m["archivo"] for m in fotos}
+    a = cfg["a"]
+    if a["fondo"] == "ia" and a.get("prompt_ia"):
+        try:
+            if _dibujar_realista(a["prompt_ia"][:900], destino / "miniatura-fondo.jpg"):
+                a["archivo"] = "miniatura-fondo.jpg"
+        except Exception as exc:  # noqa: BLE001 — sin imagen nueva se usa una foto del material
+            print(f"  · miniatura realista: {exc}", flush=True)
+    if a.get("archivo") not in validas | {"miniatura-fondo.jpg"}:
+        a["archivo"] = fotos[0]["archivo"] if fotos else ""
+    b = cfg["b"]
+    for k in ("izq_archivo", "der_archivo"):
+        if b.get(k) not in validas:
+            b[k] = ""
+    _escribir(destino / "miniatura.json", cfg)
+    return cfg
+
+
+MINIATURA_PY = r'''"""Miniaturas A y B del expediente (1280×720 JPG), según miniatura.json (las diseña Mina en la Agencia).
 
 Uso: python miniatura.py
 """
+import json
 import sys
 from pathlib import Path
 
 AQUI = Path(__file__).resolve().parent
 sys.path.insert(0, str(AQUI.parent / "motor"))
 import motor as m  # noqa: E402
-from PIL import ImageDraw  # noqa: E402
+from PIL import Image, ImageDraw, ImageEnhance  # noqa: E402
 
+CFG = json.loads((AQUI / "miniatura.json").read_text(encoding="utf-8"))
 OUT = AQUI / "render"
 OUT.mkdir(exist_ok=True)
+COLOR = {"amarillo": "tape", "rojo": "red", "blanco": "ink", "verde": "green"}
+
+
+def abrir(rel):
+    p = AQUI / rel if rel else None
+    if not p or not p.is_file():
+        return None
+    try:
+        return Image.open(p).convert("RGB")
+    except Exception:
+        return None
+
+
+def deslavar(im, color=0.0):
+    return ImageEnhance.Contrast(ImageEnhance.Color(im).enhance(color)).enhance(1.3)
+
+
+def texto(d, xy, s, size, color, anchor="la", maxw=None):
+    f = m.font("display", size)
+    while maxw and f.getlength(s) > maxw and size > 60:
+        size -= 8
+        f = m.font("display", size)
+    d.text(xy, s, font=f, fill=m.C[color], anchor=anchor, stroke_width=max(5, size // 22), stroke_fill=(0, 0, 0))
+    return size
+
+
+def sombra_lado(img, izquierda):
+    """Oscurece el lado del texto para que se lea sobre cualquier foto."""
+    grad = Image.linear_gradient("L").rotate(90 if izquierda else -90).resize(img.size)
+    negro = Image.new("RGB", img.size, (0, 0, 0))
+    return Image.composite(negro, img, grad.point(lambda v: int(v * 0.85)))
 
 
 def guardar(img, nombre):
-    img = img.convert("RGB").resize((1280, 720), m.Image.LANCZOS)
-    img.save(OUT / nombre, quality=90, optimize=True)
+    img.convert("RGB").resize((1280, 720), Image.LANCZOS).save(OUT / nombre, quality=90, optimize=True)
 
 
-def texto(d, xy, s, size, color, anchor="la"):
-    f = m.font("display", size)
-    d.text(xy, s, font=f, fill=m.C[color], anchor=anchor, stroke_width=max(4, size // 28), stroke_fill=(0, 0, 0))
-
-
-def foto():
-    for sub in ("fotos",):
-        fs = sorted((AQUI / "material" / sub).glob("*.jp*g"))
-        if fs:
-            return m.Image.open(fs[0]).convert("L").convert("RGB")
-    return None
-
-
-# --- A: foto deslavada + cinta + renglones gigantes
+# --- A: la foto deslavada a pantalla completa + 1-3 palabras gigantes + cinta o sello
+a = CFG["a"]
 img, d = m.canvas()
-f = foto()
+f = abrir(a.get("archivo"))
+izq = a.get("lado_texto") == "izquierda"
 if f:
-    img.paste(m.cover(f, 900, m.H), (0, 0))
-band = m.tape_band("ESCENA DEL CRIMEN · NO PASAR", 1500, 24)
-band = band.crop((0, 0, 980, band.height))
-img.paste(band, (-120, 330), band)
+    img = deslavar(m.cover(f, m.W, m.H), 0.0 if a.get("archivo") != "miniatura-fondo.jpg" else 0.35)
+    img = sombra_lado(img, izq)
 d = ImageDraw.Draw(img)
-{lineas}
+if a.get("elemento") == "cinta":
+    band = m.tape_band("ESCENA DEL CRIMEN · NO PASAR", 2600, -8)
+    img.paste(band, (-200, m.H - 330), band)
+lineas = [x for x in a.get("lineas", []) if x.get("texto")][:3]
+tam = {1: 330, 2: 270, 3: 220}.get(len(lineas), 220)
+y = (m.H - len(lineas) * tam * 0.92) / 2 - 40
+for x in lineas:
+    pos = (80, y) if izq else (m.W - 80, y)
+    texto(d, pos, x["texto"].upper()[:16], tam, COLOR.get(x["color"], "ink"), anchor="la" if izq else "ra", maxw=m.W * 0.58)
+    y += tam * 0.92
+if a.get("elemento") == "sello" and a.get("sello"):
+    capa = m.stamp_layer(a["sello"].upper()[:14], "", "red", 12, 1.0)
+    m.paste_scaled(img, capa, m.W * (0.76 if izq else 0.24), m.H * 0.24, 0.9)  # arriba: abajo a la derecha va la duración
 img.paste(m.hazard(m.W, 18), (0, m.H - 18))
 guardar(img, "miniatura-A.jpg")
 
-# --- B: comparación lado a lado
+# --- B: pantalla dividida (allá en blanco y negro vs aquí a color)
+b = CFG["b"]
 img, d = m.canvas()
-d.rectangle([0, 0, m.W // 2, m.H], fill=(30, 14, 16))
-d.rectangle([m.W // 2, 0, m.W, m.H], fill=(12, 30, 18))
-texto(d, (480, 520), {json.dumps(b[0][:10], ensure_ascii=False)}, 300, "red", anchor="mm")
-texto(d, (1440, 520), {json.dumps(b[1][:10], ensure_ascii=False)}, 300, "green", anchor="mm")
-texto(d, (480, 820), {json.dumps(b[2][:18], ensure_ascii=False)}, 90, "ink", anchor="mm")
-texto(d, (1440, 820), {json.dumps(b[3][:18], ensure_ascii=False)}, 90, "ink", anchor="mm")
-d.rectangle([m.W // 2 - 6, 0, m.W // 2 + 6, m.H], fill=m.C["tape"])
+mitad = m.W // 2
+izq_f, der_f = abrir(b.get("izq_archivo")), abrir(b.get("der_archivo")) or abrir(a.get("archivo"))
+if izq_f:
+    img.paste(ImageEnhance.Brightness(deslavar(m.cover(izq_f, mitad, m.H), 0.0)).enhance(0.55), (0, 0))
+else:
+    d.rectangle([0, 0, mitad, m.H], fill=(30, 14, 16))
+if der_f:
+    img.paste(ImageEnhance.Brightness(m.cover(der_f, mitad, m.H)).enhance(0.6), (mitad, 0))
+else:
+    d.rectangle([mitad, 0, m.W, m.H], fill=(12, 30, 18))
+d = ImageDraw.Draw(img)
+texto(d, (mitad // 2, m.H * 0.45), b.get("izq_texto", "").upper()[:10], 300, "red", anchor="mm", maxw=mitad - 80)
+texto(d, (mitad + mitad // 2, m.H * 0.45), b.get("der_texto", "").upper()[:10], 300, "green", anchor="mm", maxw=mitad - 80)
+texto(d, (mitad // 2, m.H * 0.8), b.get("izq_etiqueta", "").upper()[:18], 90, "ink", anchor="mm", maxw=mitad - 80)
+texto(d, (mitad + mitad // 2, m.H * 0.8), b.get("der_etiqueta", "").upper()[:18], 90, "ink", anchor="mm", maxw=mitad - 80)
+d.rectangle([mitad - 7, 0, mitad + 7, m.H], fill=m.C["tape"])
 img.paste(m.hazard(m.W, 18), (0, m.H - 18))
 guardar(img, "miniatura-B.jpg")
 '''
@@ -907,7 +1040,10 @@ def _producir(tema_id: str) -> None:
         destino.mkdir(parents=True)
         for nombre in ("storyboard.py", *partes):
             shutil.copyfile(mesa / nombre, destino / nombre)
-        (destino / "miniatura.py").write_text(miniatura_py(tema, numero, g), encoding="utf-8")
+        (destino / "miniatura.py").write_text(MINIATURA_PY, encoding="utf-8")
+        _paso(eid, "storyboard", "ex_miniaturas", "Diseñando las miniaturas 🖼️", tarea)
+        disenar_miniaturas(tema, g, material, destino)
+        ex._decir("ex_miniaturas", "libre", "Miniaturas A y B listas ✔")
         _escribir(destino / "manifiesto-fotos.json", material["fotos"])
         _escribir(destino / "manifiesto-videos.json", material["videos"])
         _escribir(destino / "investigacion.json", inv)
@@ -968,22 +1104,82 @@ def _listo_para_render(eid: str, t: dict) -> bool:
     return False
 
 
+def _aplicar_cambios(texto: str, cambios: list[dict]) -> tuple[str, list[dict]]:
+    """Aplica los cambios de Ramos (antes → después) dentro de cada frase, sin quitar ni mover frases (el storyboard
+    va frase por frase). Regresa (guion, cambios que dejarían una frase vacía o que no se encontraron)."""
+    lineas, escena, problemas = texto.splitlines(), 0, []
+    pos = []
+    for i, ln in enumerate(lineas):
+        m = re.match(r"^## ESCENA\s+(\d+)", ln)
+        if m:
+            escena = int(m.group(1))
+        elif ln.startswith("> "):
+            pos.append((escena, i))
+    for c in cambios:
+        hecho = False
+        for esc_n, i in pos:
+            if c.get("escena") and esc_n != c["escena"]:
+                continue
+            if c["antes"] and c["antes"] in lineas[i]:
+                nuevo = re.sub(r"\s{2,}", " ", lineas[i][2:].replace(c["antes"], c.get("despues") or "", 1)).strip()
+                if len(re.sub(r"[\W_]+", "", nuevo)) < 8:
+                    problemas.append(c)
+                else:
+                    lineas[i] = "> " + nuevo
+                hecho = True
+                break
+        if not hecho:
+            problemas.append(c)
+    return "\n".join(lineas) + "\n", problemas
+
+
 def _guion_final(eid: str) -> str:
-    """El guion técnico con la narración corregida si aprobaste cambios de Ramos (misma cantidad de frases)."""
+    """El guion técnico con la narración corregida si se aprobaron cambios de Ramos."""
     c = ex.carpeta(eid)
     texto = (c / "fabrica" / "01-guion-tecnico.md").read_text(encoding="utf-8")
-    corregida = ex._leer_json(c / "narracion-corregida.json", None)
-    if not corregida:
-        return texto
-    escenas = corregida.get("escenas") if isinstance(corregida, dict) else corregida
-    nuevas = [p for e in escenas or [] for p in e.get("narracion", [])]
-    lineas, k = texto.splitlines(), 0
-    viejas = [i for i, ln in enumerate(lineas) if ln.startswith("> ")]
-    if len(nuevas) != len(viejas):
-        return texto  # no cuadran las frases: mejor el original (el storyboard depende del orden)
-    for i, nueva in zip(viejas, nuevas):
-        lineas[i] = "> " + nueva.strip()
-    return "\n".join(lineas) + "\n"
+    corregida = ex._leer_json(c / "narracion-corregida.json", None) or {}
+    return _aplicar_cambios(texto, corregida.get("cambios") or [])[0]
+
+
+ESQ_FRASE = {"type": "object", "additionalProperties": False, "required": ["frase"],
+             "properties": {"frase": {"type": "string"}}}
+
+
+def _reescribir_sin_dato(texto: str, c: dict) -> str:
+    """Una frase que no cita el dato que no se pudo confirmar, para que la narración siga fluyendo (sin cifras nuevas)."""
+    linea = next((ln[2:] for ln in texto.splitlines() if ln.startswith("> ") and c["antes"] in ln), c["antes"])
+    if _demo():
+        return "Y eso no fue todo."
+    r = claude.json_estructurado(
+        "Eres Vera, guionista. Reescribe una frase de narración QUITANDO el dato que no se pudo confirmar. Que siga "
+        "sonando natural y conecte con lo que sigue. NO agregues cifras, fechas, nombres ni hechos nuevos; si no queda "
+        "nada que decir, escribe una transición corta («Y la historia no termina ahí.»).",
+        f"FRASE COMPLETA: {linea}\nDATO NO CONFIRMADO (quítalo): {c['antes']}", ESQ_FRASE, tarea=TAREA,
+        que="reescribir frase sin dato dudoso")
+    nueva = r["frase"].strip()
+    return nueva if nueva and not (ex.numeros(nueva) - ex.numeros(linea)) else ""
+
+
+def _auto_aprobar(eid: str, t: dict) -> bool:
+    """🤖 Modo automático: si las correcciones de Ramos se pueden aplicar sin dejar frases vacías, se aprueban solas
+    (cambiar o quitar el dato dudoso es lo seguro). Si no, el caso espera a que tú lo revises."""
+    if ex._cuenta(t["datos"]).get("pendiente"):
+        return False
+    texto = (ex.carpeta(eid) / "fabrica" / "01-guion-tecnico.md").read_text(encoding="utf-8")
+    cambios = [{"escena": d["escena"], "antes": d["frase"], "despues": d["frase_nueva"], "dato": d["id"]} for d in ex._aplicables(t)]
+    for c in _aplicar_cambios(texto, cambios)[1]:  # quitar el dato dejaría la frase vacía: Vera la reescribe sin él
+        nueva = _reescribir_sin_dato(texto, c)
+        if nueva:
+            r = ex.accion(eid, {"accion": "editar", "dato": c["dato"], "frase_nueva": nueva})
+            if "error" in r:
+                print(f"  · no pude reescribir la frase: {r['error']}", flush=True)
+    t = ex.trabajo(eid)
+    cambios = [{"escena": d["escena"], "antes": d["frase"], "despues": d["frase_nueva"]} for d in ex._aplicables(t)]
+    if _aplicar_cambios(texto, cambios)[1]:
+        _poner(eid, nota_auto="Ramos quiere quitar una frase completa: revísalo tú para que el video no quede cojo.")
+        return False
+    r = ex.aprobar(eid, forzar=True)
+    return bool(r.get("ok"))
 
 
 def _zip_render(eid: str) -> Path:
@@ -992,8 +1188,8 @@ def _zip_render(eid: str) -> Path:
     salida = c / "render-envio.zip"
     with zipfile.ZipFile(salida, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("01-guion-tecnico.md", _guion_final(eid))
-        for nombre in ("storyboard.py", "miniatura.py", "manifiesto-fotos.json", "manifiesto-videos.json",
-                       "04-fuentes.md", "03-publicacion.md"):
+        for nombre in ("storyboard.py", "miniatura.py", "miniatura.json", "miniatura-fondo.jpg", "manifiesto-fotos.json",
+                       "manifiesto-videos.json", "04-fuentes.md", "03-publicacion.md"):
             p = c / "fabrica" / nombre
             if p.exists():
                 z.write(p, nombre)
@@ -1009,7 +1205,21 @@ def enviar_render(eid: str) -> dict:
         _poner(eid, render_estado="listo", paso="revision", hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion", "render"}),
                render_ok=True, video=None, render_nota="(demo) Aquí saldría el video que hizo tu compu.")
         ex._decir("ex_editor", "libre", "Video listo (demo) 🎬")
+        canal = next((x for x in agenda.lista() if x["id"] == (f.get("canal") or "quien_mato")), {})
+        if estado().get("subir_solo") and canal.get("canal_youtube"):
+            revisar(eid, {"accion": "programar"})
         return {"ok": True}
+    # 🎙️ la voz de Azure gratis (F0) da 500 mil caracteres al mes: no pasarse (si no, el video sale sin voz)
+    chars = sum(len(ln) - 2 for ln in _guion_final(eid).splitlines() if ln.startswith("> "))
+    mes = dt.date.today().strftime("%Y-%m")
+    e = estado()
+    uso = e.get("azure") if (e.get("azure") or {}).get("mes") == mes else {"mes": mes, "chars": 0}
+    tope = int(config.env("AZURE_LIMITE_MES", "480000") or 480000)
+    if uso["chars"] + chars > tope:
+        e["nota"] = (f"La voz gratis de Azure ya casi se acaba este mes ({uso['chars']:,} de {tope:,} caracteres): "
+                     "los videos que faltan se hacen el día 1 del siguiente mes.")
+        _guardar_estado(e)
+        return {"error": "Azure sin caracteres este mes"}
     try:
         zipf = _zip_render(eid)
     except Exception as exc:  # noqa: BLE001
@@ -1027,6 +1237,11 @@ def enviar_render(eid: str) -> dict:
         return {"error": f"La sala de edición no contestó ({exc})."}
     if not r.get("id"):
         return {"error": r.get("error") or "La sala no aceptó el trabajo."}
+    e = estado()
+    e["azure"] = {"mes": mes, "chars": uso["chars"] + chars}
+    if e.get("nota", "").startswith("La voz gratis de Azure"):
+        e["nota"] = ""
+    _guardar_estado(e)
     _poner(eid, render_estado="en_fila", render_tid=r["id"], paso="render",
            hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion"}), render_desde=time.time())
     ex._decir("ex_editor", "trabajando", f"Mandé #{f.get('numero')} a tu compu 🎬")
@@ -1058,7 +1273,10 @@ def _revisar_render(eid: str) -> None:
         _poner(eid, render_estado="listo", paso="revision", render_ok=True, video=video.name,
                hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion", "render"}), render_fin=time.time())
         ex._decir("ex_editor", "libre", f"#{f.get('numero')} {f.get('marca')}: ¡video listo! 🎬")
-        if ex.al_avisar:
+        canal = next((x for x in agenda.lista() if x["id"] == (f.get("canal") or "quien_mato")), {})
+        if estado().get("subir_solo") and canal.get("canal_youtube"):
+            revisar(eid, {"accion": "programar"})  # 🤖 sube solo en PRIVADO con su fecha; tú lo haces público
+        elif ex.al_avisar:
             ex.al_avisar("Beto", f"El video de ¿Quién MATÓ a {f.get('marca')}? está listo para que lo revises.")
         return
     if est in ("error", "cancelado"):
@@ -1151,6 +1369,24 @@ def _subir(eid: str, canal: dict, fecha: dict | None) -> None:
 
 
 # ---------------------------------------------------------------- el ciclo automático
+def _ligar_canal() -> None:
+    """Si el canal de la agencia no tiene a dónde subir y ya conectaste uno nuevo (quienmato…), se liga solo."""
+    from . import canales as yt
+    datos = agenda.lista()
+    cambio = False
+    for c in datos:
+        if c.get("canal_youtube"):
+            continue
+        candidato = next((y["id"] for y in yt.lista() if y["id"] != yt.PRINCIPAL and yt.conectado(y["id"])
+                          and ("quien" in y["id"] or "mato" in y["id"] or "expediente" in y["id"])), None)
+        if candidato:
+            c["canal_youtube"] = candidato
+            cambio = True
+    if cambio:
+        agenda._guardar(datos)
+        ex._avisa_pantalla()
+
+
 def _plan_disponible() -> bool:
     if _demo():
         return True
@@ -1191,6 +1427,11 @@ def vuelta() -> None:
             _revisar_render(x["id"])
         elif _listo_para_render(x["id"], t) and not f.get("error"):
             enviar_render(x["id"])
+        elif (estado().get("subir_solo") and t["verificacion"].get("estado") == "lista" and not f.get("nota_auto")
+              and not f.get("render_estado")):
+            if _auto_aprobar(x["id"], t):
+                enviar_render(x["id"])
+    _ligar_canal()
     e = estado()
     if not e["activa"] or e.get("en_curso") or time.time() < e.get("espera_hasta", 0):
         return

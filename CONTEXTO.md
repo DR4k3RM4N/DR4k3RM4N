@@ -622,6 +622,17 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   Meta: material por delante (por defecto 90 días ≈ 30 videos a cada 3 días). Sin plan o con límite → espera 1 h.
   Todo en `claude.SOLO_PLAN` (tarea `fabrica_exp`, Opus). Rutas: `GET/POST /api/expedientes/fabrica`,
   `/expedientes-render/<eid>/<archivo>`.
+- **Modo automático** (Miguel: «que continúe haciendo y haciendo»): `fabrica.json` → `activa` y `subir_solo` = True
+  por defecto, `meta_dias` 180. Si Ramos deja ⚠️/❌, `_auto_aprobar` aplica sus correcciones dentro de cada frase
+  (`_aplicar_cambios`, nunca quita ni mueve frases); si una frase quedaría vacía, Vera la reescribe sin el dato
+  (`_reescribir_sin_dato`, sin cifras nuevas) y se aprueba. Al terminar el render, si hay canal ligado, se sube sola en
+  PRIVADO con `publicar_en` (proyecto sin auditoría = se queda privado: Miguel programa en Studio). `_ligar_canal`
+  liga solo el canal de YouTube cuyo id tenga «quien/mato/expediente». Tope de voz Azure F0: `AZURE_LIMITE_MES`
+  (480 mil caracteres) en `fabrica.json["azure"]`; si no alcanza, el render espera al mes siguiente.
+- **Miniaturas (Mina, `ex_miniaturas`)**: `disenar_miniaturas` con `REGLAS_MINIATURA` (1 sujeto, 1-3 palabras
+  gigantes con número/contraste, foto de fachada/producto en B/N, cinta/sello, nada abajo a la derecha, B = pantalla
+  dividida) → `miniatura.json`; si no hay foto buena, `_dibujar_realista` con Gemini (~4 ¢, solo si hay
+  `GEMINI_API_KEY`) → `miniatura-fondo.jpg`. `MINIATURA_PY` (plantilla fija) las compone en la compu con el motor.
 - **Obra por partes**: 1) importar + verificación + chat ✅ · 2) gráficas (Remotion, composición «Expediente», G14 como
   plantilla de la serie) + stock (Pexels/Pixabay API, Wikimedia; Mixkit sin API) + miniaturas · 3) voz por escena +
   edición en las compus + subtítulos (Whisper) + Shorts · 4) subida a YouTube SIEMPRE privada (subtítulos por API

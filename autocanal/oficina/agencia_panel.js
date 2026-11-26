@@ -84,13 +84,16 @@
       <div class="cabeza"><h4>🏭 Fábrica de videos</h4>
         <label class="fab-switch"><input type="checkbox" data-fab-activa ${e.activa ? "checked" : ""}> ${e.activa ? "Prendida" : "Pausada"}</label></div>
       <p class="pista">Cuando tu plan de Claude tiene uso libre, el equipo toma el siguiente tema, lo investiga con fuentes, escribe el guion
-        y el storyboard; tu compu hace el video y te lo deja aquí para revisar. Cero centavos de la API.</p>
+        y el storyboard; tu compu hace el video y ${e.subir_solo ? "lo sube sola en PRIVADO con su fecha (tú lo haces público)" : "te lo deja aquí para revisar"}.
+        Claude va por tu plan (cero centavos de la API); si se acaba el límite, espera y sigue sola.</p>
       ${!fabrica.plan ? `<p class="error">🧠 Tu plan de Claude no está conectado en el servidor (o está en pausa por el límite): la fábrica espera.</p>` : ""}
       ${e.nota ? `<p class="pista">⏳ ${esc(e.nota)}</p>` : ""}
       ${enCurso ? `<p>⚙️ Produciendo: <b>${esc(enCurso.marca)}</b></p>` : ""}
       ${trabajando.map((c) => `<p>• #${esc(c.numero)} ${esc(c.marca)} — ${esc(PASO_TXT[c.paso] || c.paso)}${c.paso === "render" && c.render_paso ? ` · ${esc(c.render_paso)} (${Math.round((c.render_avance || 0) * 100)} %)` : ""}${c.error ? ` <span class="error">· ${esc(c.error)}</span>` : ""}</p>`).join("")}
+      <label class="fab-switch"><input type="checkbox" data-fab-subir ${e.subir_solo ? "checked" : ""}> 📤 Que lo suba sola en PRIVADO al terminar (con su fecha)</label>
+      ${e.azure ? `<p class="pista">🎙️ Voz de Azure este mes: ${(e.azure.chars || 0).toLocaleString("es-MX")} de ~480,000 caracteres (≈ ${Math.max(0, Math.floor((480000 - (e.azure.chars || 0)) / 18000))} videos más)</p>` : ""}
       <p>📦 Material por delante: <b>${fabrica.por_delante}</b> de ${fabrica.meta} videos
-        <label class="pista">· juntar para <select data-fab-meta>${[30, 60, 90, 180].map((n) => `<option value="${n}" ${+e.meta_dias === n ? "selected" : ""}>${n} días</option>`).join("")}</select></label></p>
+        <label class="pista">· juntar para <select data-fab-meta>${[30, 60, 90, 180, 365].map((n) => `<option value="${n}" ${+e.meta_dias === n ? "selected" : ""}>${n} días</option>`).join("")}</select></label></p>
       <div class="fila">${sig && !e.en_curso ? `<button class="btn btn-mini btn-primario" data-producir="${esc(sig.id)}">▶ Producir ya: ${esc(sig.marca)}</button>` : ""}
         <button class="btn btn-mini" data-ir="temas">🧾 Temas (${fabrica.temas.filter((x) => x.estado === "pendiente").length} en fila)</button></div>
       ${!fabrica.pexels ? `<p class="pista">🎞️ Sin clave de Pexels en el servidor: solo fotos de Wikimedia (opcional).</p>` : ""}
@@ -225,6 +228,10 @@
     const t = e.target;
     if (t.matches("[data-fab-activa]")) {
       try { await api("/api/expedientes/fabrica", { accion: "ajustar", activa: t.checked }); } catch (err) { alert(err.message); }
+      t.blur(); cargar(true);
+    }
+    if (t.matches("[data-fab-subir]")) {
+      try { await api("/api/expedientes/fabrica", { accion: "ajustar", subir_solo: t.checked }); } catch (err) { alert(err.message); }
       t.blur(); cargar(true);
     }
     if (t.matches("[data-fab-meta]")) {

@@ -981,7 +981,7 @@ def render_expediente(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     ep.mkdir(parents=True, exist_ok=True)
     with _zip.ZipFile(paquete) as z:
         for n in z.namelist():
-            if "/" in n or "\\" in n or n.startswith(".") or not n.endswith((".md", ".py", ".json")):
+            if "/" in n or "\\" in n or n.startswith(".") or not n.endswith((".md", ".py", ".json", ".jpg")):
                 continue
             (ep / n).write_bytes(z.read(n))
     shutil.rmtree(ep / "render", ignore_errors=True)
