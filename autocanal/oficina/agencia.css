@@ -49,3 +49,28 @@ body.agencia {
   .ag-globo { max-width: 42%; }
   .ag-letrero { font-size: 8px; padding: 2px 4px; }
 }
+
+/* pestañas de la agencia (como las otras oficinas) */
+.ag-pestanas { position: sticky; top: 0; z-index: 3; background: #141416; }
+.ag-panel .pestana.activa { color: var(--exp-amarillo); }
+.exp-pendiente { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid #2a2a2e; }
+.exp-pendiente:last-child { border-bottom: 0; }
+.exp-pendiente-ico { font-size: 22px; }
+.exp-pendiente p { margin: 2px 0 0; }
+.exp-lista-mini { list-style: none; padding: 0; margin: 6px 0 10px; }
+.exp-lista-mini li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; flex-wrap: wrap; }
+.ag-panel .link { background: none; border: 0; color: var(--exp-amarillo); cursor: pointer; padding: 0; font: inherit; text-align: left; }
+.exp-agente-cab { display: flex; gap: 10px; align-items: center; }
+.exp-avatar { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font: 400 22px/1 "Bebas Neue", sans-serif; color: #111; flex: none; }
+.exp-agente { border-left: 4px solid var(--c); }
+.exp-agenda { list-style: none; padding: 0; margin: 8px 0 0; }
+.exp-agenda li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 6px; flex-wrap: wrap; }
+.exp-agenda li:nth-child(odd) { background: rgba(255,255,255,.03); }
+.exp-agenda li.lleno { border-left: 3px solid var(--exp-verde); }
+.exp-fecha { font-variant-numeric: tabular-nums; text-transform: capitalize; }
+.exp-canal label { display: block; margin: 6px 0; font-size: 13px; }
+.exp-canal input:not([type=checkbox]), .exp-canal textarea, .exp-canal select { width: 100%; margin-top: 3px; }
+.exp-canal .fila label { flex: 1; }
+.ag-chat-log { max-height: 55vh; overflow-y: auto; }
+.ag-chat-log li.mio { background: rgba(255,214,10,.07); }
+#tab-exp-chat textarea { width: 100%; }

@@ -2605,6 +2605,9 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json(tampico.resumen())
             if ruta == "/api/expedientes":  # 🕵️ Expedientes («¿Quién MATÓ a…?»)
                 return self._json(expedientes.resumen())
+            if ruta == "/api/expedientes/agenda":  # 📅 canales y días de publicación
+                from agentes import expedientes_agenda
+                return self._json(expedientes_agenda.agenda())
             if ruta.startswith("/api/expedientes/"):
                 try:
                     return self._json(expedientes.detalle(ruta.rsplit("/", 1)[-1]))
@@ -2797,6 +2800,10 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     return self._json(oficina.tampico_accion(datos))
                 except Exception as exc:  # noqa: BLE001
                     return self._json({"error": str(exc)[:300]}, 500)
+            if ruta == "/api/expedientes/canal":  # 📺 crear/cambiar un canal de la agencia
+                from agentes import expedientes_agenda
+                r = expedientes_agenda.guardar_canal(datos)
+                return self._json(r, 400 if "error" in r else 200)
             if ruta == "/api/expedientes/ajustes":  # 💳 que el equipo de Expedientes pueda usar la API
                 return self._json(expedientes.cambiar_ajustes(datos))
             if ruta.startswith("/api/expedientes/"):

@@ -1247,7 +1247,7 @@ def _responder(eid: str, p: dict, texto: str) -> None:
 
 # ---------------------------------------------------------------- para la pantalla
 def resumen() -> dict:
-    return {"expedientes": lista(), "ajustes": ajustes(), "equipo": agentes(),
+    return {"expedientes": lista(), "ajustes": ajustes(), "equipo": agentes(), "tareas": tareas(),
             "plan": claude.suscripcion_lista(), "demo": _demo()}
 
 

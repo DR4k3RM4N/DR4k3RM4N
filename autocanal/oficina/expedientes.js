@@ -223,11 +223,13 @@
     const activo = document.activeElement;
     if (!forzar && activo?.closest?.("#expedientes") && activo.matches("textarea, input:not([type=checkbox]), select")) return;
     let r;
+    const pedida = vista;
     try { r = await api(vista ? `/api/expedientes/${encodeURIComponent(vista)}` : "/api/expedientes"); } catch (err) {
       if (vista) { vista = null; guardar("exp_vista", null); return pintar(true); }
       caja.innerHTML = `<p class="error">${esc(err.message)}</p>`;
       return;
     }
+    if (pedida !== vista) return; // mientras llegaba, abriste otro caso (o regresaste a la lista)
     const clave = JSON.stringify(r) + filtro + [...editando].join(",");
     if (!forzar && clave === ultimo) return;
     ultimo = clave;
@@ -342,6 +344,8 @@
   });
 
   window.addEventListener("pestana", (e) => { if (e.detail === "expedientes") pintar(true); });
+  // 🕵️ desde la Bandeja o el Chat de la agencia: abrir un caso directo
+  window.addEventListener("exp-abrir", (e) => { vista = e.detail || null; guardar("exp_vista", vista); ultimo = ""; pintar(true); });
   let vuelta = 0;
   setInterval(() => { // cada 3 s si alguien del equipo trabaja; si no, cada 12 s
     if (document.hidden) return;

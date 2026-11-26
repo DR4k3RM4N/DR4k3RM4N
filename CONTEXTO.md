@@ -594,6 +594,21 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   usar_original/usar_propuesta, reverificar, editar_narracion, nota (para los agentes que todavía no arrancan).
 - Costo: `verificar_exp` y `chat_exp` en `claude.SOLO_PLAN` (Opus por el plan); casilla 💳 en la pestaña →
   `expedientes/ajustes.json` → `permitir_api`. Aviso por Telegram/WhatsApp cuando Ramos termina.
+- **Panel con pestañas como las otras oficinas** (`oficina/agencia_panel.js`): 📥 Bandeja (lo que le toca a Miguel +
+  material por delante), 🗂️ Casos (`expedientes.js`), 👥 Equipo, 📅 Agenda (`agentes/expedientes_agenda.py`:
+  `expedientes/canales.json`, un video cada N días —Miguel eligió **cada 3 días**—, hora, canal de YouTube; los casos
+  se programan con `trabajo.json["programado"] = {canal, fecha}`), 📺 Canales (varios canales con la misma estructura
+  de caso) y 💬 Chat (con el equipo sobre un caso; usa `accion: chat`). Rutas `/api/expedientes/agenda` y
+  `/api/expedientes/canal`.
+- **Motor de video** (de Miguel): `canal-youtube/` en el repo (`motor/motor.py`, `sb.py`, `voz_azure.py`,
+  `fuentes_libres.py`, `CLAUDE.md` del canal = estilo «cine», estructura del guion, reglas). Usa fuentes de Windows
+  (Bahnschrift/Segoe) → **renderiza en las compus de Miguel** (las compus de la sala se actualizan solas del repo).
+  Claves NUNCA en el repo: `.azure_speech` y `.pexels_key` van en la carpeta `canal-youtube` de cada compu
+  (`canal-youtube/.gitignore`). Voz: Azure es-MX-JorgeNeural +12 % (Miguel regraba con su voz las que quiera).
+- **Pendiente (parte 2, la fábrica):** faltan de Miguel `01-sears/` y `02-tupperware/` (guion técnico, storyboard.py,
+  04-fuentes.md, miniatura.py; sin render/ ni material/) y `plan-del-canal.md` (24 temas). Con eso: tema → investigar
+  con fuentes → guion técnico → storyboard.py (Claude, por el plan) → trabajo «expediente» en la compu (material
+  libre + motor --render + miniatura) → Bandeja para revisar → agenda cada 3 días en privado/programado.
 - **Obra por partes**: 1) importar + verificación + chat ✅ · 2) gráficas (Remotion, composición «Expediente», G14 como
   plantilla de la serie) + stock (Pexels/Pixabay API, Wikimedia; Mixkit sin API) + miniaturas · 3) voz por escena +
   edición en las compus + subtítulos (Whisper) + Shorts · 4) subida a YouTube SIEMPRE privada (subtítulos por API

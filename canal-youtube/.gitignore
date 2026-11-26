@@ -1,0 +1,9 @@
+# Claves: nunca al repo (repo público)
+.azure_speech
+.pexels_key
+.pixabay_key
+# Lo pesado se queda en cada compu
+*/render/
+*/material/
+*/voz/
+__pycache__/
