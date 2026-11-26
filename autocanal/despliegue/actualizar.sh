@@ -21,6 +21,8 @@ if id "$ADMIN" >/dev/null 2>&1 && ls "$APP/despliegue/llaves_ssh/"*.pub >/dev/nu
 fi
 # Para convertir en imagen las miniaturas que Claude dibuja con código
 dpkg -s libcairo2 >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get install -y -q libcairo2 >/dev/null
+# Letras libres para el motor de Expedientes cuando el video lo hace el servidor (no tiene las de Windows)
+dpkg -s fonts-roboto >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get install -y -q fonts-roboto fonts-dejavu-core >/dev/null || echo "aviso: no se pudieron instalar las letras"
 sudo -u canal "$APP/.venv/bin/pip" install -q -r "$APP/requirements.txt"
 # La voz gratis de Microsoft cambia seguido: edge-tts siempre en su última versión.
 sudo -u canal "$APP/.venv/bin/pip" install -q --upgrade edge-tts

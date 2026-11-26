@@ -56,12 +56,40 @@ TAGC = {"y": "tape", "r": "red", "g": "green", "m": "muted", "k": "paperink"}
 _fc = {}
 
 
+_LIBRES = {  # si no hay letras de Windows (servidor Linux): letras libres parecidas
+    "display": ["RobotoCondensed-Bold.ttf", "LiberationSansNarrow-Bold.ttf", "DejaVuSansCondensed-Bold.ttf", "LiberationSans-Bold.ttf", "DejaVuSans-Bold.ttf"],
+    "display_sb": ["RobotoCondensed-Medium.ttf", "RobotoCondensed-Bold.ttf", "LiberationSansNarrow-Bold.ttf", "DejaVuSansCondensed-Bold.ttf", "LiberationSans-Bold.ttf", "DejaVuSans-Bold.ttf"],
+    "cond": ["RobotoCondensed-Regular.ttf", "LiberationSansNarrow-Regular.ttf", "DejaVuSansCondensed.ttf", "LiberationSans-Regular.ttf", "DejaVuSans.ttf"],
+    "body": ["Roboto-Regular.ttf", "LiberationSans-Regular.ttf", "DejaVuSans.ttf"],
+    "bodyb": ["Roboto-Medium.ttf", "Roboto-Bold.ttf", "LiberationSans-Bold.ttf", "DejaVuSans-Bold.ttf"],
+    "mono": ["DejaVuSansMono.ttf", "LiberationMono-Regular.ttf"], "monob": ["DejaVuSansMono-Bold.ttf", "LiberationMono-Bold.ttf"],
+    "serif": ["DejaVuSerif.ttf", "LiberationSerif-Regular.ttf"], "serifb": ["DejaVuSerif-Bold.ttf", "LiberationSerif-Bold.ttf"],
+    "serifi": ["DejaVuSerif-Italic.ttf", "LiberationSerif-Italic.ttf", "DejaVuSerif.ttf"],
+}
+_rutas_libres = {}
+
+
+def _libre(kind):
+    if not _rutas_libres:
+        for base in ("/usr/share/fonts", "/usr/local/share/fonts", str(Path.home() / ".fonts")):
+            for f in Path(base).rglob("*.ttf") if Path(base).exists() else []:
+                _rutas_libres.setdefault(f.name, str(f))
+    for nombre in _LIBRES[kind]:
+        if nombre in _rutas_libres:
+            return _rutas_libres[nombre]
+    raise SystemExit("No encontré letras para el video (instala fonts-roboto o fonts-dejavu).")
+
+
 def font(kind, size):
     size = int(size)
     key = (kind, size)
     if key in _fc:
         return _fc[key]
     F = "C:/Windows/Fonts/"
+    if not Path(F + "bahnschrift.ttf").exists():
+        f = ImageFont.truetype(_libre(kind), size)
+        _fc[key] = f
+        return f
     var = {"display": "Bold Condensed", "display_sb": "SemiBold Condensed", "cond": "Condensed"}
     if kind in var:
         f = ImageFont.truetype(F + "bahnschrift.ttf", size)

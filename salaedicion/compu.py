@@ -949,12 +949,8 @@ def python_motor() -> list[str] | None:
 
 def motor_expedientes() -> dict:
     """¿Esta compu puede hacer videos de Expedientes? (Windows con sus fuentes, motor en el repo y clave de Azure)."""
-    if not WINDOWS or not Path("C:/Windows/Fonts/bahnschrift.ttf").exists():
-        return {"listo": False, "texto": "solo en Windows"}
     if not (CANAL_YT / "motor" / "motor.py").exists():
         return {"listo": False, "texto": "falta el motor (actualiza la sala)"}
-    if not (CANAL_YT / ".azure_speech").exists():
-        return {"listo": False, "texto": f"falta la clave de Azure en {CANAL_YT}"}
     if not python_motor():
         return {"listo": False, "texto": "falta OpenCV (pip install opencv-python numpy pillow)"}
     return {"listo": True, "texto": "listo"}
@@ -972,8 +968,25 @@ def render_expediente(of: "Oficina", t: dict, temporal: Path, avance) -> None:
     py = python_motor()
     if not py:
         raise RuntimeError("Esta compu no tiene OpenCV para el motor (pip install opencv-python numpy pillow).")
-    if not (CANAL_YT / ".azure_speech").exists():
-        raise RuntimeError(f"Falta la clave de Azure: pon el archivo .azure_speech en {CANAL_YT}")
+    clave = CANAL_YT / ".azure_speech"
+    prestada = False
+    if not clave.exists():  # la oficina presta la clave de Azure para este video y se borra al terminar
+        azure = par.get("azure") or {}
+        if not azure.get("clave"):
+            raise RuntimeError("No hay clave de Azure: ponla en el .env del servidor (AZURE_SPEECH_KEY).")
+        clave.write_text(f"{azure['clave']}\n{azure.get('region') or 'eastus'}\n", encoding="utf-8")
+        prestada = True
+    try:
+        _render_expediente(of, t, temporal, avance, nombre_dir, py)
+    finally:
+        if prestada:
+            clave.unlink(missing_ok=True)
+
+
+def _render_expediente(of, t, temporal, avance, nombre_dir, py) -> None:
+    import re as _re
+    import zipfile as _zip
+    tid = t["id"]
     avance("Bajando el caso", 0.01)
     paquete = temporal / "caso.zip"
     of.bajar(tid, 0, paquete)

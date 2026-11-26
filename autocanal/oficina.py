@@ -2819,7 +2819,7 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 from agentes import expedientes_fabrica as fb
                 a = str(datos.get("accion") or "")
                 try:
-                    if a == "ajustar":
+                    if a in ("ajustar", "compu"):
                         r = fb.ajustar(datos)
                     elif a == "tema":
                         r = fb.mover_tema(datos)

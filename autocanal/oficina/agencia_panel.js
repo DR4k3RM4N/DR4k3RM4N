@@ -98,6 +98,13 @@
       <div class="fila"><button class="btn btn-mini btn-primario" data-fab-continuar title="Quita esperas, destraba lo atorado y reintenta lo que falló">▶ Continuar ahora</button>
         ${sig && !e.en_curso ? `<button class="btn btn-mini" data-producir="${esc(sig.id)}">⚙️ Producir ya: ${esc(sig.marca)}</button>` : ""}
         <button class="btn btn-mini" data-ir="temas">🧾 Temas (${fabrica.temas.filter((x) => x.estado === "pendiente").length} en fila)</button></div>
+      <details class="fab-compus" ${fabrica.compus.some((c) => c.viva) ? "" : "open"}><summary>🖥️ Quién hace los videos (${fabrica.compus.filter((c) => c.viva && c.puede && c.pref !== "no").length} compu(s) lista(s))</summary>
+        ${fabrica.compus.map((c) => `<div class="fab-compu"><span>${c.viva ? "🟢" : "⚪"} <b>${esc(c.nombre)}</b>
+            <small class="pista">${c.viva ? (c.puede ? (c.ocupada ? "ocupada" : "lista") : esc(c.motivo)) : "apagada"}</small></span>
+          <select data-fab-compu="${esc(c.id)}">${[["preferida", "⭐ Preferida"], ["respaldo", "Respaldo"], ["no", "🚫 No usar"]].map(([v, t]) => `<option value="${v}" ${c.pref === v ? "selected" : ""}>${t}</option>`).join("")}</select></div>`).join("") || `<p class="pista">No hay compus en la sala.</p>`}
+        <label class="fab-switch"><input type="checkbox" data-fab-servidor ${e.servidor_respaldo ? "checked" : ""}> Si no hay ninguna, que lo haga el servidor (más lento)</label>
+        ${!fabrica.azure_ok ? `<p class="error">🎙️ Falta la clave de Azure en el servidor (AZURE_SPEECH_KEY en el .env): sin ella no hay voz.</p>` : ""}
+      </details>
       ${!fabrica.pexels ? `<p class="pista">🎞️ Sin clave de Pexels en el servidor: solo fotos de Wikimedia (opcional).</p>` : ""}
     </section>`;
   }
@@ -234,6 +241,14 @@
     }
     if (t.matches("[data-fab-subir]")) {
       try { await api("/api/expedientes/fabrica", { accion: "ajustar", subir_solo: t.checked }); } catch (err) { alert(err.message); }
+      t.blur(); cargar(true);
+    }
+    if (t.matches("[data-fab-compu]")) {
+      try { await api("/api/expedientes/fabrica", { accion: "compu", compu: t.dataset.fabCompu, pref: t.value }); } catch (err) { alert(err.message); }
+      t.blur(); cargar(true);
+    }
+    if (t.matches("[data-fab-servidor]")) {
+      try { await api("/api/expedientes/fabrica", { accion: "ajustar", servidor_respaldo: t.checked }); } catch (err) { alert(err.message); }
       t.blur(); cargar(true);
     }
     if (t.matches("[data-fab-meta]")) {

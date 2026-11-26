@@ -644,6 +644,15 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
 - **Por qué no lo toma tu compu**: con el trabajo en fila, `_motivo_sin_compu` lee la sala (`expedientes` y `tipos` de
   cada compu: «falta la clave de Azure…», «falta OpenCV…», «versión vieja», «ninguna prendida») → `render_paso` en la
   Bandeja y aviso por WhatsApp/Telegram una vez. Botón «🎬 Hacer video» en los casos importados (Bandeja → Casos).
+- **Quién hace el video**: `_elegir_compu` (compus de la sala vivas con tipo «expediente»; preferencia en
+  `fabrica.json["compus"]`: preferida / respaldo / no — Miguel NO usa la PC china; prefiere «la otra», luego la lap)
+  → trabajo de sala con `compu` fija. Si esa compu se apaga o la marcas «no» y el trabajo sigue en fila >3 min → se
+  cancela y se reasigna. Sin compu y `servidor_respaldo` (por defecto sí) → `_render_servidor` (una a la vez): copia
+  el motor a `render-servidor/`, corre fuentes_libres + motor + miniatura con el Python del servidor
+  (`opencv-python-headless`, `numpy` en requirements; letras libres: el motor usa Roboto Condensed/Liberation/DejaVu
+  si no hay `C:/Windows/Fonts/bahnschrift.ttf`; `actualizar.sh` instala `fonts-roboto`). **Clave de Azure solo en el
+  servidor**: `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` en `autocanal/.env` (o `canal-youtube/.azure_speech`); se
+  presta en `parametros.azure` del trabajo, la compu escribe `.azure_speech` y lo borra al terminar.
 - **Miniaturas (Mina, `ex_miniaturas`)**: `disenar_miniaturas` con `REGLAS_MINIATURA` (1 sujeto, 1-3 palabras
   gigantes con número/contraste, foto de fachada/producto en B/N, cinta/sello, nada abajo a la derecha, B = pantalla
   dividida) → `miniatura.json`; si no hay foto buena, `_dibujar_realista` con Gemini (~4 ¢, solo si hay

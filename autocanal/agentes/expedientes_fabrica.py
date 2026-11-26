@@ -75,6 +75,8 @@ def estado() -> dict:
         e.setdefault("activa", True)   # Miguel: «que continúe haciendo y haciendo en automático»
         e.setdefault("subir_solo", True)  # al terminar el video lo sube en PRIVADO programado (tú lo haces público)
         e.setdefault("meta_dias", 180)  # juntar material para ~6 meses
+        e.setdefault("compus", {})  # 🖥️ id de compu → "preferida" | "respaldo" | "no"
+        e.setdefault("servidor_respaldo", True)  # si no hay compu que pueda, el video lo hace el servidor
         e.setdefault("en_curso", None)
         e.setdefault("espera_hasta", 0)
         e.setdefault("nota", "")
@@ -94,6 +96,14 @@ def ajustar(d: dict) -> dict:
         e["nota"] = "" if e["activa"] else "Pausada por ti."
     if "subir_solo" in d:
         e["subir_solo"] = bool(d["subir_solo"])
+    if "servidor_respaldo" in d:
+        e["servidor_respaldo"] = bool(d["servidor_respaldo"])
+    if d.get("compu"):
+        if d.get("pref") not in ("preferida", "respaldo", "no"):
+            return {"error": "Elige preferida, respaldo o no usar."}
+        if d["pref"] == "preferida":  # solo una preferida
+            e["compus"] = {k: ("respaldo" if v == "preferida" else v) for k, v in e["compus"].items()}
+        e["compus"][str(d["compu"])[:40]] = d["pref"]
     if "meta_dias" in d:
         try:
             e["meta_dias"] = max(6, min(365, int(d["meta_dias"])))
@@ -1097,7 +1107,7 @@ def _producir(tema_id: str) -> None:
 # ---------------------------------------------------------------- 5-6. verificación → render en tu compu
 def _listo_para_render(eid: str, t: dict) -> bool:
     f = t.get("fabrica") or {}
-    if not f or f.get("render_estado") in ("en_fila", "listo") or f.get("render_ok") is False:
+    if not f or f.get("render_estado") in ("en_fila", "listo", "servidor") or f.get("render_ok") is False:
         return False
     v = t["verificacion"].get("estado")
     if v == "aprobada":
@@ -1202,6 +1212,39 @@ def _zip_render(eid: str) -> Path:
     return salida
 
 
+def _azure() -> dict:
+    """La clave de Azure vive en el servidor (.env); se le presta a la compu que hace el video y ella la borra."""
+    clave, region = config.env("AZURE_SPEECH_KEY"), config.env("AZURE_SPEECH_REGION", "eastus")
+    archivo = CANAL_DIR / ".azure_speech"
+    if not clave and archivo.exists():
+        partes = [x.strip() for x in archivo.read_text(encoding="utf-8-sig").splitlines() if x.strip()]
+        clave, region = (partes + ["", "eastus"])[0], (partes + ["", "eastus"])[1]
+    return {"clave": clave, "region": region or "eastus"} if clave else {}
+
+
+def compus_sala() -> list[dict]:
+    import requests
+    try:
+        compus = requests.get(f"{SALA_URL}/api/estado", timeout=5).json().get("compus") or []
+    except (requests.RequestException, ValueError):
+        return []
+    pref = estado().get("compus") or {}
+    return [{"id": c["id"], "nombre": c.get("nombre") or c["id"], "viva": bool(c.get("viva")),
+             "puede": "expediente" in (c.get("tipos") or []), "motivo": c.get("expedientes") or "versión vieja",
+             "pref": pref.get(c["id"], "respaldo"), "ocupada": bool(c.get("trabajo"))} for c in compus]
+
+
+def _elegir_compu() -> dict | None:
+    """La preferida si está prendida y puede; si no, cualquier otra de respaldo (las desocupadas primero)."""
+    orden = {"preferida": 0, "respaldo": 1}
+    vivas = [c for c in compus_sala() if c["viva"] and c["puede"] and c["pref"] != "no"]
+    vivas.sort(key=lambda c: (orden.get(c["pref"], 2), c["ocupada"]))
+    return vivas[0] if vivas else None
+
+
+_render_srv = threading.Lock()
+
+
 def enviar_render(eid: str) -> dict:
     import requests
     f = fab(eid)
@@ -1213,6 +1256,10 @@ def enviar_render(eid: str) -> dict:
         if estado().get("subir_solo") and canal.get("canal_youtube"):
             revisar(eid, {"accion": "programar"})
         return {"ok": True}
+    azure = _azure()
+    if not azure:
+        _poner(eid, paso="render", render_paso="Falta la clave de Azure en el servidor (AZURE_SPEECH_KEY en el .env).")
+        return {"error": "Falta la clave de Azure en el servidor."}
     # 🎙️ la voz de Azure gratis (F0) da 500 mil caracteres al mes: no pasarse (si no, el video sale sin voz)
     chars = sum(len(ln) - 2 for ln in _guion_final(eid).splitlines() if ln.startswith("> "))
     mes = dt.date.today().strftime("%Y-%m")
@@ -1229,27 +1276,117 @@ def enviar_render(eid: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         _poner(eid, error=str(exc)[:300], paso="render")
         return {"error": str(exc)}
-    salida = ex.carpeta(eid) / "render-salida"
-    shutil.rmtree(salida, ignore_errors=True)
-    salida.mkdir(parents=True)
-    try:
-        r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=15, json={
-            "tipo": "expediente", "origen": "expedientes", "etiqueta": f"🕵️ Expediente #{f.get('numero')} · {f.get('marca')}"[:80],
-            "parametros": {"carpeta": f.get("carpeta"), "nombre": f"Expediente-{f.get('numero')}"},
-            "entradas": [str(zipf)], "salida": str(salida)}).json()
-    except (requests.RequestException, ValueError) as exc:
-        return {"error": f"La sala de edición no contestó ({exc})."}
-    if not r.get("id"):
-        return {"error": r.get("error") or "La sala no aceptó el trabajo."}
+    compu = _elegir_compu()
+    if compu:
+        salida = ex.carpeta(eid) / "render-salida"
+        shutil.rmtree(salida, ignore_errors=True)
+        salida.mkdir(parents=True)
+        try:
+            r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=15, json={
+                "tipo": "expediente", "origen": "expedientes", "compu": compu["id"],
+                "etiqueta": f"🕵️ Expediente #{f.get('numero')} · {f.get('marca')}"[:80],
+                "parametros": {"carpeta": f.get("carpeta"), "nombre": f"Expediente-{f.get('numero')}", "azure": azure},
+                "entradas": [str(zipf)], "salida": str(salida)}).json()
+        except (requests.RequestException, ValueError) as exc:
+            return {"error": f"La sala de edición no contestó ({exc})."}
+        if not r.get("id"):
+            return {"error": r.get("error") or "La sala no aceptó el trabajo."}
+        _poner(eid, render_estado="en_fila", render_tid=r["id"], render_compu=compu["id"], paso="render",
+               render_paso=f"Mandado a {compu['nombre']}", hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion"}),
+               render_desde=time.time())
+        ex._decir("ex_editor", "trabajando", f"Mandé #{f.get('numero')} a {compu['nombre']} 🎬")
+    elif estado().get("servidor_respaldo"):
+        if not _render_srv.acquire(blocking=False):
+            _poner(eid, paso="render", render_paso="El servidor está haciendo otro video; este sigue en cuanto termine.")
+            return {"ok": True, "espera": True}
+        _poner(eid, render_estado="servidor", paso="render", render_paso="Lo está haciendo el servidor (no hay compu disponible)",
+               hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion"}), render_desde=time.time())
+        threading.Thread(target=_render_servidor, args=(eid, zipf, azure), daemon=True).start()
+    else:
+        _poner(eid, paso="render", render_paso=_motivo_sin_compu() or "Esperando a una compu")
+        return {"ok": True, "espera": True}
     e = estado()
     e["azure"] = {"mes": mes, "chars": uso["chars"] + chars}
     if e.get("nota", "").startswith("La voz gratis de Azure"):
         e["nota"] = ""
     _guardar_estado(e)
-    _poner(eid, render_estado="en_fila", render_tid=r["id"], paso="render",
-           hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion"}), render_desde=time.time())
-    ex._decir("ex_editor", "trabajando", f"Mandé #{f.get('numero')} a tu compu 🎬")
     return {"ok": True}
+
+
+def _render_servidor(eid: str, zipf: Path, azure: dict) -> None:
+    """🖥️ Sin compu disponible: el servidor hace el video con el motor (letras libres en lugar de las de Windows)."""
+    f = fab(eid)
+    raiz = ex.carpeta(eid) / "render-servidor"
+    ex._decir("ex_editor", "trabajando", f"Haciendo #{f.get('numero')} en el servidor 🎬")
+    try:
+        shutil.rmtree(raiz, ignore_errors=True)
+        raiz.mkdir(parents=True)
+        shutil.copytree(MOTOR, raiz / "motor", ignore=shutil.ignore_patterns("__pycache__"))
+        (raiz / ".azure_speech").write_text(f"{azure['clave']}\n{azure['region']}\n", encoding="utf-8")
+        ep = raiz / f["carpeta"]
+        ep.mkdir()
+        with zipfile.ZipFile(zipf) as z:
+            for n in z.namelist():
+                if "/" not in n and "\\" not in n and not n.startswith(".") and n.endswith((".md", ".py", ".json", ".jpg")):
+                    (ep / n).write_bytes(z.read(n))
+        if codigo_seguro((ep / "storyboard.py").read_text(encoding="utf-8")):
+            raise RuntimeError("El storyboard no pasó la revisión de seguridad.")
+
+        def correr(cmd, que):
+            p = subprocess.Popen([sys.executable, "-E", *cmd], cwd=str(raiz), stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True, errors="replace")
+            ultimas = []
+            for linea in p.stdout:
+                linea = linea.strip()
+                if linea:
+                    ultimas = (ultimas + [linea])[-12:]
+                    _poner(eid, render_paso=f"Servidor · {que}: {linea[:70]}")
+            if p.wait() != 0:
+                raise RuntimeError(f"{que} falló: " + " | ".join(ultimas[-4:])[-400:])
+
+        for sub in ("fotos", "videos"):
+            man = ep / f"manifiesto-{sub}.json"
+            if man.exists() and json.loads(man.read_text(encoding="utf-8")):
+                correr(["motor/fuentes_libres.py", "descargar", str(man), str(ep / "material" / sub)], f"bajando {sub}")
+        correr(["motor/motor.py", f["carpeta"], "--render"], "haciendo el video")
+        correr([f"{f['carpeta']}/miniatura.py"], "miniaturas")
+        render = ep / "render"
+        salida = ex.carpeta(eid) / "render-salida"
+        shutil.rmtree(salida, ignore_errors=True)
+        salida.mkdir(parents=True)
+        video = next((v for v in sorted(render.glob("*.mp4")) if "solo-video" not in v.name), None)
+        if not video:
+            raise RuntimeError("El motor terminó pero no encontré el MP4.")
+        for x in [video, *render.glob("*.srt"), *render.glob("*-capitulos.txt"), *render.glob("*-creditos.txt"),
+                  *render.glob("miniatura-*.jpg")]:
+            shutil.move(str(x), salida / x.name)
+        _terminar_render(eid, f)
+    except Exception as exc:  # noqa: BLE001
+        _poner(eid, render_estado="error", error=f"El servidor no pudo hacer el video: {str(exc)[:250]}")
+        ex._decir("ex_editor", "libre", "No pude hacer el video en el servidor 😕")
+    finally:
+        shutil.rmtree(raiz, ignore_errors=True)  # incluye la clave prestada
+        _render_srv.release()
+
+
+def _terminar_render(eid: str, f: dict) -> None:
+    c = ex.carpeta(eid)
+    salida, render = c / "render-salida", c / "render"
+    render.mkdir(exist_ok=True)
+    for p in salida.iterdir():
+        shutil.move(str(p), render / p.name)
+    video = next(iter(sorted(render.glob("*.mp4"))), None)
+    if not video:
+        _poner(eid, render_estado="error", error="No regresó el video.")
+        return
+    _poner(eid, render_estado="listo", paso="revision", render_ok=True, video=video.name, render_paso="",
+           hechos_pasos=sorted(set(fab(eid).get("hechos_pasos") or []) | {"verificacion", "render"}), render_fin=time.time())
+    ex._decir("ex_editor", "libre", f"#{f.get('numero')} {f.get('marca')}: ¡video listo! 🎬")
+    canal = next((x for x in agenda.lista() if x["id"] == (f.get("canal") or "quien_mato")), {})
+    if estado().get("subir_solo") and canal.get("canal_youtube"):
+        revisar(eid, {"accion": "programar"})  # 🤖 sube solo en PRIVADO con su fecha; tú lo haces público
+    elif ex.al_avisar:
+        ex.al_avisar("Beto", f"El video de ¿Quién MATÓ a {f.get('marca')}? está listo para que lo revises.")
 
 
 def _revisar_render(eid: str) -> None:
@@ -1261,6 +1398,15 @@ def _revisar_render(eid: str) -> None:
         return
     est = e.get("estado")
     if est == "en_cola":
+        compu = next((c for c in compus_sala() if c["id"] == f.get("render_compu")), None)
+        if f.get("render_compu") and (not compu or not compu["viva"] or not compu["puede"] or compu["pref"] == "no") \
+                and time.time() - (f.get("render_desde") or 0) > 180:
+            try:  # 🔀 esa compu se apagó (o ya no quieres usarla): se le quita y va a otra o al servidor
+                requests.post(f"{SALA_URL}/interno/cancelar/{f['render_tid']}", json={}, timeout=5)
+            except requests.RequestException:
+                pass
+            _poner(eid, render_estado=None, render_tid=None, render_compu=None, render_paso="Cambiando de compu…")
+            return
         motivo = _motivo_sin_compu()
         if motivo != (f.get("render_paso") or "") and (motivo or f.get("render_paso", "").startswith(("Ninguna", "Tu compu", "La sala"))):
             _poner(eid, render_paso=motivo or "En fila para tu compu")
@@ -1273,23 +1419,7 @@ def _revisar_render(eid: str) -> None:
         _poner(eid, render_paso=e.get("paso") or "", render_avance=e.get("avance") or 0)
         return
     if est == "listo":
-        c = ex.carpeta(eid)
-        salida, render = c / "render-salida", c / "render"
-        render.mkdir(exist_ok=True)
-        for p in salida.iterdir():
-            shutil.move(str(p), render / p.name)
-        video = next(iter(sorted(render.glob("*.mp4"))), None)
-        if not video:
-            _poner(eid, render_estado="error", error="La compu terminó pero no regresó el video.")
-            return
-        _poner(eid, render_estado="listo", paso="revision", render_ok=True, video=video.name,
-               hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion", "render"}), render_fin=time.time())
-        ex._decir("ex_editor", "libre", f"#{f.get('numero')} {f.get('marca')}: ¡video listo! 🎬")
-        canal = next((x for x in agenda.lista() if x["id"] == (f.get("canal") or "quien_mato")), {})
-        if estado().get("subir_solo") and canal.get("canal_youtube"):
-            revisar(eid, {"accion": "programar"})  # 🤖 sube solo en PRIVADO con su fecha; tú lo haces público
-        elif ex.al_avisar:
-            ex.al_avisar("Beto", f"El video de ¿Quién MATÓ a {f.get('marca')}? está listo para que lo revises.")
+        _terminar_render(eid, f)
         return
     if est in ("error", "cancelado"):
         _poner(eid, render_estado="error", error=f"Tu compu no pudo hacer el video: {e.get('error') or est}"[:300])
@@ -1568,7 +1698,8 @@ def resumen() -> dict:
                           "palabras": f.get("palabras"), "material": f.get("material"), "render_nota": f.get("render_nota"),
                           "verificacion": t["verificacion"].get("estado"), "cuenta": ex._cuenta(t["datos"])})
     return {"estado": e, "temas": lista, "casos": casos, "meta": meta_videos(), "por_delante": _material_por_delante(),
-            "chat": historial_chat()[-60:], "produciendo": _produciendo(),
+            "chat": historial_chat()[-60:], "produciendo": _produciendo(), "compus": compus_sala(),
+            "azure_ok": bool(_azure()) or _demo(),
             "plan": _plan_disponible(), "pexels": (CANAL_DIR / ".pexels_key").exists(), "demo": _demo()}
 
 
@@ -1584,7 +1715,7 @@ def archivo_render(eid: str, nombre: str) -> Path | None:
 CHAT = ex.CARPETA / "chat_agencia.json"
 ACCIONES = ["continuar", "pausar", "prender", "producir", "hacer_video", "agregar_tema", "primero", "saltar", "aprobar_tema",
             "proponer_temas", "reintentar", "rehacer_video", "subir", "meta_dias", "ritmo", "hora", "subir_solo",
-            "mensaje_caso", "ninguna"]
+            "mensaje_caso", "usar_compu", "servidor_respaldo", "ninguna"]
 ESQ_CHAT = {"type": "object", "additionalProperties": False, "required": ["quien", "respuesta", "acciones"], "properties": {
     "quien": {"type": "string", "enum": [i for i, *_ in ex.EQUIPO]},
     "respuesta": {"type": "string", "description": "lo que le contestas a Miguel (corto, español de México, de tú)"},
@@ -1637,6 +1768,10 @@ def _contexto_chat() -> str:
                       f"video {c.get('render_estado') or '-'}, subida {c.get('subida') or '-'}"
                       + (f", programado {c['programado']['fecha']}" if c.get("programado") else "")
                       + (f", ERROR: {c['error']}" if c.get("error") else ""))
+    lineas.append("COMPUS: " + ("; ".join(f"{c['nombre']} ({'prendida' if c['viva'] else 'apagada'}, "
+                                          f"{'puede' if c['puede'] else 'no puede: ' + c['motivo']}, {c['pref']})"
+                                          for c in r["compus"]) or "ninguna en la sala")
+                  + f" · servidor de respaldo: {'sí' if e.get('servidor_respaldo') else 'no'}")
     sig = [x for x in r["temas"] if x["estado"] in ("pendiente", "propuesto", "produciendo")][:15]
     lineas.append("TEMAS: " + "; ".join(f"{x['marca']} ({x['estado']})" for x in sig))
     for c in ag["canales"]:
@@ -1658,6 +1793,17 @@ def _ejecutar(a: dict) -> str:
     if tipo == "subir_solo":
         ajustar({"subir_solo": a["si"]})
         return "📤 Subirá sola en privado." if a["si"] else "📤 Ya no sube sola: te los deja para revisar."
+    if tipo == "usar_compu":
+        nombre = _slug(a["marca"] or a["texto"])
+        c = next((x for x in compus_sala() if nombre and (nombre in _slug(x["nombre"]) or nombre in _slug(x["id"]))), None)
+        if not c:
+            return f"✖ No encontré la compu «{a['marca']}»."
+        pref = {"preferida": "preferida", "respaldo": "respaldo", "no": "no"}.get((a["numero"] or "").strip().lower(), "preferida")
+        r = ajustar({"compu": c["id"], "pref": pref})
+        return r.get("error") or f"🖥️ {c['nombre']}: {'⭐ preferida' if pref == 'preferida' else 'respaldo' if pref == 'respaldo' else '🚫 no se usa'}."
+    if tipo == "servidor_respaldo":
+        ajustar({"servidor_respaldo": a["si"]})
+        return "🖥️ Si no hay compu, lo hace el servidor." if a["si"] else "🖥️ El servidor ya no hace videos: espera a una compu."
     if tipo == "meta_dias":
         r = ajustar({"meta_dias": a["numero"]})
         return r.get("error") or f"📦 Juntar material para {estado()['meta_dias']} días."
@@ -1750,7 +1896,7 @@ def _responder_agencia(texto: str) -> None:
                 "ACCIONES: continuar (destrabar y seguir ya), pausar, prender, producir {marca}, agregar_tema {marca, "
                 "gancho}, primero {marca}, saltar {marca}, aprobar_tema {marca}, proponer_temas {numero}, reintentar "
                 "{caso}, hacer_video {caso} (convierte en video un caso importado, o reintenta), rehacer_video {caso}, subir {caso, si=con fecha}, meta_dias {numero}, ritmo {numero de días}, "
-                "hora {texto HH:MM}, subir_solo {si}, mensaje_caso {caso, texto} (para cambiar frases o datos de un "
+                "hora {texto HH:MM}, subir_solo {si}, usar_compu {marca = nombre de la compu, numero = preferida|respaldo|no}, servidor_respaldo {si}, mensaje_caso {caso, texto} (para cambiar frases o datos de un "
                 "guion: lo atiende Ramos), ninguna.\n\nEQUIPO:\n" + equipo,
                 f"SITUACIÓN AHORA:\n{_contexto_chat()}\n\nPLÁTICA RECIENTE:\n{previos or '(nada)'}\n\nMIGUEL: {texto}",
                 ESQ_CHAT, tarea=TAREA, que="chat de la agencia")
