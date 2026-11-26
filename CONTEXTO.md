@@ -629,6 +629,14 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   PRIVADO con `publicar_en` (proyecto sin auditoría = se queda privado: Miguel programa en Studio). `_ligar_canal`
   liga solo el canal de YouTube cuyo id tenga «quien/mato/expediente». Tope de voz Azure F0: `AZURE_LIMITE_MES`
   (480 mil caracteres) en `fabrica.json["azure"]`; si no alcanza, el render espera al mes siguiente.
+- **Se cura sola** (`_curar` en cada vuelta): `en_curso` sin hilo vivo (servidor reiniciado) → el tema regresa a la
+  fila; verificación cortada/sin empezar → Ramos la repite; caso con error → reintento solo a los 20 min (máx. 3,
+  `reintentar`). Botón **▶ Continuar ahora** (`continuar`: prende, quita `espera_hasta` y la pausa del plan
+  `claude._suscripcion_pausada_hasta`, regresa temas saltados por fallas, reintenta casos con error) y 🔁 por caso.
+- **Chat real de la agencia** (`chat_agencia`, `expedientes/chat_agencia.json`; pestaña Chat → «Toda la agencia»,
+  o un caso): Claude (plan) contesta con la situación real y ejecuta acciones (`_ejecutar`): continuar, pausar,
+  prender, producir/agregar/primero/saltar/aprobar tema, proponer_temas, reintentar, rehacer_video, subir, meta_dias,
+  ritmo, hora, subir_solo, mensaje_caso (lo pasa al chat del caso con Ramos). Lo hecho sale en verde bajo la respuesta.
 - **Miniaturas (Mina, `ex_miniaturas`)**: `disenar_miniaturas` con `REGLAS_MINIATURA` (1 sujeto, 1-3 palabras
   gigantes con número/contraste, foto de fachada/producto en B/N, cinta/sello, nada abajo a la derecha, B = pantalla
   dividida) → `miniatura.json`; si no hay foto buena, `_dibujar_realista` con Gemini (~4 ¢, solo si hay

@@ -218,7 +218,10 @@ def fab(eid: str) -> dict:
 def _poner(eid: str, **campos) -> None:
     with ex._candado:
         t = ex.trabajo(eid)
-        t.setdefault("fabrica", {}).update(campos)
+        f = t.setdefault("fabrica", {})
+        if campos.get("error") and not f.get("error"):
+            campos.setdefault("error_t", time.time())  # para reintentarlo solo al rato
+        f.update(campos)
         ex._guardar_trabajo(eid, t)
     ex._avisa_pantalla()
 
@@ -995,7 +998,8 @@ def producir(tema_id: str) -> dict:
         _guardar_temas(lista)
         e["en_curso"] = tema_id
         _guardar_estado(e)
-    threading.Thread(target=_producir, args=(tema_id,), daemon=True).start()
+    _hilo["produccion"] = threading.Thread(target=_producir, args=(tema_id,), daemon=True)
+    _hilo["produccion"].start()
     return {"ok": True}
 
 
@@ -1416,8 +1420,82 @@ def meta_videos() -> int:
     return math.ceil(e["meta_dias"] / ritmo)
 
 
+def _produciendo() -> bool:
+    h = _hilo.get("produccion")
+    return bool(h and h.is_alive())
+
+
+def _curar() -> None:
+    """🩹 Lo que se quedó a medias (servidor reiniciado, compu apagada, verificación cortada) se destraba solo."""
+    e = estado()
+    if e.get("en_curso") and not _produciendo():  # la producción se cortó (p. ej. se actualizó el servidor)
+        with _candado:
+            lista = temas()
+            for x in lista:
+                if x["id"] == e["en_curso"] and x["estado"] == "produciendo":
+                    x["estado"] = "pendiente"
+            _guardar_temas(lista)
+        e["en_curso"] = None
+        _guardar_estado(e)
+    for x in ex.lista():
+        t = ex.trabajo(x["id"])
+        f = t.get("fabrica")
+        if not f:
+            continue
+        v = t["verificacion"].get("estado")
+        if x["id"] not in ex._corriendo and v in ("sin_empezar", "interrumpida", "error") and "storyboard" in (f.get("hechos_pasos") or []):
+            if v != "error" or time.time() - (t["verificacion"].get("inicio") or f.get("error_t") or 0) > 1200:
+                ex.verificar(x["id"])  # Ramos vuelve a verificar lo que se cortó
+        if f.get("error") and time.time() - (f.get("error_t") or 0) > 1200 and (f.get("reintentos") or 0) < 3:
+            reintentar(x["id"], auto=True)
+
+
+def reintentar(eid: str, auto: bool = False) -> dict:
+    """Vuelve a intentar el paso que falló de un caso (el video, la subida o la verificación)."""
+    f = fab(eid)
+    t = ex.trabajo(eid)
+    _poner(eid, error=None, error_t=None, nota_auto=None, reintentos=(f.get("reintentos") or 0) + (1 if auto else 0))
+    if f.get("subida") == "error":
+        return revisar(eid, {"accion": "programar"})
+    if f.get("render_estado") in ("error", "en_fila") or f.get("paso") == "render":
+        _poner(eid, render_estado=None, render_tid=None)
+        if t["verificacion"].get("estado") in ("aprobada", "lista"):
+            return enviar_render(eid)
+        return {"ok": True}
+    if t["verificacion"].get("estado") in ("error", "interrumpida", "sin_empezar") and eid not in ex._corriendo:
+        return ex.verificar(eid)
+    return {"ok": True}
+
+
+def continuar() -> dict:
+    """▶ «Ya hay recursos: sigue». Quita las esperas, destraba lo atorado y reintenta lo que falló, ahorita."""
+    e = estado()
+    e.update(activa=True, espera_hasta=0, nota="")
+    _guardar_estado(e)
+    try:
+        claude._suscripcion_pausada_hasta = 0  # si el plan se había pausado por el límite, se vuelve a intentar
+    except AttributeError:
+        pass
+    with _candado:
+        lista = temas()
+        for x in lista:
+            if x["estado"] == "saltado" and x.get("intentos"):  # saltados por fallas, no por ti
+                x.update(estado="pendiente", intentos=0, error=None)
+        _guardar_temas(lista)
+    reintentos = 0
+    for x in ex.lista():
+        f = fab(x["id"])
+        if f.get("error") or f.get("nota_auto"):
+            reintentar(x["id"])
+            reintentos += 1
+    _curar()
+    threading.Thread(target=vuelta, daemon=True).start()
+    return {"ok": True, "reintentos": reintentos}
+
+
 def vuelta() -> None:
     """Una pasada: renders que revisar, casos que mandar a tu compu y, si toca, el siguiente tema."""
+    _curar()
     for x in ex.lista():
         t = ex.trabajo(x["id"])
         f = t.get("fabrica")
@@ -1482,6 +1560,7 @@ def resumen() -> dict:
                           "palabras": f.get("palabras"), "material": f.get("material"), "render_nota": f.get("render_nota"),
                           "verificacion": t["verificacion"].get("estado"), "cuenta": ex._cuenta(t["datos"])})
     return {"estado": e, "temas": lista, "casos": casos, "meta": meta_videos(), "por_delante": _material_por_delante(),
+            "chat": historial_chat()[-60:], "produciendo": _produciendo(),
             "plan": _plan_disponible(), "pexels": (CANAL_DIR / ".pexels_key").exists(), "demo": _demo()}
 
 
@@ -1491,3 +1570,190 @@ def archivo_render(eid: str, nombre: str) -> Path | None:
     if ruta.is_file() and ruta.is_relative_to(c.resolve()) and ruta.suffix.lower() in (".mp4", ".jpg", ".srt", ".txt"):
         return ruta
     return None
+
+
+# ---------------------------------------------------------------- 💬 el chat de la agencia (instrucciones reales)
+CHAT = ex.CARPETA / "chat_agencia.json"
+ACCIONES = ["continuar", "pausar", "prender", "producir", "agregar_tema", "primero", "saltar", "aprobar_tema",
+            "proponer_temas", "reintentar", "rehacer_video", "subir", "meta_dias", "ritmo", "hora", "subir_solo",
+            "mensaje_caso", "ninguna"]
+ESQ_CHAT = {"type": "object", "additionalProperties": False, "required": ["quien", "respuesta", "acciones"], "properties": {
+    "quien": {"type": "string", "enum": [i for i, *_ in ex.EQUIPO]},
+    "respuesta": {"type": "string", "description": "lo que le contestas a Miguel (corto, español de México, de tú)"},
+    "acciones": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                 "required": ["tipo", "marca", "gancho", "caso", "texto", "numero", "si"],
+                 "properties": {"tipo": {"type": "string", "enum": ACCIONES}, "marca": {"type": "string"},
+                                "gancho": {"type": "string"}, "caso": {"type": "string", "description": "número (003) o marca del caso"},
+                                "texto": {"type": "string"}, "numero": {"type": "string"}, "si": {"type": "boolean"}}}}}}
+
+
+def historial_chat() -> list[dict]:
+    return _leer(CHAT, [])[-120:]
+
+
+def _chat_poner(m: dict) -> None:
+    with _candado:
+        h = _leer(CHAT, [])
+        h.append({"t": time.time(), **m})
+        _escribir(CHAT, h[-300:])
+    ex._avisa_pantalla()
+
+
+def _tema(marca: str) -> dict | None:
+    s = _slug(marca)
+    lista = temas()
+    return next((x for x in lista if x["id"] == s), None) or next((x for x in lista if s and (s in x["id"] or x["id"] in s)), None)
+
+
+def _caso(ref: str) -> str | None:
+    ref = (ref or "").strip().lstrip("#")
+    for x in ex.lista():
+        if ref and (ref == x["id"] or ref.lstrip("0") == str(x["numero"]).lstrip("0") or _slug(ref) in x["id"]):
+            return x["id"]
+    return None
+
+
+def _contexto_chat() -> str:
+    r = resumen()
+    e = r["estado"]
+    ag = agenda.agenda(dias=40)
+    lineas = [f"FÁBRICA: {'prendida' if e['activa'] else 'pausada'} · subir sola: {'sí' if e.get('subir_solo') else 'no'} · "
+              f"meta {e['meta_dias']} días ({r['meta']} videos) · por delante {r['por_delante']} · plan de Claude "
+              f"{'disponible' if r['plan'] else 'NO disponible (límite o sin conectar)'} · produciendo: {e.get('en_curso') or 'nada'}"
+              + (f" · nota: {e['nota']}" if e.get("nota") else "")]
+    for c in r["casos"]:
+        lineas.append(f"CASO #{c['numero']} {c['marca']}: paso {c['paso']}, verificación {c['verificacion']}, "
+                      f"video {c.get('render_estado') or '-'}, subida {c.get('subida') or '-'}"
+                      + (f", programado {c['programado']['fecha']}" if c.get("programado") else "")
+                      + (f", ERROR: {c['error']}" if c.get("error") else ""))
+    sig = [x for x in r["temas"] if x["estado"] in ("pendiente", "propuesto", "produciendo")][:15]
+    lineas.append("TEMAS: " + "; ".join(f"{x['marca']} ({x['estado']})" for x in sig))
+    for c in ag["canales"]:
+        lineas.append(f"CANAL {c['nombre']}: cada {c['ritmo_dias']} días a las {c['hora']}, sube a «{c.get('canal_youtube') or 'sin elegir'}», "
+                      f"{c['llenos']} programados")
+    return "\n".join(lineas)
+
+
+def _ejecutar(a: dict) -> str:
+    tipo = a["tipo"]
+    if tipo == "ninguna":
+        return ""
+    if tipo == "continuar":
+        r = continuar()
+        return f"▶ Seguimos (reintenté {r['reintentos']} caso(s) atorado(s))."
+    if tipo in ("pausar", "prender"):
+        ajustar({"activa": tipo == "prender"})
+        return "⏸ Fábrica en pausa." if tipo == "pausar" else "🏭 Fábrica prendida."
+    if tipo == "subir_solo":
+        ajustar({"subir_solo": a["si"]})
+        return "📤 Subirá sola en privado." if a["si"] else "📤 Ya no sube sola: te los deja para revisar."
+    if tipo == "meta_dias":
+        r = ajustar({"meta_dias": a["numero"]})
+        return r.get("error") or f"📦 Juntar material para {estado()['meta_dias']} días."
+    if tipo in ("ritmo", "hora"):
+        c = agenda.lista()[0]
+        r = agenda.guardar_canal({"id": c["id"], "ritmo_dias" if tipo == "ritmo" else "hora": a["numero"] if tipo == "ritmo" else a["texto"]})
+        return r.get("error") or ("📅 Ritmo cambiado." if tipo == "ritmo" else "🕖 Hora cambiada.")
+    if tipo == "proponer_temas":
+        r = proponer_temas(n=max(1, min(12, int(a["numero"] or 6) if str(a["numero"]).isdigit() else 6)))
+        return f"💡 {r['nuevos']} tema(s) nuevo(s) para que los apruebes."
+    if tipo in ("producir", "agregar_tema", "primero", "saltar", "aprobar_tema"):
+        t = _tema(a["marca"])
+        if not t and tipo in ("producir", "agregar_tema"):
+            r = mover_tema({"op": "nuevo", "marca": a["marca"], "gancho": a["gancho"]})
+            if "error" in r:
+                return f"✖ {r['error']}"
+            t = _tema(a["marca"])
+            if tipo == "agregar_tema":
+                return f"🧾 Agregué «{a['marca']}» a la fila."
+        if not t:
+            return f"✖ No encontré el tema «{a['marca']}»."
+        if tipo == "saltar":
+            mover_tema({"op": "saltar", "id": t["id"]})
+            return f"⏭️ Salté «{t['marca']}»."
+        if tipo == "aprobar_tema" or t["estado"] in ("propuesto", "saltado"):
+            mover_tema({"op": "aprobar", "id": t["id"]})
+        mover_tema({"op": "primero", "id": t["id"]})
+        if tipo == "producir":
+            if estado().get("en_curso"):
+                return f"⬆ «{t['marca']}» es el siguiente (en cuanto termine el que está en producción)."
+            r = producir(t["id"])
+            return f"⚙️ Arranqué «{t['marca']}»." if "ok" in r else f"✖ {r.get('error')}"
+        return f"⬆ «{t['marca']}» quedó primero en la fila."
+    eid = _caso(a["caso"])
+    if not eid:
+        return f"✖ No encontré el caso «{a['caso']}»."
+    if tipo == "reintentar":
+        r = reintentar(eid)
+    elif tipo == "rehacer_video":
+        r = revisar(eid, {"accion": "rehacer_video"})
+    elif tipo == "subir":
+        _poner(eid, paso="revision")
+        r = revisar(eid, {"accion": "programar" if a["si"] else "privado"})
+    elif tipo == "mensaje_caso":
+        r = ex.chat(eid, a["texto"][:1500])
+    else:
+        return ""
+    return f"✖ {r['error']}" if "error" in r else {"reintentar": "🔁 Reintentando", "rehacer_video": "🎬 Rehaciendo el video de",
+                                                    "subir": "📤 Subiendo", "mensaje_caso": "💬 Le pasé tu mensaje al equipo del"}[tipo] + f" caso {eid}."
+
+
+def _demo_chat(texto: str) -> dict:
+    t = texto.lower()
+    acc = {"tipo": "ninguna", "marca": "", "gancho": "", "caso": "", "texto": "", "numero": "", "si": False}
+    if any(k in t for k in ("continúa", "continua", "sigue", "reinicia", "dale")):
+        acc["tipo"] = "continuar"
+    elif "pausa" in t:
+        acc["tipo"] = "pausar"
+    elif any(k in t for k in ("haz", "produce", "hazme")):
+        acc.update(tipo="producir", marca=texto.split()[-1].strip("?.!"))
+    return {"quien": "ex_guion", "respuesta": "Va, jefe (demo).", "acciones": [acc]}
+
+
+def chat_agencia(texto: str) -> dict:
+    texto = texto.strip()[:1500]
+    if not texto:
+        return {"error": "Escribe algo."}
+    _chat_poner({"quien": "jefe", "texto": texto})
+    threading.Thread(target=_responder_agencia, args=(texto,), daemon=True).start()
+    return {"ok": True}
+
+
+def _responder_agencia(texto: str) -> None:
+    tarea = ex._tarea("ex_guion", "Contestar el chat de la agencia", texto[:80])
+    try:
+        if _demo():
+            r = _demo_chat(texto)
+        else:
+            previos = "\n".join(f"{'Miguel' if m['quien'] == 'jefe' else ex.NOMBRES.get(m['quien'], m['quien'])}: {m['texto'][:300]}"
+                                for m in historial_chat()[-12:-1])
+            equipo = "\n".join(f"- {i} = {n} ({rol}): {d}" for i, n, rol, _, _, d in ex.EQUIPO)
+            r = claude.json_estructurado(
+                "Eres el equipo de la Agencia de Expedientes (canal de YouTube «¿Quién MATÓ a…?»). Miguel, el jefe, te "
+                "escribe instrucciones reales. Contesta como el del equipo que toque y HAZ lo que pide con las acciones "
+                "disponibles (puedes poner varias). Si pide algo que no puedes hacer con esas acciones, dile qué sí puedes "
+                "y cómo. No inventes estados: usa la SITUACIÓN de abajo. Si pregunta algo, contéstalo con esos datos.\n\n"
+                "ACCIONES: continuar (destrabar y seguir ya), pausar, prender, producir {marca}, agregar_tema {marca, "
+                "gancho}, primero {marca}, saltar {marca}, aprobar_tema {marca}, proponer_temas {numero}, reintentar "
+                "{caso}, rehacer_video {caso}, subir {caso, si=con fecha}, meta_dias {numero}, ritmo {numero de días}, "
+                "hora {texto HH:MM}, subir_solo {si}, mensaje_caso {caso, texto} (para cambiar frases o datos de un "
+                "guion: lo atiende Ramos), ninguna.\n\nEQUIPO:\n" + equipo,
+                f"SITUACIÓN AHORA:\n{_contexto_chat()}\n\nPLÁTICA RECIENTE:\n{previos or '(nada)'}\n\nMIGUEL: {texto}",
+                ESQ_CHAT, tarea=TAREA, que="chat de la agencia")
+        hechos = []
+        for a in r["acciones"][:6]:
+            try:
+                x = _ejecutar(a)
+            except Exception as exc:  # noqa: BLE001
+                x = f"✖ {a['tipo']}: {str(exc)[:150]}"
+            if x:
+                hechos.append(x)
+        _chat_poner({"quien": r["quien"], "texto": r["respuesta"], "hechos": hechos})
+        ex._decir(r["quien"], "libre", r["respuesta"][:120])
+        ex._fin_tarea(tarea, resultado="contestado")
+    except Exception as exc:  # noqa: BLE001
+        limite = "límite" in str(exc).lower()
+        _chat_poner({"quien": "ex_guion", "texto": ("Se acabó el límite de tu plan de Claude; en cuanto vuelva te contesto. "
+                                                    "Mientras, el botón «▶ Continuar ahora» sí funciona.") if limite
+                     else f"Uy, no pude contestar: {str(exc)[:200]}"})
+        ex._fin_tarea(tarea, error=str(exc)[:200])

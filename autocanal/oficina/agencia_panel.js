@@ -89,12 +89,13 @@
       ${!fabrica.plan ? `<p class="error">🧠 Tu plan de Claude no está conectado en el servidor (o está en pausa por el límite): la fábrica espera.</p>` : ""}
       ${e.nota ? `<p class="pista">⏳ ${esc(e.nota)}</p>` : ""}
       ${enCurso ? `<p>⚙️ Produciendo: <b>${esc(enCurso.marca)}</b></p>` : ""}
-      ${trabajando.map((c) => `<p>• #${esc(c.numero)} ${esc(c.marca)} — ${esc(PASO_TXT[c.paso] || c.paso)}${c.paso === "render" && c.render_paso ? ` · ${esc(c.render_paso)} (${Math.round((c.render_avance || 0) * 100)} %)` : ""}${c.error ? ` <span class="error">· ${esc(c.error)}</span>` : ""}</p>`).join("")}
+      ${trabajando.map((c) => `<p>• #${esc(c.numero)} ${esc(c.marca)} — ${esc(PASO_TXT[c.paso] || c.paso)}${c.paso === "render" && c.render_paso ? ` · ${esc(c.render_paso)} (${Math.round((c.render_avance || 0) * 100)} %)` : ""}${c.error ? ` <span class="error">· ${esc(c.error)}</span> <button class="btn btn-mini" data-fab-reintentar="${esc(c.id)}">🔁 Reintentar</button>` : ""}</p>`).join("")}
       <label class="fab-switch"><input type="checkbox" data-fab-subir ${e.subir_solo ? "checked" : ""}> 📤 Que lo suba sola en PRIVADO al terminar (con su fecha)</label>
       ${e.azure ? `<p class="pista">🎙️ Voz de Azure este mes: ${(e.azure.chars || 0).toLocaleString("es-MX")} de ~480,000 caracteres (≈ ${Math.max(0, Math.floor((480000 - (e.azure.chars || 0)) / 18000))} videos más)</p>` : ""}
       <p>📦 Material por delante: <b>${fabrica.por_delante}</b> de ${fabrica.meta} videos
         <label class="pista">· juntar para <select data-fab-meta>${[30, 60, 90, 180, 365].map((n) => `<option value="${n}" ${+e.meta_dias === n ? "selected" : ""}>${n} días</option>`).join("")}</select></label></p>
-      <div class="fila">${sig && !e.en_curso ? `<button class="btn btn-mini btn-primario" data-producir="${esc(sig.id)}">▶ Producir ya: ${esc(sig.marca)}</button>` : ""}
+      <div class="fila"><button class="btn btn-mini btn-primario" data-fab-continuar title="Quita esperas, destraba lo atorado y reintenta lo que falló">▶ Continuar ahora</button>
+        ${sig && !e.en_curso ? `<button class="btn btn-mini" data-producir="${esc(sig.id)}">⚙️ Producir ya: ${esc(sig.marca)}</button>` : ""}
         <button class="btn btn-mini" data-ir="temas">🧾 Temas (${fabrica.temas.filter((x) => x.estado === "pendiente").length} en fila)</button></div>
       ${!fabrica.pexels ? `<p class="pista">🎞️ Sin clave de Pexels en el servidor: solo fotos de Wikimedia (opcional).</p>` : ""}
     </section>`;
@@ -247,23 +248,36 @@
     catch (err) { alert(err.message); }
   });
 
-  // ---------- 💬 Chat (con el equipo, sobre un caso) ----------
-  let chatCaso = leer("exp_chat_caso", ""), chatDatos = null;
+  // ---------- 💬 Chat: con toda la agencia (instrucciones reales) o sobre un caso ----------
+  const AGENCIA = "__agencia__";
+  let chatCaso = leer("exp_chat_caso", AGENCIA), chatDatos = null;
   async function pintarChat(forzar) {
     const casos = resumen?.expedientes || [];
-    if (!casos.length) { $("#exp-chat").innerHTML = `<p class="vacio">Importa un caso para platicar con el equipo sobre él.</p>`; return; }
-    if (!casos.some((c) => c.id === chatCaso)) chatCaso = casos[0].id;
+    if (chatCaso !== AGENCIA && !casos.some((c) => c.id === chatCaso)) chatCaso = AGENCIA;
     if (!forzar && document.activeElement?.closest?.("#exp-chat")) return;
-    try { chatDatos = await api(`/api/expedientes/${encodeURIComponent(chatCaso)}`); } catch { return; }
-    const msgs = chatDatos.chat || [];
+    let msgs, corriendo;
+    if (chatCaso === AGENCIA) {
+      msgs = fabrica?.chat || [];
+      corriendo = msgs.at(-1)?.quien === "jefe";
+    } else {
+      try { chatDatos = await api(`/api/expedientes/${encodeURIComponent(chatCaso)}`); } catch { return; }
+      msgs = chatDatos.chat || [];
+      corriendo = chatDatos.corriendo || msgs.at(-1)?.quien === "jefe";
+    }
     const borrador = $("#ag-chat-texto")?.value || "";
+    const ejemplo = chatCaso === AGENCIA
+      ? "Pídele lo que sea: «continúa», «haz el de Kodak ya», «pausa la fábrica», «¿qué está haciendo cada quien?», «sube el de Blockbuster sin fecha», «reintenta el 004», «junta material para un año», «propón 6 temas de marcas mexicanas»."
+      : "Sobre este caso: «Ramos, ¿de dónde sale lo de las 9,094 tiendas?», «cambia la frase de la escena 3», «verifica otra vez la escena 12».";
     $("#exp-chat").innerHTML = `
-      <label class="pista">Caso: <select id="ag-chat-caso">${casos.map((c) => `<option value="${esc(c.id)}" ${c.id === chatCaso ? "selected" : ""}>#${String(c.numero).padStart(3, "0")} · ${esc(c.marca)}</option>`).join("")}</select></label>
+      <label class="pista">Hablar con: <select id="ag-chat-caso">
+        <option value="${AGENCIA}" ${chatCaso === AGENCIA ? "selected" : ""}>🕵️ Toda la agencia (instrucciones)</option>
+        ${casos.map((c) => `<option value="${esc(c.id)}" ${c.id === chatCaso ? "selected" : ""}>🗂️ Caso #${String(c.numero).padStart(3, "0")} · ${esc(c.marca)}</option>`).join("")}</select></label>
       <ol class="chat ag-chat-log">${msgs.map((m) => `<li class="${m.quien === "jefe" ? "mio" : ""}"><span class="hora">${esc(hora(m.t))}</span>
-        <b>${esc(nombreDe(m.quien))}</b> ${esc(m.texto)}</li>`).join("") || `<li class="pista">Escríbele al equipo: «Ramos, ¿de dónde sale lo de los 500 autos?», «cambia la frase de la isla», «verifica otra vez la escena 12».</li>`}</ol>
-      ${chatDatos.corriendo || msgs.at(-1)?.quien === "jefe" ? `<p class="pista">✍️ El equipo está contestando…</p>` : ""}
+        <b>${esc(nombreDe(m.quien))}</b> ${esc(m.texto)}${(m.hechos || []).length ? `<ul class="ag-hechos">${m.hechos.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}</li>`).join("")
+        || `<li class="pista">${esc(ejemplo)}</li>`}</ol>
+      ${corriendo ? `<p class="pista">✍️ El equipo está contestando…</p>` : ""}
       <form id="ag-chat-form" class="chat-escribir">
-        <textarea id="ag-chat-texto" rows="2" maxlength="1500" placeholder="Escríbele al equipo sobre este caso"></textarea>
+        <textarea id="ag-chat-texto" rows="2" maxlength="1500" placeholder="${chatCaso === AGENCIA ? "Escríbele a la agencia: «continúa», «haz el de Kodak», «pausa»…" : "Escríbele al equipo sobre este caso"}"></textarea>
         <button class="btn btn-primario" type="submit">Enviar</button>
       </form>`;
     $("#ag-chat-texto").value = borrador;
@@ -277,8 +291,11 @@
     e.preventDefault();
     const texto = $("#ag-chat-texto").value.trim();
     if (!texto) return;
-    try { await api(`/api/expedientes/${encodeURIComponent(chatCaso)}`, { accion: "chat", texto }); $("#ag-chat-texto").value = ""; document.activeElement?.blur(); pintarChat(true); }
-    catch (err) { alert(err.message); }
+    try {
+      if (chatCaso === AGENCIA) await api("/api/expedientes/fabrica", { accion: "chat", texto });
+      else await api(`/api/expedientes/${encodeURIComponent(chatCaso)}`, { accion: "chat", texto });
+      $("#ag-chat-texto").value = ""; document.activeElement?.blur(); await cargar(true);
+    } catch (err) { alert(err.message); }
   });
 
   // ---------- clics comunes ----------
@@ -291,6 +308,10 @@
       if (boton) boton.disabled = false;
       await cargar(true);
     };
+    const co = e.target.closest("[data-fab-continuar]");
+    if (co) return fab({ accion: "continuar" }, co, (r) => `▶ Seguimos. ${r.reintentos ? `Reintenté ${r.reintentos} caso(s) atorado(s).` : "No había nada atorado."}`);
+    const re = e.target.closest("[data-fab-reintentar]");
+    if (re) return fab({ accion: "reintentar", eid: re.dataset.fabReintentar }, re, () => "🔁 Lo estoy reintentando.");
     const pr = e.target.closest("[data-producir]");
     if (pr) return fab({ accion: "producir", id: pr.dataset.producir }, pr, () => "Arrancó la producción ⚙️ Mira el avance en la Bandeja.");
     const tm = e.target.closest("[data-tema]");

@@ -2827,6 +2827,12 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                         r = fb.proponer_temas(str(datos.get("canal") or "quien_mato"))
                     elif a == "producir":
                         r = fb.producir(str(datos.get("id") or ""))
+                    elif a == "continuar":
+                        r = fb.continuar()
+                    elif a == "reintentar":
+                        r = fb.reintentar(str(datos.get("eid") or ""))
+                    elif a == "chat":
+                        r = fb.chat_agencia(str(datos.get("texto") or ""))
                     elif a in ("programar", "privado", "rehacer_video"):
                         r = fb.revisar(str(datos.get("eid") or ""), datos)
                     else:
