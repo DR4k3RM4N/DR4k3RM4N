@@ -1647,9 +1647,14 @@ def enviar_render(eid: str) -> dict:
                 "parametros": {"carpeta": f.get("carpeta"), "nombre": f"Expediente-{f.get('numero')}", "azure": azure},
                 "entradas": [str(zipf)], "salida": str(salida)}).json()
         except (requests.RequestException, ValueError) as exc:
-            return {"error": f"La sala de edición no contestó ({exc})."}
-        if not r.get("id"):
-            return {"error": r.get("error") or "La sala no aceptó el trabajo."}
+            r = {"error": f"La sala de edición no contestó ({exc})."}
+        if not r.get("id"):  # la sala no lo aceptó: se dice en el caso y, si se puede, lo hace el servidor
+            motivo = r.get("error") or "La sala no aceptó el trabajo."
+            if estado().get("servidor_respaldo", True):
+                _poner(eid, render_forzar_srv=True, render_paso=f"La sala no lo aceptó ({motivo[:80]}): lo hace el servidor")
+                return enviar_render(eid)
+            _poner(eid, paso="render", render_paso=f"⚠️ La sala no lo aceptó: {motivo[:120]}")
+            return {"error": motivo}
         _poner(eid, render_estado="en_fila", render_tid=r["id"], render_compu=None, paso="render",
                render_paso="En la fila de la sala de edición", hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion"}),
                render_desde=time.time(), render_mov_t=time.time(), render_avance=0)

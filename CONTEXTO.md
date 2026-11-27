@@ -289,6 +289,11 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   (`azure.casos`); si se acaba, se ve en el caso. Sala que no contesta 10 min → render en el servidor. La Bandeja
   muestra 🩺 versión del servidor (git), hace cuánto revisó la fábrica, si la sala contesta y el último error.
 
+- **🎯 CAUSA REAL del 63 % (27 nov)**: `sala.RAICES` no incluía `autocanal/expedientes`, así que la sala rechazaba
+  («Archivo no permitido») TODOS los renders de la fábrica y `enviar_render` regresaba en silencio: nunca llegaron a
+  ninguna compu. Arreglado (RAICES + `AUTOCANAL_EXPEDIENTES`); si la sala rechaza algo, se ve en el caso y lo hace el
+  servidor (`render_forzar_srv`).
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

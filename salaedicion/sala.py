@@ -40,7 +40,9 @@ ESTADO = AQUI / "sala_estado.json"
 DESCARGAS = AQUI / "windows"
 VIVA = 30  # segundos sin noticias para dar una compu por apagada
 CODIGO_DURA = 15 * 60
-RAICES = [REPO / "tiktokshop" / "salida", REPO / "autocanal" / "salida", AQUI / "salida"]  # de dónde se pueden mandar clips
+# de dónde se pueden mandar archivos a las compus (🕵️ Expedientes incluido: antes faltaba y la sala rechazaba sus videos)
+RAICES = [REPO / "tiktokshop" / "salida", REPO / "autocanal" / "salida", AQUI / "salida", REPO / "autocanal" / "expedientes",
+          *([Path(os.environ["AUTOCANAL_EXPEDIENTES"])] if os.environ.get("AUTOCANAL_EXPEDIENTES") else [])]
 EXT_RESULTADO = {".mp4", ".jpg", ".json"}
 TIENDA_URL = "http://127.0.0.1:8766"  # oficina de TikTok (para saber a qué productos hacerles carpeta en tus compus)
 MAX_RESULTADO = 2 * 1024 ** 3
