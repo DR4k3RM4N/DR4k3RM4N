@@ -998,6 +998,7 @@
     lista.forEach((a) => (agentes[a.id] = a));
     estado = { ...nuevo, agentes, tareas: [...(nuevo.tareas || []), ...tareasTT, ...tareasSala] };
     for (const a of lista) {
+      if (alaDe(a.id) !== ALA_FIJA) continue;  // 🏢 cada página dibuja solo a la gente de su oficina
       let v = vivos[a.id];
       if (!v) {
         const c = CASA[a.id];
@@ -1349,8 +1350,9 @@
   }
   const VISTAS = { todo: { x: 0, y: 0, w: ANCHO, h: ALTO }, youtube: marco(0, ALA_TT), tiktok: marco(PASILLO, ALA_SALA + 1),
                    edicion: marco(ALA_SALA - 2, ALA_TAMP + 1), tampico: marco(ALA_TAMP - 2, COLS) };  // 🕵️ Expedientes tiene su propia página: /expedientes
-  const leerAla = () => { try { return localStorage.getItem("ala"); } catch { return null; } };
-  let ala = VISTAS[leerAla()] ? leerAla() : (window.innerWidth < 760 ? "youtube" : "todo");
+  // 🏢 cada página muestra SOLO su oficina: el edificio = YouTube + tu despacho; /tiktok-shop y /sala-oficina, la suya
+  const ALA_FIJA = { tiktok: "tiktok", sala: "edicion" }[document.body.dataset.oficina] || "youtube";
+  let ala = ALA_FIJA;
   const cam = { ...VISTAS[ala] };
   let offX = 0, offY = 0, lienzoW = 0, lienzoH = 0;
 
@@ -1386,7 +1388,7 @@
   }
 
   function verAla(nueva) {
-    if (!VISTAS[nueva]) return;
+    if (nueva !== ALA_FIJA) return;  // las otras oficinas tienen su propia página
     ala = nueva;
     try { localStorage.setItem("ala", ala); } catch { /* sin almacenamiento: solo no se recuerda */ }
     document.querySelectorAll("[data-ala]").forEach((b) => b.classList.toggle("activa", b.dataset.ala === ala));

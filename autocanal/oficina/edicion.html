@@ -18,10 +18,6 @@
       <p>Todas las compus y el servidor editan los videos de todas las oficinas</p>
     </div>
   </div>
-  <nav class="ed-links">
-    <a href="/">🏢 Edificio</a>
-    <a href="/expedientes">🕵️ Expedientes</a>
-  </nav>
 </header>
 
 <main class="ed-main">
@@ -48,6 +44,15 @@
   </section>
   <p id="ed-aviso" class="ed-aviso" hidden></p>
 
+  <div class="ed-vistas" role="tablist" aria-label="Qué ver">
+    <button class="ed-vista activa" type="button" data-vista="tablero" role="tab">📊 Tablero</button>
+    <button class="ed-vista" type="button" data-vista="cuarto" role="tab">💻 El cuarto de edición y tus compus</button>
+  </div>
+  <section id="ed-cuarto" class="ed-cuarto" hidden>
+    <p class="ed-vacio">Aquí ves a los editores trabajando, das de alta compus (código de 6 números), y abres tus proyectos de clips.</p>
+    <iframe id="ed-cuarto-marco" title="El cuarto de edición" loading="lazy"></iframe>
+  </section>
+  <div id="ed-tablero">
   <section class="ed-resumen" id="ed-resumen" aria-live="polite"></section>
 
   <section>
@@ -65,7 +70,9 @@
       <div id="ed-fila"></div>
     </div>
   </section>
+  </div>
 </main>
+<script src="/static/nav.js"></script>
 <script src="/static/edicion.js"></script>
 </body>
 </html>

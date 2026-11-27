@@ -87,3 +87,14 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: v
   .ed-dos { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) { .ed-rec { animation: none; } * { transition: none !important; } }
+
+/* pestañas: tablero o el cuarto animado con tus compus */
+.ed-vistas { display: flex; gap: 8px; flex-wrap: wrap; }
+.ed-vista { border: 1px solid var(--borde); background: var(--panel); color: var(--suave); border-radius: 999px; padding: 8px 14px;
+  font: 600 13px var(--sans); cursor: pointer; }
+.ed-vista.activa { color: var(--texto); border-color: var(--azul); background: var(--panel2); }
+.ed-vista:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+#ed-tablero { display: flex; flex-direction: column; gap: 22px; }
+.ed-cuarto { display: flex; flex-direction: column; gap: 8px; }
+.ed-cuarto iframe { width: 100%; height: min(1100px, calc(100vh - 160px)); min-height: 640px; border: 1px solid var(--borde);
+  border-radius: 12px; background: #0b0d12; }

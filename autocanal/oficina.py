@@ -2862,6 +2862,17 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     return self._json({"error": str(exc)}, 404)
             if ruta in ("/expedientes", "/expedientes/"):  # 🕵️ la agencia de Expedientes, en su propia página
                 return self._archivo(WEB / "expedientes.html", WEB)
+            if ruta in ("/tiktok-shop", "/tiktok-shop/", "/sala-oficina", "/sala-oficina/"):
+                # 🛒 TikTok Shop y 💻 el cuarto de edición: la misma app del edificio, mostrando solo esa oficina
+                cual = "tiktok" if ruta.startswith("/tiktok-shop") else "sala"
+                cuerpo = (WEB / "index.html").read_text(encoding="utf-8").replace("<body>", f'<body data-oficina="{cual}">', 1).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(cuerpo)))
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                self.wfile.write(cuerpo)
+                return
             if ruta in ("/tampico", "/tampico/"):  # 🌮 Tampiqueando en su propia página
                 return self._archivo(WEB / "tampico.html", WEB)
             if ruta in ("/edicion", "/edicion/"):  # 🎬 la sala de edición central (todas las compus y el servidor)

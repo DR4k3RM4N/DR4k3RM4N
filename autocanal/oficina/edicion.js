@@ -129,6 +129,16 @@
     accion(e.currentTarget, "/api/edicion/ajustes", { cerebro: e.target.value }, () => e.target.value !== "auto"
       ? "🧠 Híbrido: Claude pule cada video mientras haya plan; cuando se acaba, el director automático sigue solo y Claude regresa cuando vuelve el plan."
       : "🎬 Director automático Pro: edita con el estilo de cada canal en tus compus, sin gastar tu plan."));
+  // 📊 tablero / 💻 el cuarto animado (la app del edificio mostrando solo la sala de edición: compus, códigos, proyectos)
+  function verVista(v) {
+    document.querySelectorAll(".ed-vista").forEach((b) => b.classList.toggle("activa", b.dataset.vista === v));
+    $("#ed-tablero").hidden = v !== "tablero";
+    $("#ed-cuarto").hidden = v !== "cuarto";
+    if (v === "cuarto" && !$("#ed-cuarto-marco").src) $("#ed-cuarto-marco").src = "/sala-oficina";
+    try { localStorage.setItem("ed_vista", v); } catch { /* sin almacenamiento */ }
+  }
+  document.querySelectorAll(".ed-vista").forEach((b) => b.addEventListener("click", () => verVista(b.dataset.vista)));
+  try { if (localStorage.getItem("ed_vista") === "cuarto") verVista("cuarto"); } catch { /* sin almacenamiento */ }
   cargar();
   setInterval(() => { if (!document.hidden) cargar(); }, 3000);
 })();

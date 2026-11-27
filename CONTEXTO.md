@@ -299,6 +299,14 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
 - **Chat de Expedientes**: la caja para escribir queda pegada abajo del panel (sticky) y la lista mide
   `100vh - 360px`; en el cel, al tocar una pestaña la página baja a ella (antes había que darle Tab para verla).
 
+- **🧭 Oficinas separadas + menú (27 nov)**: `oficina/nav.js` mete en todas las páginas un menú a la izquierda (abajo en
+  el cel): 🏢 Edificio `/` · 🎬 Sala central `/edicion` · 🕵️ `/expedientes` · 🛒 `/tiktok-shop` · 🌮 `/tampico` (agrega
+  ahí las oficinas nuevas). El edificio `/` muestra SOLO YouTube + el despacho (`oficina.js` `ALA_FIJA` por
+  `body[data-oficina]`, sin botones de alas; solo se dibuja la gente de esa oficina) y sus pestañas (sin Shop/Sala/
+  Tampico). `/tiktok-shop` y `/sala-oficina` sirven el mismo index.html con `data-oficina` = tiktok | sala. La Sala
+  central tiene pestañas «📊 Tablero» y «💻 El cuarto de edición y tus compus» (iframe a `/sala-oficina`, sin menú ni
+  encabezado). Cada página consulta solo su oficina (TikTok cada 2 s y sala cada 3 s solo en sus páginas).
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

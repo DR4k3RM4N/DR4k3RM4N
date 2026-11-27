@@ -898,9 +898,8 @@
   setInterval(() => { if (agenteVisto || !$("#tab-equipo").hidden) pintarEquipo(); }, 1000);
   window.addEventListener("ala", () => pintarEquipo(true));
   // A la derecha solo los menús de la oficina que estás viendo (en "Todo", todos)
-  const PESTANAS_ALA = { youtube: ["bandeja", "proyectos", "resultados", "estilo", "equipo", "chat", "tampico"],
-                         tiktok: ["shop", "equipo", "chat", "tampico"], edicion: ["sala", "equipo", "tampico"],
-                         tampico: ["tampico", "equipo", "chat"] };
+  const PESTANAS_ALA = { youtube: ["bandeja", "proyectos", "resultados", "estilo", "equipo", "chat"],
+                         tiktok: ["shop", "equipo"], edicion: ["sala", "equipo"] };
   function menusDelAla(ala) {
     const visibles = PESTANAS_ALA[ala];
     document.querySelectorAll(".pestana").forEach((b) => (b.hidden = !!visibles && !visibles.includes(b.dataset.tab)));
@@ -908,7 +907,7 @@
     if (activa?.hidden) abrirPestana(visibles[0]);
   }
   window.addEventListener("ala", (e) => menusDelAla(e.detail));
-  menusDelAla(window.Oficina.ala?.());
+  queueMicrotask(() => menusDelAla(window.Oficina.ala?.()));  // cuando ya cargó todo (la pestaña Sala usa cosas de más abajo)
   // pasar el mouse por una tarjeta del equipo marca al agente en la oficina
   $("#equipo").addEventListener("mouseover", (e) => window.Oficina.encima(e.target.closest("[data-agente]")?.dataset.agente || null));
   $("#equipo").addEventListener("mouseleave", () => window.Oficina.encima(null));
@@ -2064,9 +2063,11 @@
 
   api("/api/estado").then(pintar).catch(() => {});
   conectar();
+  // cada página consulta solo su oficina (el edificio ya no pregunta por TikTok ni por la sala cada 2 s)
+  const PAGINA = document.body.dataset.oficina || "youtube";
   consultarTT();
-  setInterval(() => { if (!document.hidden) consultarTT(); }, 2000);
+  if (PAGINA === "tiktok") setInterval(() => { if (!document.hidden) consultarTT(); }, 2000);
   consultarSala();
-  setInterval(() => { if (!document.hidden) consultarSala(); }, 3000);
+  if (PAGINA === "sala") setInterval(() => { if (!document.hidden) consultarSala(); }, 3000);
   setInterval(() => { if (!$("#modal").hidden && $("#locales-tt")) cargarLocales(); }, 5000);
 })();
