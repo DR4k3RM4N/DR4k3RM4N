@@ -331,10 +331,13 @@ def investigar(tema: dict) -> dict:
                 return None
             if len(texto) < 800:
                 return None
-            return {"url": url, "titulo": titulo or x.get("titulo") or x.get("title") or url, "texto": texto[:9000]}
+            # solo los párrafos que sirven (hablan de la marca o traen cifras): menos texto = menos plan
+            clave = marca.lower().split()[0]
+            utiles = [p for p in texto.split("\n") if len(p) > 60 and (clave in p.lower() or re.search(r"\d", p))]
+            return {"url": url, "titulo": titulo or x.get("titulo") or x.get("title") or url, "texto": "\n".join(utiles)[:5000]}
 
         with ThreadPoolExecutor(max_workers=8) as pool:  # varias páginas a la vez
-            fuentes = [f for f in pool.map(leer, urls) if f][:12]
+            fuentes = [f for f in pool.map(leer, urls) if f and len(f["texto"]) > 400][:8]
         if len(fuentes) < 3:
             raise RuntimeError(f"No encontré suficientes fuentes buenas sobre {marca} ({len(fuentes)}).")
     bloque = "\n\n".join(f"[F{i}] {f['titulo']} — {f['url']}\n{f['texto']}" for i, f in enumerate(fuentes, 1))
@@ -352,8 +355,8 @@ def investigar(tema: dict) -> dict:
             "Lee las fuentes y saca SOLO hechos que estén escritos en ellas, cada uno con su cita copiada TAL CUAL "
             "(mismo idioma, mismas palabras) y su fuente [F#]. Prioriza: fechas, cifras (ventas, tiendas, deuda, "
             "empleados), decisiones clave, personas, anécdotas reales y TODO lo de México. Nada de suposiciones.",
-            f"MARCA: {marca}\nGANCHO PROPUESTO: {gancho}\n\nFUENTES:\n{bloque}\n\nSaca 30 a 60 hechos útiles para un "
-            "video de 15-20 minutos.", ESQ_HECHOS, tarea=TAREA_GUION, que=f"investigar {marca}")
+            f"MARCA: {marca}\nGANCHO PROPUESTO: {gancho}\n\nFUENTES:\n{bloque}\n\nSaca 25 a 40 hechos útiles para un "
+            "video de 15-20 minutos.", ESQ_HECHOS, tarea=TAREA, que=f"investigar {marca}")
     # nada inventado: la cita tiene que estar en la página
     buenos, malos = [], []
     for h in r["hechos"]:
@@ -377,12 +380,10 @@ ESQ_GUION = {
     "required": ["escenas", "descripcion", "etiquetas", "comentario_fijado", "miniatura_a", "miniatura_b", "proximo"],
     "properties": {
         "escenas": {"type": "array", "items": {"type": "object", "additionalProperties": False,
-                    "required": ["titulo", "capitulo", "visual", "texto_pantalla", "audio", "frases"],
+                    "required": ["titulo", "capitulo", "texto_pantalla", "frases"],
                     "properties": {
                         "titulo": {"type": "string"}, "capitulo": {"type": "string", "description": "título corto del capítulo de YouTube"},
-                        "visual": {"type": "array", "items": {"type": "string"}, "description": "ideas de visual: [STOCK: \"términos\"], [ARCHIVO] foto…, [GRÁFICA] …"},
-                        "texto_pantalla": {"type": "array", "items": {"type": "string"}, "description": "máx. 6 palabras cada uno"},
-                        "audio": {"type": "string"},
+                        "texto_pantalla": {"type": "array", "items": {"type": "string"}, "description": "un texto corto (máx. 6 palabras) por frase, en orden"},
                         "frases": {"type": "array", "items": {"type": "object", "additionalProperties": False,
                                    "required": ["texto", "hechos"],
                                    "properties": {"texto": {"type": "string", "description": "una frase/párrafo corto de narración (1-3 oraciones)"},
@@ -404,15 +405,18 @@ def _ejemplo_guion() -> str:
         return ""
     texto = g.read_text(encoding="utf-8")
     i = texto.find("## ESCENA 1")
-    j = texto.find("## ESCENA 3")
-    k = texto.find("## ESCENA 7")
-    m = texto.find("## ESCENA 8")
-    return texto[i:j] + "\n…\n" + (texto[k:m] if k > 0 and m > k else "")
+    j = texto.find("## ESCENA 2")
+    return "\n".join(ln for ln in texto[i:j].splitlines() if ln.startswith(("## ", "> ")))  # solo el gancho
 
 
 def _sistema_canal() -> str:
-    guia = (CANAL_DIR / "CLAUDE.md")
-    return guia.read_text(encoding="utf-8")[:7000] if guia.exists() else ""
+    """Las reglas del canal en corto (antes iba todo el CLAUDE.md: gastaba mucho plan en cada guion)."""
+    return ("ESTRUCTURA: 1) Gancho 30-60 s con el contraste más fuerte y cifras. 2) Presentación: «Expediente #00X» y "
+            "3 sospechosos. 3) La víctima: origen y época de gloria con anécdotas reales. 4-6) Un sospechoso por escena "
+            "(título de la escena «Sospechoso #N: …»), con datos y fechas. 7) El giro de México (qué pasó aquí y por qué), "
+            "si hay datos. 8) «¿Final feliz?»: riesgos actuales. 9) Veredicto como OPINIÓN + pregunta para comentarios. "
+            "10) Adelanto del próximo expediente. TONO: caso policiaco, frases cortas, de tú, palabras de México "
+            "(tóper, plaza, a meses, quincena).")
 
 
 def escribir_guion(tema: dict, inv: dict, numero: str, siguiente: str) -> dict:
@@ -422,7 +426,7 @@ def escribir_guion(tema: dict, inv: dict, numero: str, siguiente: str) -> dict:
               f"GIRO DE MÉXICO: {inv['giro_mexico'] or '(no hay datos: no lo inventes)'}\n¿FINAL FELIZ?: {inv['final_feliz']}\n"
               f"DUDAS (no las afirmes): {'; '.join(inv['dudas'][:12])}\nPRÓXIMO EXPEDIENTE SUGERIDO: {siguiente}\n\n"
               f"HECHOS COMPROBADOS (lo único que puedes afirmar; cita su H# en cada frase que los use):\n{hechos}\n\n"
-              f"EJEMPLO DE TONO Y FORMATO (Tupperware):\n{_ejemplo_guion()[:9000]}")
+              f"EJEMPLO DE TONO (el gancho de Tupperware):\n{_ejemplo_guion()[:3000]}")
     if _demo():
         def F(t, h=()):
             return {"texto": t, "hechos": list(h)}
@@ -440,9 +444,9 @@ def escribir_guion(tema: dict, inv: dict, numero: str, siguiente: str) -> dict:
             "etiquetas": ["blockbuster", "quién mató a"], "comentario_fijado": "¿Rentabas en Blockbuster? 👇",
             "miniatura_a": ["LA MATÓ", "NETFLIX?"], "miniatura_b": ["9,094", "0", "2004", "HOY"], "proximo": "RadioShack"}
     return claude.json_estructurado(
-        "Eres Vera, guionista del canal «¿Quién MATÓ a…?». Escribes guiones técnicos de 15 a 20 minutos (2,200 a "
-        "2,800 palabras de narración, 12 a 15 escenas) para un video que se arma solo con un motor: cada «frase» se "
-        "vuelve una o varias tarjetas en pantalla. Reglas del canal (síguelas al pie de la letra):\n\n"
+        "Eres Vera, guionista del canal «¿Quién MATÓ a…?». Escribes guiones técnicos de 15 a 18 minutos (2,000 a "
+        "2,400 palabras de narración, 10 a 13 escenas) para un video que se arma solo con un motor: cada «frase» se "
+        "vuelve una tarjeta en pantalla (da un texto_pantalla por frase). Reglas del canal:\n\n"
         + _sistema_canal() + "\n\nREGLAS DURAS: toda cifra, fecha, nombre o hecho de la narración tiene que venir de "
         "los HECHOS COMPROBADOS (pon su H#). Si un dato no está, no lo digas. Opinión solo en el veredicto y dicha como "
         "opinión. No acuses a nadie de delitos. Frases cortas, tono de caso policiaco, palabras de México. La primera "
@@ -477,9 +481,8 @@ def _md_guion(tema: dict, numero: str, g: dict) -> str:
          f"**Expediente #{numero}** · Canal: serie \"¿Quién MATÓ a…?\" · hecho por la Agencia (Vera)", "",
          f"**Total:** unas {total:,} palabras de narración (~{round(total / 165)} min con la voz a +12 %).", "", "---", ""]
     for n, e in enumerate(g["escenas"], 1):
-        s += [f"## ESCENA {n} · {e['titulo']}", "", "**Visual:**", *[f"- {v}" for v in e["visual"]], "",
-              f"**Texto en pantalla:** " + " · ".join(f"\"{x}\"" for x in e["texto_pantalla"]), "",
-              f"**Audio:** {e['audio']}", ""]
+        s += [f"## ESCENA {n} · {e['titulo']}", "",
+              f"**Texto en pantalla:** " + " · ".join(f"\"{x}\"" for x in e.get("texto_pantalla") or []), ""]
         for f in e["frases"]:
             s += [f"> {f['texto'].strip()}", ""]
         s += ["---", ""]
@@ -605,14 +608,15 @@ def buscar_material(tema: dict, g: dict, destino: Path | None = None) -> dict:
     from concurrent.futures import ThreadPoolExecutor
     if _demo():
         return {"fotos": [], "videos": [], "lista": []}
-    escenas = "\n".join(f"{n}. {e['titulo']} — visual: {'; '.join(e['visual'])[:300]}" for n, e in enumerate(g["escenas"], 1))
-    b = claude.json_estructurado(
-        "Eres Inés, archivista. Propones búsquedas para conseguir fotos reales (de cualquier sitio: noticias, la marca, "
-        "Wikipedia) y videos cortos de ambiente por escena.",
-        f"MARCA: {tema['marca']}\nESCENAS:\n{escenas}\n\nUna entrada por escena, en el mismo orden. En «commons» pon "
-        "búsquedas de FOTOS (en español o inglés: la tienda, el logo, el producto, las personas públicas del caso, "
-        "titulares); en «videos», búsquedas cortas en inglés de video de ambiente.", ESQ_BUSQUEDAS,
-        tarea=TAREA, que=f"búsquedas de material {tema['marca']}")
+    # las búsquedas se arman solas (sin gastar Claude): la marca + el tema de cada escena
+    generales = [f"{tema['marca']} logo", f"{tema['marca']} tienda", f"{tema['marca']} store", f"{tema['marca']} México",
+                 f"{tema['marca']} historia", f"{tema['marca']} producto"]
+    limpio = [re.sub(r"sospechoso\s*#?\d+\s*[:·-]?", "", e["titulo"], flags=re.I).strip() for e in g["escenas"]]
+    b = {"escenas": [{"commons": [(tema["marca"] + " " + limpio[n - 1])[:80],
+                                  generales[(n - 1) % len(generales)]],
+                      "videos": [["store closing sale", "empty shopping mall", "money falling", "office business meeting",
+                                  "city night traffic", "old television static", "warehouse boxes"][(n - 1) % 7]]}
+                     for n, e in enumerate(g["escenas"], 1)]}
     fl = _fuentes_libres()
     trabajos = []
     for n, e in enumerate(b["escenas"][:len(g["escenas"])], 1):
@@ -645,14 +649,16 @@ def buscar_material(tema: dict, g: dict, destino: Path | None = None) -> dict:
         candidatos.append({**x, "id": f"{pref}{len(candidatos) + 1}", "escena": n})
     if not candidatos:
         return {"fotos": [], "videos": [], "lista": []}
-    lista = "\n".join(f"{c['id']} (escena {c['escena']}) {c['fuente']} · {c['titulo'][:90]} · {c.get('ancho')}x{c.get('alto')}"
-                      for c in candidatos[:260])
-    el = claude.json_estructurado(
-        "Eres Inés, archivista. Escoge el mejor material para cada escena: fotos REALES de la marca y su época (tiendas, "
-        "logos, productos, anuncios, titulares, personas públicas del caso) y algunos videos de ambiente. Nada de personas "
-        "privadas ni fotos con marca de agua. Entre 30 y 50 archivos que cubran todas las escenas; prefiere imágenes "
-        "grandes y claras.",
-        f"MARCA: {tema['marca']}\nCANDIDATOS:\n{lista}", ESQ_ELEGIR, tarea=TAREA, que=f"escoger material {tema['marca']}")
+    # se escogen solas (sin gastar Claude): hasta 3 fotos y 1 video por escena, las más grandes primero
+    el = {"elegidos": []}
+    cuenta = {}
+    for c in sorted(candidatos, key=lambda c: (c["escena"], c["fuente"] == "Pexels", -(int(c.get("ancho") or 0)))):
+        clave = (c["escena"], c["fuente"] == "Pexels")
+        if cuenta.get(clave, 0) >= (1 if c["fuente"] == "Pexels" else 3):
+            continue
+        cuenta[clave] = cuenta.get(clave, 0) + 1
+        el["elegidos"].append({"id": c["id"], "nombre": f"{_slug(tema['marca'], 16)}-{c['escena']}-{c['id'].lower()}",
+                               "describe": c["titulo"][:90], "escenas": [c["escena"]]})
     por_id = {c["id"]: c for c in candidatos}
     fotos_dir = (destino / "material" / "fotos") if destino else None
     if fotos_dir:
@@ -861,62 +867,108 @@ def _storyboard_demo(tema: dict, numero: str, g: dict) -> str:
             "    end=END(),\n    escenas=[\n" + "\n".join(escenas) + "\n    ],\n)\n")
 
 
-def escribir_storyboard(tema: dict, numero: str, g: dict, material: dict, carpeta: Path) -> str:
-    frases = []
+def _corto(t: str, n: int = 7) -> str:
+    t = re.sub(r"[<>\[\]]", "", t or "").strip()
+    palabras = t.split()
+    return " ".join(palabras[:n]) + ("…" if len(palabras) > n else "")
+
+
+def _storyboard_auto(tema: dict, numero: str, g: dict, material: dict) -> str:
+    """📊 Nico arma el storyboard SIN gastar Claude: estilo «cine» (foto real a pantalla completa con su texto,
+    videos de ambiente, carátula del expediente y tablero de sospechosos), una entrada por frase. Siempre cuadra."""
+    marca = tema["marca"]
+    fotos = [m for m in material["lista"] if not m["video"]]
+    videos = [m for m in material["lista"] if m["video"]]
+    nombre = lambda m: m["archivo"].split("/")[-1]  # noqa: E731
+    por_escena = {}
+    for m in material["lista"]:
+        for n in m.get("escenas") or []:
+            por_escena.setdefault(n, []).append(m)
+    def _cabe(t, n=26):  # corta por palabra completa, sin comas colgando
+        t = t.split(",")[0].strip()
+        while len(t) > n and " " in t:
+            t = t.rsplit(" ", 1)[0]
+        return t[:n]
+    sospechosos = [_cabe(re.sub(r"^sospechoso\s*#?\d+\s*[:·-]\s*", "", e["titulo"], flags=re.I).upper())
+                   for e in g["escenas"] if re.match(r"sospechoso", e["titulo"], re.I)][:3]
+    sospechosos = (sospechosos + ["?", "?", "?"])[:3]  # el tablero siempre tiene 3
+    usado = {"f": 0, "v": 0}
+
+    def foto(n):
+        lista = [m for m in por_escena.get(n, []) if not m["video"]] or fotos
+        if not lista:
+            return None
+        m = lista[usado["f"] % len(lista)]
+        usado["f"] += 1
+        return nombre(m)
+
+    def video(n):
+        lista = [m for m in por_escena.get(n, []) if m["video"]] or videos
+        if not lista:
+            return None
+        m = lista[usado["v"] % len(lista)]
+        usado["v"] += 1
+        return nombre(m)
+
+    escenas_py = []
+    n_sosp = 0
     for n, e in enumerate(g["escenas"], 1):
-        frases.append(f"ESCENA {n} · {e['titulo']} (capítulo «{e['capitulo']}») — {len(e['frases'])} frases → {len(e['frases'])} entradas en cards:")
-        frases += [f"  {k}. {f['texto']}" for k, f in enumerate(e["frases"], 1)]
-        if e["texto_pantalla"]:
-            frases.append(f"  texto en pantalla sugerido: {' · '.join(e['texto_pantalla'])}")
-    mat = "\n".join(f"- {m['archivo']} — {m['describe']} (escenas {m['escenas']}, {m['fuente']})" for m in material["lista"]) \
-        or "(no hay material descargable: usa solo tarjetas gráficas Q/TITLE/NUM/BARS/STAMP/TIMELINE/STATS/BOARD/FILE…)"
-    api_sb = (MOTOR / "sb.py").read_text(encoding="utf-8")
-    pedido = (f"EXPEDIENTE #{numero} · {tema['marca']}\n\nGUION (una entrada de cards por frase, en el mismo orden):\n"
-              + "\n".join(frases) + f"\n\nMATERIAL DISPONIBLE (usa solo estos archivos, con el nombre de archivo sin la "
-              f"carpeta; P('nombre.jpg') para fotos y "
-              f"M('nombre.mp4') o M('nombre.webm') para videos, con el nombre tal cual):\n{mat}")
-    if _demo():
-        codigo = _storyboard_demo(tema, numero, g)
-        (carpeta / "storyboard.py").write_text(codigo, encoding="utf-8")
-        r = _probar_storyboard(carpeta)
-        if r.get("errores"):
-            raise RuntimeError("; ".join(r["errores"]))
-        return codigo
-    sistema = ("Eres Nico, el que arma los storyboards del motor de video (estilo «cine»: material real a pantalla "
-               "completa casi siempre, gráficas sobre video desenfocado con fondo= por escena, cambio de imagen cada 3-5 s, "
-               "créditos chicos). Escribe el archivo storyboard.py COMPLETO como el ejemplo: mismas funciones de ayuda "
-               "(YA ESTÁN ESCRITAS, no las repitas: F('archivo.jpg'), V('archivo.mp4' o '.webm'), P('archivo.jpg', ...) "
-               "= foto con su crédito, M('archivo.mp4', ...) = video con su crédito; usa P y M para el material). Escribe "
-               "SOLO desde «EP = dict(» hasta el final: EP con label, nombre "
-               f"(«Expediente-{numero}-Marca»), guion='01-guion-tecnico.md', salida='render', estilo='cine', "
-               "voz_motor='azure', voz='es-MX-JorgeNeural', voz_velocidad='+12%', musica_vol=0.35, fonetica_azure "
-               "(nombres en inglés como se pronuncian en español), end=END(bg=...), y escenas=[dict(capitulo=..., "
-               "fondo=..., cards=[...]), ...]. REGLAS: exactamente UNA entrada en cards por frase (si una frase lleva "
-               "varias tarjetas, va una lista [...] con w=); las cifras en pantalla solo si están en la frase; nada de "
-               "archivos que no estén en la lista; solo Python simple (sin imports fuera de json/pathlib/sb, sin abrir "
-               "ni escribir archivos, sin os/sys).\n\nAPI DE TARJETAS (sb.py):\n" + api_sb
-               + "\n\nEJEMPLO (Tupperware, primeras escenas):\n" + _ejemplo_storyboard())
-    error = ""
-    for intento in range(3):
-        texto = pedido + (f"\n\nTU VERSIÓN ANTERIOR TUVO ESTOS PROBLEMAS, corrígelos:\n{error}" if error else "")
-        codigo = claude.json_estructurado(sistema, texto, ESQ_SB, tarea=TAREA, que=f"storyboard {tema['marca']} ({intento + 1})")["codigo"]
-        codigo = re.sub(r"^```(?:python)?\s*|\s*```$", "", codigo.strip())
-        if "EP = dict(" in codigo:  # solo la parte de las escenas; el encabezado (créditos) es siempre el mismo
-            codigo = codigo[codigo.index("EP = dict("):]
-        codigo = ENCABEZADO_SB + codigo
-        problema = codigo_seguro(codigo)
-        if problema:
-            error = f"- Código no permitido: {problema}"
-            continue
-        (carpeta / "storyboard.py").write_text(codigo, encoding="utf-8")
-        r = _probar_storyboard(carpeta)
-        validos = {m["archivo"] for m in material["lista"]}
-        faltan = [a for a in r.get("archivos", []) if a not in validos and not a.endswith("creditos.json")]
-        errores = r.get("errores", []) + [f"Archivo que no está en la lista: {a}" for a in faltan[:8]]
-        if not errores:
-            return codigo
-        error = "\n".join(f"- {e}" for e in errores)
-    raise RuntimeError(f"El storyboard no quedó bien después de 3 intentos: {error[:400]}")
+        tp = [x for x in (e.get("texto_pantalla") or []) if x]
+        etiqueta = e["titulo"].upper()[:40]
+        cards = []
+        es_sosp = bool(re.match(r"sospechoso", e["titulo"], re.I))
+        if es_sosp:
+            n_sosp += 1
+        for k, f in enumerate(e["frases"]):
+            texto = tp[k] if k < len(tp) else ""
+            fo = foto(n)
+            if n == 1 and k == 0:
+                c = (f"P({fo!r}, head={_corto(texto or ('¿QUIÉN MATÓ A ' + marca.upper() + '?'), 8)!r}, bw=True)" if fo
+                     else f"TITLE({('¿QUIÉN MATÓ A ' + marca.upper() + '?')!r}, tape=True)")
+            elif n == 2 and k == 0:
+                c = (f"FILE({marca.upper()!r}, num={('EXPEDIENTE N.º ' + numero)!r}, "
+                     f"lines={[_corto(x, 6) for x in sospechosos[:3]]!r}, stamp='CASO ABIERTO')")
+            elif es_sosp and k == 0:
+                rev = [i < n_sosp for i in range(3)]
+                c = (f"BOARD({rev!r}, new={min(n_sosp, 3) - 1}, hi={min(n_sosp, 3) - 1}, labels={sospechosos!r}, "
+                     f"label={'SOSPECHOSO #' + str(n_sosp)!r})")
+            elif k % 3 == 2 and video(n):
+                c = f"M({video(n)!r}, text={_corto(texto, 6)!r}, label={etiqueta!r})" if texto else f"M({video(n)!r})"
+            elif fo and len(f["texto"].split()) > 38 and foto(n):
+                otra = foto(n)
+                c = (f"[P({fo!r}, text={_corto(texto, 6)!r}, label={etiqueta!r}, w=1), "
+                     f"P({otra!r}, mode='frame', side='right', w=1)]")
+            elif fo:
+                c = (f"P({fo!r}, text={_corto(texto, 6)!r}, label={etiqueta!r})" if texto
+                     else f"P({fo!r}, label={etiqueta!r})")
+            else:
+                c = f"Q({_corto(texto or f['texto'], 9)!r})"
+            cards.append(c)
+        fondo = foto(n)
+        escenas_py.append(f"        dict(capitulo={e.get('capitulo') or e['titulo']!r}, "
+                          + (f"fondo=F({fondo!r}), " if fondo else "") + "cards=[\n            "
+                          + ",\n            ".join(cards) + ",\n        ]),")
+    fin = foto(len(g["escenas"]))
+    return (ENCABEZADO_SB + "EP = dict(\n"
+            f"    label={('EXPEDIENTE #' + numero + ' · ' + marca.upper())!r},\n"
+            f"    nombre={('Expediente-' + numero + '-' + _slug(marca, 30).title())!r},\n"
+            "    guion='01-guion-tecnico.md',\n    salida='render',\n    estilo='cine',\n    voz_motor='azure',\n"
+            "    voz='es-MX-JorgeNeural',\n    voz_velocidad='+12%',\n    musica_vol=0.35,\n"
+            f"    fonetica_azure={g.get('fonetica') or {}!r},\n"
+            f"    end=END({('bg=F(' + repr(fin) + ')') if fin else ''}),\n    escenas=[\n" + "\n".join(escenas_py) + "\n    ],\n)\n")
+
+
+def escribir_storyboard(tema: dict, numero: str, g: dict, material: dict, carpeta: Path) -> str:
+    """El storyboard se arma solo (sin Claude) y se prueba con el motor antes de seguir."""
+    codigo = _storyboard_auto(tema, numero, g, material)
+    problema = codigo_seguro(codigo)
+    if problema:
+        raise RuntimeError(f"Storyboard inválido: {problema}")
+    (carpeta / "storyboard.py").write_text(codigo, encoding="utf-8")
+    r = _probar_storyboard(carpeta)
+    if r.get("errores"):
+        raise RuntimeError("El storyboard no cuadró: " + "; ".join(r["errores"])[:300])
+    return codigo
 
 
 # ---------------------------------------------------------------- 🖼️ Mina: miniaturas que jalan
@@ -1039,21 +1091,21 @@ def disenar_miniaturas(tema: dict, g: dict, material: dict, destino: Path) -> di
     """Mina decide las dos miniaturas (A y B) con las reglas que jalan; si no hay foto buena, una imagen realista."""
     fotos = [m for m in material["lista"] if not m["video"]]
     lista = "\n".join(f"- {m['archivo']}: {m['describe']}" for m in fotos) or "(no hay fotos libres)"
-    if _demo():
-        cfg = {"a": {"fondo": "foto", "archivo": fotos[0]["archivo"] if fotos else "", "prompt_ia": "", "evidencia": "",
-                     "sello": "QUEBRÓ",
-                     "lineas": [{"texto": x, "color": c} for x, c in zip(g.get("miniatura_a") or ["LA MATÓ", "NETFLIX?"], ["blanco", "amarillo", "rojo"])]},
-               "b": {"izq_archivo": "", "izq_texto": (g.get("miniatura_b") or ["ANTES"])[0], "izq_etiqueta": "EE.UU.",
-                     "der_archivo": "", "der_texto": ((g.get("miniatura_b") or ["", "HOY"]) + ["HOY"])[1], "der_etiqueta": "MÉXICO"}}
-    else:
-        cfg = claude.json_estructurado(
-            "Eres Mina, diseñadora de miniaturas del canal «¿Quién MATÓ a…?».\n\n" + REGLAS_MINIATURA,
-            f"VIDEO: ¿Quién MATÓ a {tema['marca']}?\nGANCHO: {tema.get('gancho', '')}\n"
-            f"IDEAS DEL GUION: A = {' / '.join(g.get('miniatura_a') or [])} · B = {' vs '.join((g.get('miniatura_b') or [])[:2])}\n"
-            f"FOTOS DISPONIBLES:\n{lista}\n\nIMAGEN REALISTA (persona + escena): "
-            + ("DISPONIBLE: úsala para la A (fondo=ia)." if motor_imagenes() else "NO disponible: usa fondo=foto.")
-            + "\n\nDiseña la A (la principal) y la B (para probar). Usa archivos de la lista tal cual.",
-            ESQ_MINI, tarea=TAREA, que=f"miniaturas {tema['marca']}")
+    # sin gastar Claude: las palabras salen del guion (Vera ya las pensó) y la escena realista de una plantilla
+    ideas_a = [x for x in (g.get("miniatura_a") or []) if x][:2] or ["¿QUIÉN LA", "MATÓ?"]
+    ideas_b = (g.get("miniatura_b") or []) + ["ANTES", "HOY", "ANTES", "HOY"]
+    evid = next((m["archivo"] for m in fotos if re.search(r"logo|tienda|store|fachada|producto", m["archivo"] + m["describe"], re.I)),
+                fotos[0]["archivo"] if fotos else "")
+    lugar = next((m["archivo"] for m in fotos if m["archivo"] != evid), evid)
+    cfg = {"a": {"fondo": "ia" if motor_imagenes() else "foto", "archivo": lugar,
+                 "prompt_ia": ("A serious, worried Mexican man in his 30s looking straight at the camera, waist-up, standing in "
+                               f"the right third of the frame in front of a closed-down, abandoned store at dusk (the kind of "
+                               f"place where {tema['marca']} used to be), empty parking lot, faded signage without letters, "
+                               "moody cinematic light"),
+                 "lineas": [{"texto": ideas_a[0], "color": "blanco"}] + ([{"texto": ideas_a[1], "color": "amarillo"}] if len(ideas_a) > 1 else []),
+                 "evidencia": evid, "sello": "QUEBRÓ"},
+           "b": {"izq_archivo": evid, "izq_texto": ideas_b[0], "izq_etiqueta": ideas_b[2],
+                 "der_archivo": lugar, "der_texto": ideas_b[1], "der_etiqueta": ideas_b[3]}}
     validas = {m["archivo"] for m in fotos}
     a = cfg["a"]
     if a.get("evidencia") not in validas:
@@ -1242,15 +1294,12 @@ def _arreglar_dudosas(g: dict, inv: dict, dudosas: list[dict]) -> int:
     """Las frases con cifras que no salen de su fuente se reescriben sin esas cifras (una sola llamada, sin Ramos)."""
     if not dudosas:
         return 0
-    if _demo():
-        arreglos = {k: "Y la historia no termina ahí." for k in range(len(dudosas))}
-    else:
-        lista = "\n".join(f"{k}. «{d['frase']}» — quita o cambia: {', '.join(d['cifras'])}" for k, d in enumerate(dudosas))
-        r = claude.json_estructurado(
-            "Eres Vera. Reescribe cada frase de narración QUITANDO las cifras que no tienen fuente (o cámbialas por una "
-            "expresión sin número: «miles», «casi la mitad»…). Que siga sonando natural. No agregues datos nuevos.",
-            lista, ESQ_ARREGLO, tarea=TAREA, que="arreglar cifras sin fuente")
-        arreglos = {x["n"]: x["texto"].strip() for x in r["frases"]}
+    # sin gastar Claude: se quita la oración con la cifra sin fuente (si era la única, queda una transición)
+    arreglos = {}
+    for k, d in enumerate(dudosas):
+        oraciones = [o for o in re.split(r"(?<=[.!?…])\s+", d["frase"]) if o.strip()]
+        quedan = [o for o in oraciones if not (ex.numeros(o) & set(d["cifras"]))]
+        arreglos[k] = " ".join(quedan).strip() if quedan else "Y la historia no termina ahí."
     hechos = 0
     for k, d in enumerate(dudosas):
         nuevo = arreglos.get(k, "")
@@ -1276,7 +1325,18 @@ def _producir(tema_id: str) -> None:
     eid, mesa = None, None
     try:
         _paso(None, "investigacion", "ex_guion", f"Investigando {tema['marca']}: buscando y leyendo fuentes… 🔎", tarea)
-        inv = investigar(tema)
+        guardada = ex.CARPETA / "investigaciones" / f"{_slug(tema_id, 60)}.json"
+        inv = None
+        if guardada.exists() and time.time() - guardada.stat().st_mtime < 14 * 86400:
+            try:  # ya se había investigado (p. ej. se acabó el plan en el guion): no se gasta otra vez
+                inv = json.loads(guardada.read_text(encoding="utf-8"))
+                _paso(None, "investigacion", "ex_guion", f"Retomo la investigación de {tema['marca']} que ya tenía ♻️", tarea)
+            except ValueError:
+                inv = None
+        if not inv:
+            inv = investigar(tema)
+            guardada.parent.mkdir(parents=True, exist_ok=True)
+            _escribir(guardada, inv)
         siguiente = next((x["marca"] for x in temas() if x["estado"] == "pendiente" and x["id"] != tema_id), "otra marca")
         _paso(None, "guion", "ex_guion", f"Escribiendo el guion de {tema['marca']} ({len(inv['hechos'])} datos con fuente) ✍️", tarea)
         g = escribir_guion(tema, inv, numero, siguiente)
@@ -1441,23 +1501,15 @@ def _guion_final(eid: str) -> str:
     return _aplicar_cambios(texto, corregida.get("cambios") or [])[0]
 
 
-ESQ_FRASE = {"type": "object", "additionalProperties": False, "required": ["frase"],
-             "properties": {"frase": {"type": "string"}}}
 
 
 def _reescribir_sin_dato(texto: str, c: dict) -> str:
-    """Una frase que no cita el dato que no se pudo confirmar, para que la narración siga fluyendo (sin cifras nuevas)."""
+    """Una frase sin el dato que no se pudo confirmar. Sin gastar plan: quita la oración que lo cita y, si no queda
+    nada, deja una transición corta para que la narración siga fluyendo (nunca agrega cifras nuevas)."""
     linea = next((ln[2:] for ln in texto.splitlines() if ln.startswith("> ") and c["antes"] in ln), c["antes"])
-    if _demo():
-        return "Y eso no fue todo."
-    r = claude.json_estructurado(
-        "Eres Vera, guionista. Reescribe una frase de narración QUITANDO el dato que no se pudo confirmar. Que siga "
-        "sonando natural y conecte con lo que sigue. NO agregues cifras, fechas, nombres ni hechos nuevos; si no queda "
-        "nada que decir, escribe una transición corta («Y la historia no termina ahí.»).",
-        f"FRASE COMPLETA: {linea}\nDATO NO CONFIRMADO (quítalo): {c['antes']}", ESQ_FRASE, tarea=TAREA,
-        que="reescribir frase sin dato dudoso")
-    nueva = r["frase"].strip()
-    return nueva if nueva and not (ex.numeros(nueva) - ex.numeros(linea)) else ""
+    oraciones = [o for o in re.split(r"(?<=[.!?…])\s+", linea.strip()) if o and c["antes"] not in o]
+    nueva = " ".join(oraciones).strip() or "Y la historia no termina ahí."
+    return nueva if not (ex.numeros(nueva) - ex.numeros(linea)) else "Y la historia no termina ahí."
 
 
 def _auto_aprobar(eid: str, t: dict) -> bool:
@@ -1860,7 +1912,7 @@ def _caso_sin_terminar() -> str | None:
     """El caso de la fábrica que todavía no queda subido/programado (los que fallaron 3 veces no detienen todo)."""
     for x in ex.lista():
         f = ex.trabajo(x["id"]).get("fabrica")
-        if f and f.get("subida") != "listo" and not (f.get("error") and (f.get("reintentos") or 0) >= 3):
+        if f and f.get("subida") != "listo" and not (f.get("error") and (f.get("reintentos") or 0) >= 2):
             return x["id"]
     return None
 
@@ -1897,7 +1949,8 @@ def _curar() -> None:
         if x["id"] not in ex._corriendo and v in ("sin_empezar", "interrumpida", "error") and "storyboard" in (f.get("hechos_pasos") or []):
             if v != "error" or time.time() - (t["verificacion"].get("inicio") or f.get("error_t") or 0) > 1200:
                 ex.verificar(x["id"])  # Ramos vuelve a verificar lo que se cortó
-        if f.get("error") and time.time() - (f.get("error_t") or 0) > 1200 and (f.get("reintentos") or 0) < 3:
+        if (f.get("error") and time.time() - (f.get("error_t") or 0) > 1200 and (f.get("reintentos") or 0) < 2
+                and _plan_disponible()):  # con el plan en pausa no se quema un reintento: espera a que se restablezca
             reintentar(x["id"], auto=True)
         hilo = _hilo.get(f"convertir-{x['id']}")
         if (f.get("paso") in ("material", "storyboard") and not f.get("error") and not _produciendo()

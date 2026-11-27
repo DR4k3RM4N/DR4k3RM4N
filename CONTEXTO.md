@@ -689,3 +689,12 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   plantilla de la serie) + stock (Pexels/Pixabay API, Wikimedia; Mixkit sin API) + miniaturas · 3) voz por escena +
   edición en las compus + subtítulos (Whisper) + Shorts · 4) subida a YouTube SIEMPRE privada (subtítulos por API
   piden el permiso `youtube.force-ssl`: hay que reconectar el canal una vez) y preguntar a Miguel a qué canal sube.
+
+### 3n · Ahorro máximo de plan (27 nov)
+- Por video solo **2 llamadas a Claude**: investigación (Sonnet, esfuerzo bajo; solo párrafos útiles, máx. 8 fuentes)
+  y guion (Opus, esfuerzo medio; reglas compactas del canal, ejemplo corto, 10–13 escenas, sin campos visual/audio).
+- **Sin Claude** (código): material (búsquedas armadas solas + selección automática), storyboard (`_storyboard_auto`,
+  siempre cuadra con el motor), miniaturas (líneas del guion + Cloudflare/Gemini o foto), arreglo de cifras sin fuente
+  y frases dudosas (se quita la oración; si no queda nada, «Y la historia no termina ahí.»). Sin Ramos en la fábrica.
+- La investigación se guarda en `investigaciones/<tema>.json` (14 días): si el plan se acaba en el guion, no se repite.
+- Con el plan en pausa no se queman reintentos automáticos (máx. 2). Chat y verificación de casos importados: Sonnet.
