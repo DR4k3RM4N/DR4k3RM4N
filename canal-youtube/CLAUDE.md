@@ -60,7 +60,9 @@ Detalles técnicos del motor en `motor/LEEME.md`. Usa siempre `python -E -P`, no
 
 ## Reglas que no se rompen
 
-- **Copyright:** solo material libre (Wikimedia Commons, Mixkit con "Free License", Pixabay si algún día hay clave). **No existe la regla de "unos segundos no infringen"**: no metas clips de YouTube, noticieros ni comerciales. **No descargues imágenes de sitios cualquiera de Google.** Si Miguel quiere usar sus propias imágenes, que las ponga él en `material/` y se usan.
+- **Material (decisión de Miguel, nov 2026):** fotos de **cualquier sitio** (Google Imágenes, noticias, la marca,
+  Wikimedia), siempre con crédito de la fuente en pantalla y sin fotos con marca de agua de bancos de imágenes. Videos:
+  solo **cortos** de stock (Pexels/Mixkit/Wikimedia); nada de videos largos, clips de YouTube, noticieros ni comerciales.
 - **Datos:** ninguna cifra sin fuente. Cada episodio tiene su `04-fuentes.md` con la lista de "datos por verificar".
 - **Personas:** no uses fotos de personas privadas (por ejemplo, credenciales con nombre). Si un video de stock con una persona podría confundirse con el protagonista real, márcalo como "(ilustrativo)" o usa otra imagen.
 - **Opinión, no acusación:** el veredicto es opinión; si hubo demanda, se dice también lo que respondió el acusado.

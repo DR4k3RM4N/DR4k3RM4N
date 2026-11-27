@@ -659,6 +659,24 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   `miniatura_video` (fotos libres de Commons de la marca → Mina diseña → MINIATURA_PY con el motor en el servidor →
   `youtube.poner_miniatura`; pide teléfono verificado en el canal). Acciones de chat `editar_video` y `miniatura_video`
   (en el de la agencia y en el de cada caso).
+- **Ajustes de nov 27** (Miguel: «termina un video completo antes de otro, que se vea el avance, varios a la vez,
+  material de todos lados, miniaturas que jalen, que se gaste menos plan»):
+  · Un caso a la vez: `_caso_sin_terminar()` bloquea un tema nuevo hasta que el caso queda subido/programado (los que
+    fallan 3 veces no bloquean). Si algo falla a medias, el caso se queda y se retoma (`_retomar` → `_convertir` con
+    `guion.json`), no se empieza otro número.
+  · Sin Ramos en los casos de la fábrica (Vera ya comprobó cada cita): la verificación queda «aprobada» y las frases
+    con cifras sin fuente se reescriben en una llamada (`_arreglar_dudosas`). Opus solo para investigar y guion
+    (tarea `fabrica_guion`); lo demás Sonnet (`fabrica_exp`).
+  · En paralelo: páginas de la investigación (8 hilos), búsquedas e imágenes (6 hilos), Nico (storyboard) y Mina
+    (miniaturas) al mismo tiempo.
+  · Material de todos lados: Google Imágenes por Serper (`_imagenes_web`, sin bancos con marca de agua) + Commons +
+    Pexels; las FOTOS se bajan y validan en el servidor (`_bajar_imagen`, JPG ≤1920) y viajan dentro del ZIP
+    (`material/fotos/*`, con `creditos.json` por fuente); los videos los baja la compu. Storyboard con encabezado fijo
+    `ENCABEZADO_SB` (P/M/F/V/cr con el crédito real «Foto: dominio»); Nico solo escribe `EP = dict(...)`.
+  · Miniatura A nueva: escena realista con persona genérica (Gemini) o foto, 2-4 palabras arriba a la izquierda,
+    polaroid «EVIDENCIA» con el logo/producto real, sello opcional, nada abajo a la derecha.
+  · Avance en vivo: tarjeta «🎬 Ahorita» en la Bandeja (pasos ✅/⏳, barra %, `t_mov` = último movimiento; avance del
+    render de la compu o del servidor).
 - **Miniaturas (Mina, `ex_miniaturas`)**: `disenar_miniaturas` con `REGLAS_MINIATURA` (1 sujeto, 1-3 palabras
   gigantes con número/contraste, foto de fachada/producto en B/N, cinta/sello, nada abajo a la derecha, B = pantalla
   dividida) → `miniatura.json`; si no hay foto buena, `_dibujar_realista` con Gemini (~4 ¢, solo si hay

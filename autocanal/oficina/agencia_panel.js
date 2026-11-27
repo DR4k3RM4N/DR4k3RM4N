@@ -49,7 +49,7 @@
     $("#exp-cuenta").textContent = total;
     const ag = (agendaDatos?.canales || [])[0];
     if (document.activeElement?.closest?.("#exp-bandeja") || [...document.querySelectorAll("#exp-bandeja video")].some((v) => !v.paused)) return;
-    $("#exp-bandeja").innerHTML = tarjetaFabrica() + revisar.map(tarjetaVideo).join("") + `
+    $("#exp-bandeja").innerHTML = tarjetaEnMarcha() + tarjetaFabrica() + revisar.map(tarjetaVideo).join("") + `
       <section class="tarjeta">
         <h4>📥 Lo que te toca</h4>
         ${pendientes.length ? pendientes.map((x) => `<article class="exp-pendiente">
@@ -106,6 +106,37 @@
         ${!fabrica.azure_ok ? `<p class="error">🎙️ Falta la clave de Azure en el servidor (AZURE_SPEECH_KEY en el .env): sin ella no hay voz.</p>` : ""}
       </details>
       ${!fabrica.pexels ? `<p class="pista">🎞️ Sin clave de Pexels en el servidor: solo fotos de Wikimedia (opcional).</p>` : ""}
+    </section>`;
+  }
+  // 🎬 el video que va ahorita: paso por paso, con su avance y cuándo se movió por última vez
+  const ICONO_PASO = { listo: "✅", trabajando: "⏳", espera_ok: "👀", error: "⚠️", pendiente: "○" };
+  function haceCuanto(t) {
+    if (!t) return "";
+    const s = Math.max(0, Math.round((fabrica.ahora || Date.now() / 1000) - t));
+    return s < 60 ? `hace ${s} s` : s < 3600 ? `hace ${Math.round(s / 60)} min` : `hace ${Math.round(s / 3600)} h`;
+  }
+  function tarjetaEnMarcha() {
+    const c = (fabrica?.casos || []).find((x) => x.id === fabrica.en_marcha);
+    const tema = !c && fabrica?.estado?.en_curso ? fabrica.temas.find((x) => x.id === fabrica.estado.en_curso) : null;
+    if (!c && !tema) return "";
+    if (!c) {
+      const quien = (resumen?.equipo || []).find((a) => a.id === "ex_guion");
+      return `<section class="tarjeta fab-marcha"><h4>🎬 Ahorita: ¿Quién MATÓ a ${esc(tema.marca)}?</h4>
+        <p>⏳ ${esc(quien?.dice || "Vera está investigando y escribiendo el guion…")}</p>
+        <div class="fab-barra"><b style="width:8%"></b></div><p class="pista">Primero se termina este video (hasta el calendario) y luego sigue otro.</p></section>`;
+    }
+    const pasos = c.pasos || [];
+    const hechos = pasos.filter((p) => p.estado === "listo").length;
+    const enRender = c.paso === "render" && c.render_avance != null;
+    const pct = Math.round(((hechos + (enRender ? c.render_avance : 0)) / Math.max(1, pasos.length)) * 100);
+    const actual = pasos.find((p) => p.clave === c.paso);
+    const quieto = c.t_mov && (fabrica.ahora - c.t_mov) > 900 && !c.error;
+    return `<section class="tarjeta fab-marcha"><h4>🎬 Ahorita: #${esc(c.numero)} ¿Quién MATÓ a ${esc(c.marca)}?</h4>
+      <ol class="fab-pasos">${pasos.map((p) => `<li class="fab-p-${esc(p.estado)} ${p.clave === c.paso ? "actual" : ""}">${ICONO_PASO[p.estado] || "○"} ${esc(p.etiqueta)}</li>`).join("")}</ol>
+      <div class="fab-barra"><b style="width:${pct}%"></b></div>
+      <p>${c.error ? `⚠️ <span class="error">${esc(c.error)}</span> <button class="btn btn-mini" data-fab-reintentar="${esc(c.id)}">🔁 Reintentar</button>`
+        : `⏳ <b>${esc(actual?.etiqueta || c.paso || "")}</b>${c.render_paso ? ` — ${esc(c.render_paso)}` : ""}${enRender ? ` (${Math.round(c.render_avance * 100)} %)` : ""}`}</p>
+      <p class="pista">Último movimiento: ${esc(haceCuanto(c.t_mov))} · ${pct} % del video${quieto ? " · ⚠️ lleva rato sin moverse: dale ▶ Continuar ahora" : ""}</p>
     </section>`;
   }
   function tarjetaVideo(c) {

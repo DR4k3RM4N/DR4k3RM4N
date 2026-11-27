@@ -994,6 +994,10 @@ def _render_expediente(of, t, temporal, avance, nombre_dir, py) -> None:
     ep.mkdir(parents=True, exist_ok=True)
     with _zip.ZipFile(paquete) as z:
         for n in z.namelist():
+            if _re.fullmatch(r"material/fotos/[a-z0-9._-]+\.(jpg|json)", n):  # fotos ya revisadas en el servidor
+                (ep / "material" / "fotos").mkdir(parents=True, exist_ok=True)
+                (ep / n).write_bytes(z.read(n))
+                continue
             if "/" in n or "\\" in n or n.startswith(".") or not n.endswith((".md", ".py", ".json", ".jpg")):
                 continue
             (ep / n).write_bytes(z.read(n))

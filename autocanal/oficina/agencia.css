@@ -94,3 +94,11 @@ body.agencia {
 .fab-compus { margin: 8px 0; }
 .fab-compu { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; flex-wrap: wrap; }
 .fab-compu small { display: block; }
+
+.fab-marcha { border-left: 4px solid var(--exp-amarillo); }
+.fab-pasos { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; }
+.fab-pasos li { opacity: .55; }
+.fab-pasos li.fab-p-listo { opacity: .9; }
+.fab-pasos li.actual { opacity: 1; color: var(--exp-amarillo); font-weight: 600; }
+.fab-barra { height: 10px; background: #2a2a2e; border-radius: 6px; overflow: hidden; margin: 6px 0; }
+.fab-barra b { display: block; height: 100%; background: linear-gradient(90deg, var(--exp-verde), var(--exp-amarillo)); transition: width .6s ease; }

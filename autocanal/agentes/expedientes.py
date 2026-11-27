@@ -41,7 +41,7 @@ from .expedientes_previos import ORIGEN as ORIGEN_PREVIO, PREVIOS
 
 CARPETA = Path(os.environ.get("AUTOCANAL_EXPEDIENTES") or config.BASE / "expedientes")
 AJUSTES = CARPETA / "ajustes.json"
-TAREAS_IA = ("verificar_exp", "chat_exp", "fabrica_exp")
+TAREAS_IA = ("verificar_exp", "chat_exp", "fabrica_exp", "fabrica_guion")
 
 EQUIPO = [  # id, nombre, rol, color, peinado, qué hace (los retratos de la pestaña Equipo)
     ("ex_guion", "Vera", "Investigación y guion", "#38bdf8", "largo",

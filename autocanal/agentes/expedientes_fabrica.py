@@ -44,12 +44,13 @@ MOTOR = CANAL_DIR / "motor"
 TEMAS = ex.CARPETA / "temas.json"
 ESTADO = ex.CARPETA / "fabrica.json"
 SALA_URL = config.env("SALA_URL", "http://127.0.0.1:8767").rstrip("/")
-TAREA = "fabrica_exp"
+TAREA = "fabrica_exp"          # lo mecánico (Sonnet por tu plan)
+TAREA_GUION = "fabrica_guion"  # investigar y escribir (Opus por tu plan)
 _candado = threading.RLock()
 _hilo: dict[str, threading.Thread] = {}
 
 PASOS_FAB = [("investigacion", "Investigación", "ex_guion"), ("guion", "Guion", "ex_guion"),
-             ("material", "Material libre", "ex_archivista"), ("storyboard", "Storyboard", "ex_graficas"),
+             ("material", "Material", "ex_archivista"), ("storyboard", "Storyboard", "ex_graficas"),
              ("verificacion", "Verificación", "ex_ramos"), ("render", "Video (tu compu)", "ex_editor"),
              ("revision", "Tu revisión", "jefe"), ("programado", "Programado (privado)", "ex_publicacion")]
 
@@ -229,6 +230,7 @@ def _poner(eid: str, **campos) -> None:
     with ex._candado:
         t = ex.trabajo(eid)
         f = t.setdefault("fabrica", {})
+        campos.setdefault("t_mov", time.time())  # último movimiento (para que veas que sí está trabajando)
         if campos.get("error") and not f.get("error"):
             campos.setdefault("error_t", time.time())  # para reintentarlo solo al rato
         f.update(campos)
@@ -309,22 +311,30 @@ def investigar(tema: dict) -> dict:
         if not buscar_web.disponible():
             raise RuntimeError("Falta la clave de Serper (o Tavily) en el .env del servidor para investigar.")
         resultados, _ = buscar_web.buscar(consultas, por_consulta=5)
-        vistos, fuentes = set(), []
+        from concurrent.futures import ThreadPoolExecutor
+        malos = ("youtube.", "tiktok.", "facebook.", "instagram.", "x.com", "twitter.")
+        urls, dominios = [], {}
         for x in resultados:
             url = x.get("url") or ""
             dominio = re.sub(r"^www\.", "", url.split("/")[2]) if url.count("/") >= 2 else url
-            if not url or dominio in vistos and len(fuentes) > 6 or any(b in dominio for b in ("youtube.", "tiktok.", "facebook.", "instagram.", "x.com", "twitter.")):
+            if not url or any(b in dominio for b in malos) or dominios.get(dominio, 0) >= 2:
                 continue
+            dominios[dominio] = dominios.get(dominio, 0) + 1
+            urls.append((url, x))
+        urls = urls[:20]
+
+        def leer(par):
+            url, x = par
             try:
                 texto, titulo = _bajar_pagina(url)
             except Exception:  # noqa: BLE001 — una página que no abre no detiene la investigación
-                continue
+                return None
             if len(texto) < 800:
-                continue
-            vistos.add(dominio)
-            fuentes.append({"url": url, "titulo": titulo or x.get("titulo") or x.get("title") or url, "texto": texto[:9000]})
-            if len(fuentes) >= 12:
-                break
+                return None
+            return {"url": url, "titulo": titulo or x.get("titulo") or x.get("title") or url, "texto": texto[:9000]}
+
+        with ThreadPoolExecutor(max_workers=8) as pool:  # varias páginas a la vez
+            fuentes = [f for f in pool.map(leer, urls) if f][:12]
         if len(fuentes) < 3:
             raise RuntimeError(f"No encontré suficientes fuentes buenas sobre {marca} ({len(fuentes)}).")
     bloque = "\n\n".join(f"[F{i}] {f['titulo']} — {f['url']}\n{f['texto']}" for i, f in enumerate(fuentes, 1))
@@ -343,7 +353,7 @@ def investigar(tema: dict) -> dict:
             "(mismo idioma, mismas palabras) y su fuente [F#]. Prioriza: fechas, cifras (ventas, tiendas, deuda, "
             "empleados), decisiones clave, personas, anécdotas reales y TODO lo de México. Nada de suposiciones.",
             f"MARCA: {marca}\nGANCHO PROPUESTO: {gancho}\n\nFUENTES:\n{bloque}\n\nSaca 30 a 60 hechos útiles para un "
-            "video de 15-20 minutos.", ESQ_HECHOS, tarea=TAREA, que=f"investigar {marca}")
+            "video de 15-20 minutos.", ESQ_HECHOS, tarea=TAREA_GUION, que=f"investigar {marca}")
     # nada inventado: la cita tiene que estar en la página
     buenos, malos = [], []
     for h in r["hechos"]:
@@ -438,7 +448,7 @@ def escribir_guion(tema: dict, inv: dict, numero: str, siguiente: str) -> dict:
         "opinión. No acuses a nadie de delitos. Frases cortas, tono de caso policiaco, palabras de México. La primera "
         "escena es el gancho (30-60 s) y la última el adelanto del próximo expediente. El título del video es fijo: "
         f"«¿Quién MATÓ a {tema['marca']}?».",
-        pedido, ESQ_GUION, tarea=TAREA, que=f"guion {tema['marca']}")
+        pedido, ESQ_GUION, tarea=TAREA_GUION, que=f"guion {tema['marca']}")
 
 
 def _revisar_cifras(g: dict, inv: dict) -> list[dict]:
@@ -538,61 +548,122 @@ def _fuentes_libres():
     return fuentes_libres
 
 
-def buscar_material(tema: dict, g: dict) -> dict:
+MARCA_DE_AGUA = ("shutterstock", "gettyimages", "istockphoto", "alamy", "dreamstime", "depositphotos", "123rf",
+                 "stock.adobe", "agefotostock", "bigstock", "vectorstock", "pond5", "freepik.com/premium", "pinterest", "lookaside")
+
+
+def _imagenes_web(q: str, n: int = 10) -> list[dict]:
+    """Imágenes de cualquier sitio (Google Imágenes por Serper), sin las de bancos con marca de agua."""
+    import requests
+    if not buscar_web.SERPER:
+        return []
+    r = requests.post("https://google.serper.dev/images", timeout=30,
+                      headers={"X-API-KEY": buscar_web.SERPER, "Content-Type": "application/json"},
+                      json={"q": q, "gl": "mx", "hl": "es", "num": n})
+    if r.status_code != 200:
+        return []
+    salida = []
+    for x in r.json().get("images", [])[:n]:
+        url = x.get("imageUrl") or ""
+        dominio = (x.get("domain") or x.get("source") or url.split("/")[2] if url.count("/") >= 2 else "").lower()
+        if not url.startswith("http") or any(m in url.lower() or m in dominio for m in MARCA_DE_AGUA):
+            continue
+        if (x.get("imageWidth") or 0) and int(x.get("imageWidth") or 0) < 700:
+            continue
+        salida.append({"titulo": (x.get("title") or "")[:120], "url": url, "pagina": x.get("link") or "",
+                       "fuente": re.sub(r"^www\.", "", dominio)[:60] or "web", "licencia": "",
+                       "autor": "", "ancho": x.get("imageWidth"), "alto": x.get("imageHeight"), "mime": "image/web"})
+    return salida
+
+
+def _bajar_imagen(url: str, destino: Path) -> bool:
+    """La baja aquí en el servidor y la revisa (que de verdad sea imagen y no esté rota); la guarda en JPG."""
+    import requests
+    from PIL import Image
+    try:
+        r = requests.get(url, timeout=25, stream=True, headers={"User-Agent": "Mozilla/5.0 (Agencia de Expedientes)",
+                                                                "Referer": url})
+        if r.status_code != 200:
+            return False
+        datos = r.raw.read(12_000_000, decode_content=True)
+        im = Image.open(io.BytesIO(datos))
+        im.load()
+        im = im.convert("RGB")
+        if im.width < 600 or im.height < 340:
+            return False
+        if im.width > 1920:
+            im = im.resize((1920, int(im.height * 1920 / im.width)))
+        im.save(destino, quality=90)
+        return True
+    except Exception:  # noqa: BLE001 — una imagen que no baja simplemente no se usa
+        return False
+
+
+def buscar_material(tema: dict, g: dict, destino: Path | None = None) -> dict:
+    """🗄️ Inés: fotos de TODOS lados (Google Imágenes + Wikimedia) y videos cortos de stock. Las fotos se bajan y se
+    revisan aquí (van dentro del paquete a tu compu); los videos los baja la compu."""
+    from concurrent.futures import ThreadPoolExecutor
     if _demo():
         return {"fotos": [], "videos": [], "lista": []}
     escenas = "\n".join(f"{n}. {e['titulo']} — visual: {'; '.join(e['visual'])[:300]}" for n, e in enumerate(g["escenas"], 1))
     b = claude.json_estructurado(
-        "Eres Inés, archivista. Propones búsquedas para conseguir material con licencia libre por escena.",
-        f"MARCA: {tema['marca']}\nESCENAS:\n{escenas}\n\nUna entrada por escena, en el mismo orden.", ESQ_BUSQUEDAS,
+        "Eres Inés, archivista. Propones búsquedas para conseguir fotos reales (de cualquier sitio: noticias, la marca, "
+        "Wikipedia) y videos cortos de ambiente por escena.",
+        f"MARCA: {tema['marca']}\nESCENAS:\n{escenas}\n\nUna entrada por escena, en el mismo orden. En «commons» pon "
+        "búsquedas de FOTOS (en español o inglés: la tienda, el logo, el producto, las personas públicas del caso, "
+        "titulares); en «videos», búsquedas cortas en inglés de video de ambiente.", ESQ_BUSQUEDAS,
         tarea=TAREA, que=f"búsquedas de material {tema['marca']}")
     fl = _fuentes_libres()
-    candidatos, vistos = [], set()
-    hay_pexels = (CANAL_DIR / ".pexels_key").exists()
+    trabajos = []
     for n, e in enumerate(b["escenas"][:len(g["escenas"])], 1):
         for q in e["commons"][:3]:
-            try:
-                res = fl.commons(q, 10)
-            except Exception:  # noqa: BLE001
-                continue
-            for x in res:
-                if x["titulo"] in vistos or not _licencia_libre(x.get("licencia")):
-                    continue
-                if not (x.get("mime") or "").startswith(("image/jpeg", "image/png", "video/webm")):
-                    continue
-                if (x.get("ancho") or 0) < 900:
-                    continue
-                vistos.add(x["titulo"])
-                candidatos.append({**x, "id": f"C{len(candidatos) + 1}", "escena": n})
-        if hay_pexels:
+            trabajos.append(("web", q, n))
+        trabajos.append(("commons", e["commons"][0] if e["commons"] else tema["marca"], n))
+        if (CANAL_DIR / ".pexels_key").exists():
             for q in e["videos"][:2]:
-                try:
-                    res = fl.pexels_video(q, 4)
-                except Exception:  # noqa: BLE001
-                    continue
-                for x in res:
-                    if x["titulo"] in vistos:
-                        continue
-                    vistos.add(x["titulo"])
-                    candidatos.append({**x, "id": f"P{len(candidatos) + 1}", "escena": n})
+                trabajos.append(("pexels", q, n))
+
+    def correr(tr):
+        tipo, q, n = tr
+        try:
+            res = _imagenes_web(q, 8) if tipo == "web" else fl.commons(q, 8) if tipo == "commons" else fl.pexels_video(q, 3)
+        except Exception:  # noqa: BLE001
+            res = []
+        return [(x, n) for x in res]
+
+    with ThreadPoolExecutor(max_workers=6) as pool:  # varias búsquedas a la vez
+        resultados = [y for lista in pool.map(correr, trabajos) for y in lista]
+    candidatos, vistos = [], set()
+    for x, n in resultados:
+        clave = x.get("url") or x.get("titulo")
+        if clave in vistos:
+            continue
+        if x["fuente"] == "Wikimedia Commons" and not (x.get("mime") or "").startswith(("image/jpeg", "image/png", "video/webm")):
+            continue
+        vistos.add(clave)
+        pref = "P" if x["fuente"] == "Pexels" else "C" if x["fuente"] == "Wikimedia Commons" else "W"
+        candidatos.append({**x, "id": f"{pref}{len(candidatos) + 1}", "escena": n})
     if not candidatos:
         return {"fotos": [], "videos": [], "lista": []}
     lista = "\n".join(f"{c['id']} (escena {c['escena']}) {c['fuente']} · {c['titulo'][:90]} · {c.get('ancho')}x{c.get('alto')}"
-                      for c in candidatos[:220])
+                      for c in candidatos[:260])
     el = claude.json_estructurado(
-        "Eres Inés, archivista. Escoge el mejor material para cada escena (fotos reales de la marca y su época, "
-        "tiendas, logos, personas públicas relevantes; videos de ambiente). Nada de personas privadas. Entre 25 y 45 "
-        "archivos en total, que cubran todas las escenas.",
+        "Eres Inés, archivista. Escoge el mejor material para cada escena: fotos REALES de la marca y su época (tiendas, "
+        "logos, productos, anuncios, titulares, personas públicas del caso) y algunos videos de ambiente. Nada de personas "
+        "privadas ni fotos con marca de agua. Entre 30 y 50 archivos que cubran todas las escenas; prefiere imágenes "
+        "grandes y claras.",
         f"MARCA: {tema['marca']}\nCANDIDATOS:\n{lista}", ESQ_ELEGIR, tarea=TAREA, que=f"escoger material {tema['marca']}")
     por_id = {c["id"]: c for c in candidatos}
-    fotos, videos, elegidos, usados = [], [], [], set()
-    thumbs = {}
-    titulos = [por_id[x["id"]]["titulo"] for x in el["elegidos"] if x["id"] in por_id and por_id[x["id"]]["fuente"] == "Wikimedia Commons"
-               and not por_id[x["id"]]["mime"].startswith("video")]
+    fotos_dir = (destino / "material" / "fotos") if destino else None
+    if fotos_dir:
+        fotos_dir.mkdir(parents=True, exist_ok=True)
+    commons_fotos = [por_id[x["id"]]["titulo"] for x in el["elegidos"] if x["id"] in por_id
+                     and por_id[x["id"]]["fuente"] == "Wikimedia Commons" and not por_id[x["id"]]["mime"].startswith("video")]
     try:
-        thumbs = fl.commons_thumbs(titulos) if titulos else {}
+        thumbs = fl.commons_thumbs(commons_fotos) if commons_fotos else {}
     except Exception:  # noqa: BLE001
         thumbs = {}
+    pedidos, videos, usados = [], [], set()
     for x in el["elegidos"]:
         c = por_id.get(x["id"])
         if not c:
@@ -602,24 +673,40 @@ def buscar_material(tema: dict, g: dict) -> dict:
             nombre += "-b"
         usados.add(nombre)
         es_video = c["fuente"] == "Pexels" or (c.get("mime") or "").startswith("video")
-        url = c["url"]
-        if c["fuente"] == "Wikimedia Commons":
-            if es_video:
+        if es_video:
+            url = c["url"]
+            if c["fuente"] == "Wikimedia Commons":
                 try:
                     url = fl.commons_video_transcode(c["titulo"]) or ""
                 except Exception:  # noqa: BLE001
                     url = ""
-            else:
-                url = thumbs.get(c["titulo"]) or c["url"]
-        if not url:
+            if url:
+                ext = ".mp4" if c["fuente"] == "Pexels" else ".webm"
+                videos.append(({"nombre": nombre + ext, "url": url, "fuente": c["fuente"], "licencia": c.get("licencia"),
+                                "autor": c.get("autor"), "pagina": c.get("pagina"), "titulo": c.get("titulo")}, x))
             continue
-        ext = ".mp4" if c["fuente"] == "Pexels" else Path(url.split("?")[0]).suffix.lower() or ".jpg"
-        item = {"nombre": nombre + ext, "url": url, "fuente": c["fuente"], "licencia": c.get("licencia"),
-                "autor": c.get("autor"), "pagina": c.get("pagina"), "titulo": c.get("titulo")}
-        (videos if es_video else fotos).append(item)
-        elegidos.append({"archivo": f"material/{'videos' if es_video else 'fotos'}/{nombre + ext}", "describe": x["describe"],
-                         "escenas": x["escenas"], "video": es_video, "fuente": c["fuente"]})
-    return {"fotos": fotos, "videos": videos, "lista": elegidos}
+        url = thumbs.get(c["titulo"]) if c["fuente"] == "Wikimedia Commons" else c["url"]
+        pedidos.append((nombre + ".jpg", url or c["url"], c, x))
+    fotos, lista_final, creditos = [], [], {}
+
+    def bajar(p):
+        nombre, url, c, x = p
+        return (p, bool(fotos_dir) and _bajar_imagen(url, fotos_dir / nombre))
+
+    with ThreadPoolExecutor(max_workers=6) as pool:  # se bajan varias a la vez
+        for (nombre, url, c, x), ok in pool.map(bajar, pedidos):
+            if not ok:
+                continue
+            creditos[nombre] = {"fuente": c["fuente"], "licencia": c.get("licencia") or "", "autor": c.get("autor") or "",
+                                "pagina": c.get("pagina") or url, "titulo": c.get("titulo") or ""}
+            lista_final.append({"archivo": f"material/fotos/{nombre}", "describe": x["describe"], "escenas": x["escenas"],
+                                "video": False, "fuente": c["fuente"]})
+    if fotos_dir:
+        _escribir(fotos_dir / "creditos.json", creditos)
+    for item, x in videos:
+        lista_final.append({"archivo": f"material/videos/{item['nombre']}", "describe": x["describe"], "escenas": x["escenas"],
+                            "video": True, "fuente": item["fuente"]})
+    return {"fotos": fotos, "videos": [v for v, _ in videos], "lista": lista_final}
 
 
 # ---------------------------------------------------------------- 4. storyboard
@@ -710,12 +797,64 @@ def _ejemplo_storyboard() -> str:
     return texto[:corte if corte > 0 else 12000][:14000]
 
 
+ENCABEZADO_SB = '''"""Storyboard hecho por la Agencia de Expedientes (estilo «cine»). Una entrada de cards por frase del guion."""
+import json
+from pathlib import Path
+
+from sb import *  # noqa: F401,F403
+
+AQUI = Path(__file__).parent
+_CRED = {}
+for _sub in ("fotos", "videos"):
+    _c = AQUI / "material" / _sub / "creditos.json"
+    if _c.exists():
+        _CRED.update(json.loads(_c.read_text(encoding="utf-8")))
+
+
+def F(nombre):
+    return f"material/fotos/{nombre}"
+
+
+def V(nombre):
+    """Video por nombre de archivo (con su extensión: .mp4 o .webm)."""
+    return f"material/videos/{nombre}"
+
+
+def cr(path, extra=""):
+    """Crédito corto para la esquina: de dónde salió la foto o el video."""
+    c = _CRED.get(Path(path).name) or {}
+    fuente, lic = c.get("fuente") or "", c.get("licencia") or ""
+    if fuente == "Wikimedia Commons":
+        lic = "dominio público" if lic.lower() in ("public domain", "no restrictions") else lic
+        partes = [extra, lic, "Wikimedia Commons"]
+    elif fuente in ("Pexels", "Mixkit", "Pixabay"):
+        partes = [extra, f"Video: {fuente}"]
+    else:
+        partes = [extra, f"Foto: {fuente}" if fuente else ""]
+    return " · ".join(p for p in partes if p)[:110]
+
+
+def P(nombre, **k):
+    f = F(nombre)
+    k.setdefault("src", cr(f, k.pop("extra", "")))
+    return PHOTO(f, **k)
+
+
+def M(nombre, **k):
+    f = V(nombre)
+    k.setdefault("src", cr(f, k.pop("extra", "")))
+    return VIDEO(f, **k)
+
+
+'''
+
+
 def _storyboard_demo(tema: dict, numero: str, g: dict) -> str:
     escenas = []
     for e in g["escenas"]:
         cards = ", ".join(f"Q({json.dumps(f['texto'][:60].upper(), ensure_ascii=False)})" for f in e["frases"])
         escenas.append(f"        dict(capitulo={json.dumps(e['capitulo'], ensure_ascii=False)}, cards=[{cards}]),")
-    return ("from sb import *  # noqa: F401,F403\n\nEP = dict(\n"
+    return (ENCABEZADO_SB + "EP = dict(\n"
             f"    label=\"EXPEDIENTE #{numero} · {tema['marca'].upper()}\",\n    nombre=\"Expediente-{numero}-{_slug(tema['marca']).title()}\",\n"
             "    guion=\"01-guion-tecnico.md\",\n    salida=\"render\",\n    estilo=\"cine\",\n    voz_motor=\"azure\",\n"
             "    voz=\"es-MX-JorgeNeural\",\n    voz_velocidad=\"+12%\",\n    musica_vol=0.35,\n    fonetica_azure={},\n"
@@ -733,8 +872,9 @@ def escribir_storyboard(tema: dict, numero: str, g: dict, material: dict, carpet
         or "(no hay material descargable: usa solo tarjetas gráficas Q/TITLE/NUM/BARS/STAMP/TIMELINE/STATS/BOARD/FILE…)"
     api_sb = (MOTOR / "sb.py").read_text(encoding="utf-8")
     pedido = (f"EXPEDIENTE #{numero} · {tema['marca']}\n\nGUION (una entrada de cards por frase, en el mismo orden):\n"
-              + "\n".join(frases) + f"\n\nMATERIAL DISPONIBLE (usa solo estos archivos; F('nombre.jpg') para fotos y "
-              f"V('nombre') para videos SIN extensión .mp4 — si un video es .webm usa la ruta completa con VIDEO):\n{mat}")
+              + "\n".join(frases) + f"\n\nMATERIAL DISPONIBLE (usa solo estos archivos, con el nombre de archivo sin la "
+              f"carpeta; P('nombre.jpg') para fotos y "
+              f"M('nombre.mp4') o M('nombre.webm') para videos, con el nombre tal cual):\n{mat}")
     if _demo():
         codigo = _storyboard_demo(tema, numero, g)
         (carpeta / "storyboard.py").write_text(codigo, encoding="utf-8")
@@ -745,7 +885,9 @@ def escribir_storyboard(tema: dict, numero: str, g: dict, material: dict, carpet
     sistema = ("Eres Nico, el que arma los storyboards del motor de video (estilo «cine»: material real a pantalla "
                "completa casi siempre, gráficas sobre video desenfocado con fondo= por escena, cambio de imagen cada 3-5 s, "
                "créditos chicos). Escribe el archivo storyboard.py COMPLETO como el ejemplo: mismas funciones de ayuda "
-               "(F, V, cr, P, M con créditos de material/fotos|videos/creditos.json), EP con label, nombre "
+               "(YA ESTÁN ESCRITAS, no las repitas: F('archivo.jpg'), V('archivo.mp4' o '.webm'), P('archivo.jpg', ...) "
+               "= foto con su crédito, M('archivo.mp4', ...) = video con su crédito; usa P y M para el material). Escribe "
+               "SOLO desde «EP = dict(» hasta el final: EP con label, nombre "
                f"(«Expediente-{numero}-Marca»), guion='01-guion-tecnico.md', salida='render', estilo='cine', "
                "voz_motor='azure', voz='es-MX-JorgeNeural', voz_velocidad='+12%', musica_vol=0.35, fonetica_azure "
                "(nombres en inglés como se pronuncian en español), end=END(bg=...), y escenas=[dict(capitulo=..., "
@@ -759,6 +901,9 @@ def escribir_storyboard(tema: dict, numero: str, g: dict, material: dict, carpet
         texto = pedido + (f"\n\nTU VERSIÓN ANTERIOR TUVO ESTOS PROBLEMAS, corrígelos:\n{error}" if error else "")
         codigo = claude.json_estructurado(sistema, texto, ESQ_SB, tarea=TAREA, que=f"storyboard {tema['marca']} ({intento + 1})")["codigo"]
         codigo = re.sub(r"^```(?:python)?\s*|\s*```$", "", codigo.strip())
+        if "EP = dict(" in codigo:  # solo la parte de las escenas; el encabezado (créditos) es siempre el mismo
+            codigo = codigo[codigo.index("EP = dict("):]
+        codigo = ENCABEZADO_SB + codigo
         problema = codigo_seguro(codigo)
         if problema:
             error = f"- Código no permitido: {problema}"
@@ -775,31 +920,33 @@ def escribir_storyboard(tema: dict, numero: str, g: dict, material: dict, carpet
 
 
 # ---------------------------------------------------------------- 🖼️ Mina: miniaturas que jalan
-REGLAS_MINIATURA = """Reglas de miniaturas que SÍ jalan (lo que funciona en YouTube y en este tipo de canales):
-- UN sujeto y UN mensaje. Se tiene que entender en el celular en 1 segundo, aunque se vea chiquita.
-- 1 a 3 palabras GIGANTES, de preferencia con un NÚMERO o un contraste ("QUEDAN 5", "5 vs 96", "LA MATARON",
-  "QUEBRÓ… Y VIVE", "$23 M → $250 M"). Nunca repitas el título del video: lo complementa.
-- La foto: la FACHADA, el PRODUCTO o el LOGO histórico de la marca, en blanco y negro o deslavada (muerte, nostalgia),
-  con mucho contraste. Algo de escena del crimen: cinta amarilla, sello rojo de "CASO CERRADO"/"QUEBRÓ", silueta.
-- Texto en amarillo, rojo y blanco con borde negro; del lado que la foto deje libre. Nada en la esquina de abajo a la
-  derecha (ahí YouTube pone la duración).
-- Curiosidad sin mentir: lo que promete la miniatura tiene que estar en el video. No deformes logos ni des a entender
-  que el video es de la marca. Nada de personas privadas; figuras públicas solo con foto libre.
-- Variante B diferente para probar en «Probar y comparar»: pantalla dividida (ALLÁ en blanco y negro vs AQUÍ/MÉXICO a
-  color, o ANTES vs HOY) con 1 palabra o número grande de cada lado."""
+REGLAS_MINIATURA = """Lo que SÍ funciona en miniaturas de documentales de negocios (y lo que hace este canal):
+- UNA escena con tensión o un contraste claro (un momento decisivo, ANTES vs AHORA, la marca enorme vs su caída).
+  Nunca intentes resumir todo el video en la miniatura.
+- Una CARA humana con emoción contenida (seria, preocupada, incrédula; mirando a cámara o hacia la evidencia): está en
+  la gran mayoría de los videos que explotan; en negocios funciona mejor seria que exagerada. Nunca una persona real
+  privada; la cara la genera la imagen realista (persona genérica) o es una figura pública del caso.
+- La MARCA reconocible: su logo, su tienda o su producto real, en grande, como «evidencia» del caso.
+- 2 a 4 palabras GIGANTES arriba a la izquierda (lo primero que ve el ojo y lejos del reloj de abajo a la derecha),
+  en blanco con una palabra en amarillo o rojo. De preferencia un número o un contraste («QUEDAN 5», «DE 9,000 A 1»,
+  «¿QUIÉN LA MATÓ?», «QUEBRÓ… Y VIVE»). Nunca repitas el título del video.
+- Mucho contraste: fondo oscuro/desaturado, la evidencia y el texto brillantes. Nada abajo a la derecha.
+- Curiosidad sin mentir: lo que promete la miniatura está en el video. No deformes logos.
+- Variante B diferente para «Probar y comparar»: contraste lado a lado con fotos reales (ALLÁ vs MÉXICO, ANTES vs
+  HOY) con 1 palabra o número grande de cada lado."""
 
 ESQ_MINI = {"type": "object", "additionalProperties": False, "required": ["a", "b"], "properties": {
     "a": {"type": "object", "additionalProperties": False,
-          "required": ["fondo", "archivo", "prompt_ia", "lineas", "elemento", "sello", "lado_texto"],
+          "required": ["fondo", "archivo", "prompt_ia", "lineas", "evidencia", "sello"],
           "properties": {
-              "fondo": {"type": "string", "enum": ["foto", "ia"], "description": "foto = una del material; ia = imagen realista nueva (solo si no hay una foto buena)"},
-              "archivo": {"type": "string", "description": "si fondo=foto: la ruta material/fotos/… exacta de la lista"},
-              "prompt_ia": {"type": "string", "description": "si fondo=ia: la foto en inglés, realista, SIN texto, logos ni personas reconocibles"},
+              "fondo": {"type": "string", "enum": ["ia", "foto"], "description": "ia = escena realista con una persona (lo mejor); foto = una del material"},
+              "archivo": {"type": "string", "description": "si fondo=foto: ruta material/fotos/… exacta (la tienda o un lugar)"},
+              "prompt_ia": {"type": "string", "description": "si fondo=ia, en inglés: persona genérica (edad, ropa) con emoción contenida mirando a cámara, de la cintura para arriba, en el TERCIO DERECHO; detrás la escena del caso (tienda cerrada, anaquel vacío, oficina en crisis…); el tercio izquierdo oscuro y limpio para el texto; SIN letras, logos ni marcas"},
               "lineas": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["texto", "color"],
-                         "properties": {"texto": {"type": "string"}, "color": {"type": "string", "enum": ["amarillo", "rojo", "blanco", "verde"]}}}},
-              "elemento": {"type": "string", "enum": ["cinta", "sello", "ninguno"]},
-              "sello": {"type": "string", "description": "texto del sello rojo (1-2 palabras), si elemento=sello"},
-              "lado_texto": {"type": "string", "enum": ["izquierda", "derecha"]}}},
+                         "properties": {"texto": {"type": "string"}, "color": {"type": "string", "enum": ["blanco", "amarillo", "rojo"]}}},
+                         "description": "1 o 2 renglones, 2 a 4 palabras en total"},
+              "evidencia": {"type": "string", "description": "ruta material/fotos/… del LOGO, el PRODUCTO o la fachada con el logo (va como polaroid de evidencia); vacío si no hay"},
+              "sello": {"type": "string", "description": "sello rojo corto opcional («QUEBRÓ», «CERRADO»…) o vacío"}}},
     "b": {"type": "object", "additionalProperties": False, "required": ["izq_archivo", "izq_texto", "izq_etiqueta", "der_archivo", "der_texto", "der_etiqueta"],
           "properties": {"izq_archivo": {"type": "string"}, "izq_texto": {"type": "string"}, "izq_etiqueta": {"type": "string"},
                          "der_archivo": {"type": "string"}, "der_texto": {"type": "string"}, "der_etiqueta": {"type": "string"}}}}}
@@ -812,10 +959,11 @@ def _dibujar_realista(prompt: str, destino: Path) -> bool:
     from . import ilustrador
     if not config.env("GEMINI_API_KEY"):
         return False
-    texto = (prompt + "\n\nPhotorealistic documentary photograph, cinematic lighting, 16:9 (1920x1080), shallow depth "
-             "of field, slightly desaturated, high contrast, moody. Leave one side calm for a big headline. "
-             "ABSOLUTELY NO text, letters, numbers, signs with words, logos, brand names or watermarks. No recognizable "
-             "real people.")
+    texto = (prompt + "\n\nPhotorealistic YouTube thumbnail photo, cinematic lighting, 16:9 (1920x1080), sharp subject, "
+             "shallow depth of field, slightly desaturated background, strong contrast, the person in the right third, the "
+             "left third dark and uncluttered for a headline, nothing important in the bottom-right corner. ABSOLUTELY NO "
+             "text, letters, numbers, signs with words, logos, brand names or watermarks. The person is a generic, "
+             "non-famous adult (not a real public figure).")
     modelo = config.env("GEMINI_MODELO_IMAGEN", "gemini-2.5-flash-image")
     for con_formato in (True, False):
         r = ilustrador._pedir(modelo, [{"text": texto}], con_formato)
@@ -839,8 +987,8 @@ def disenar_miniaturas(tema: dict, g: dict, material: dict, destino: Path) -> di
     fotos = [m for m in material["lista"] if not m["video"]]
     lista = "\n".join(f"- {m['archivo']}: {m['describe']}" for m in fotos) or "(no hay fotos libres)"
     if _demo():
-        cfg = {"a": {"fondo": "foto", "archivo": fotos[0]["archivo"] if fotos else "", "prompt_ia": "", "elemento": "cinta",
-                     "sello": "", "lado_texto": "derecha",
+        cfg = {"a": {"fondo": "foto", "archivo": fotos[0]["archivo"] if fotos else "", "prompt_ia": "", "evidencia": "",
+                     "sello": "QUEBRÓ",
                      "lineas": [{"texto": x, "color": c} for x, c in zip(g.get("miniatura_a") or ["LA MATÓ", "NETFLIX?"], ["blanco", "amarillo", "rojo"])]},
                "b": {"izq_archivo": "", "izq_texto": (g.get("miniatura_b") or ["ANTES"])[0], "izq_etiqueta": "EE.UU.",
                      "der_archivo": "", "der_texto": ((g.get("miniatura_b") or ["", "HOY"]) + ["HOY"])[1], "der_etiqueta": "MÉXICO"}}
@@ -854,6 +1002,9 @@ def disenar_miniaturas(tema: dict, g: dict, material: dict, destino: Path) -> di
             ESQ_MINI, tarea=TAREA, que=f"miniaturas {tema['marca']}")
     validas = {m["archivo"] for m in fotos}
     a = cfg["a"]
+    if a.get("evidencia") not in validas:
+        a["evidencia"] = next((m["archivo"] for m in fotos if re.search(r"logo|tienda|store|fachada|producto", m["archivo"] + m["describe"], re.I)),
+                              fotos[0]["archivo"] if fotos else "")
     if a["fondo"] == "ia" and a.get("prompt_ia"):
         try:
             if _dibujar_realista(a["prompt_ia"][:900], destino / "miniatura-fondo.jpg"):
@@ -914,38 +1065,53 @@ def texto(d, xy, s, size, color, anchor="la", maxw=None):
 
 def sombra_lado(img, izquierda):
     """Oscurece el lado del texto para que se lea sobre cualquier foto."""
-    grad = Image.linear_gradient("L").rotate(90 if izquierda else -90).resize(img.size)
+    tira = Image.new("L", (256, 1))
+    valores = [int(215 * max(0.0, 1 - i / 150)) for i in range(256)]  # oscuro en el lado del texto, nada en el otro
+    tira.putdata(valores if izquierda else valores[::-1])
     negro = Image.new("RGB", img.size, (0, 0, 0))
-    return Image.composite(negro, img, grad.point(lambda v: int(v * 0.85)))
+    return Image.composite(negro, img, tira.resize(img.size))
 
 
 def guardar(img, nombre):
     img.convert("RGB").resize((1280, 720), Image.LANCZOS).save(OUT / nombre, quality=90, optimize=True)
 
 
-# --- A: la foto deslavada a pantalla completa + 1-3 palabras gigantes + cinta o sello
+# --- A: escena (persona + lugar) a pantalla completa, texto arriba a la izquierda y la «evidencia» de la marca
 a = CFG["a"]
 img, d = m.canvas()
 f = abrir(a.get("archivo"))
-izq = a.get("lado_texto") == "izquierda"
+ia = a.get("archivo") == "miniatura-fondo.jpg"
 if f:
-    img = deslavar(m.cover(f, m.W, m.H), 0.0 if a.get("archivo") != "miniatura-fondo.jpg" else 0.35)
-    img = sombra_lado(img, izq)
+    img = m.cover(f, m.W, m.H, (0.6, 0.4))
+    img = ImageEnhance.Contrast(ImageEnhance.Color(img).enhance(0.85 if ia else 0.15)).enhance(1.15)
+    img = sombra_lado(img, True)
 d = ImageDraw.Draw(img)
-if a.get("elemento") == "cinta":
-    band = m.tape_band("ESCENA DEL CRIMEN · NO PASAR", 2600, -8)
-    img.paste(band, (-200, m.H - 330), band)
-lineas = [x for x in a.get("lineas", []) if x.get("texto")][:3]
-tam = {1: 330, 2: 270, 3: 220}.get(len(lineas), 220)
-y = (m.H - len(lineas) * tam * 0.92) / 2 - 40
+lineas = [x for x in a.get("lineas", []) if x.get("texto")][:2]
+palabras = sum(len(x["texto"].split()) for x in lineas) or 1
+tam = 250 if palabras <= 2 else 200 if palabras <= 3 else 170
+y = 60
 for x in lineas:
-    pos = (80, y) if izq else (m.W - 80, y)
-    texto(d, pos, x["texto"].upper()[:16], tam, COLOR.get(x["color"], "ink"), anchor="la" if izq else "ra", maxw=m.W * 0.58)
-    y += tam * 0.92
-if a.get("elemento") == "sello" and a.get("sello"):
-    capa = m.stamp_layer(a["sello"].upper()[:14], "", "red", 12, 1.0)
-    m.paste_scaled(img, capa, m.W * (0.76 if izq else 0.24), m.H * 0.24, 0.9)  # arriba: abajo a la derecha va la duración
-img.paste(m.hazard(m.W, 18), (0, m.H - 18))
+    tam_real = texto(d, (70, y), x["texto"].upper()[:18], tam, COLOR.get(x["color"], "ink"), anchor="la", maxw=m.W * 0.62)
+    y += tam_real * 0.95
+ev = abrir(a.get("evidencia"))
+if ev:  # polaroid de evidencia con cinta amarilla, abajo a la izquierda (lejos del reloj de YouTube)
+    fw, fh = 560, 430
+    marco = Image.new("RGB", (fw + 44, fh + 110), (238, 234, 224))
+    marco.paste(m.cover(ev, fw, fh), (22, 22))
+    dm = ImageDraw.Draw(marco)
+    dm.text((fw // 2 + 22, fh + 66), "EVIDENCIA", font=m.font("display", 54), fill=(40, 36, 32), anchor="mm")
+    sombra = Image.new("RGBA", (marco.width + 40, marco.height + 40), (0, 0, 0, 0))
+    ImageDraw.Draw(sombra).rectangle([20, 26, marco.width + 20, marco.height + 26], fill=(0, 0, 0, 150))
+    sombra.paste(marco, (10, 10))
+    pol = sombra.rotate(5, expand=True, resample=Image.BICUBIC)
+    img.paste(pol, (60, m.H - pol.height + 20), pol)
+    cinta = Image.new("RGBA", (230, 64), m.C["tape"] + (235,)).rotate(-8, expand=True)
+    img.paste(cinta, (60 + pol.width // 2 - 110, m.H - pol.height + 8), cinta)
+    d = ImageDraw.Draw(img)
+if a.get("sello"):
+    capa = m.stamp_layer(a["sello"].upper()[:12], "", "red", 14, 0.85)
+    m.paste_scaled(img, capa, 760, m.H - 260, 0.85)
+img.paste(m.hazard(m.W, 14), (0, 0))
 guardar(img, "miniatura-A.jpg")
 
 # --- B: pantalla dividida (allá en blanco y negro vs aquí a color)
@@ -1013,70 +1179,136 @@ def producir(tema_id: str) -> dict:
     return {"ok": True}
 
 
+ESQ_ARREGLO = {"type": "object", "additionalProperties": False, "required": ["frases"], "properties": {"frases": {
+    "type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["n", "texto"],
+                               "properties": {"n": {"type": "integer"}, "texto": {"type": "string"}}}}}}
+
+
+def _arreglar_dudosas(g: dict, inv: dict, dudosas: list[dict]) -> int:
+    """Las frases con cifras que no salen de su fuente se reescriben sin esas cifras (una sola llamada, sin Ramos)."""
+    if not dudosas:
+        return 0
+    if _demo():
+        arreglos = {k: "Y la historia no termina ahí." for k in range(len(dudosas))}
+    else:
+        lista = "\n".join(f"{k}. «{d['frase']}» — quita o cambia: {', '.join(d['cifras'])}" for k, d in enumerate(dudosas))
+        r = claude.json_estructurado(
+            "Eres Vera. Reescribe cada frase de narración QUITANDO las cifras que no tienen fuente (o cámbialas por una "
+            "expresión sin número: «miles», «casi la mitad»…). Que siga sonando natural. No agregues datos nuevos.",
+            lista, ESQ_ARREGLO, tarea=TAREA, que="arreglar cifras sin fuente")
+        arreglos = {x["n"]: x["texto"].strip() for x in r["frases"]}
+    hechos = 0
+    for k, d in enumerate(dudosas):
+        nuevo = arreglos.get(k, "")
+        if not nuevo or (ex.numeros(nuevo) - (ex.numeros(d["frase"]) - set(d["cifras"]))):
+            nuevo = "Y la historia no termina ahí."  # si aún trae cifras sin fuente, mejor una transición
+        e = g["escenas"][d["escena"] - 1]
+        for f in e["frases"]:
+            if f["texto"] == d["frase"]:
+                f["texto"] = nuevo
+                hechos += 1
+                break
+    return hechos
+
+
 def _producir(tema_id: str) -> None:
+    """Un video completo, con varios del equipo trabajando a la vez: Vera investiga y escribe; luego Inés junta el
+    material mientras el caso ya aparece en Casos; luego Nico (storyboard) y Mina (miniaturas) al mismo tiempo."""
+    from concurrent.futures import ThreadPoolExecutor
     tema = next(x for x in temas() if x["id"] == tema_id)
     numero = _siguiente_numero()
     tarea = ex._tarea("ex_guion", "Producir el expediente", f"#{numero} · {tema['marca']}")
     claude.contexto.proyecto, claude.contexto.etapa, claude.contexto.tarea = None, "expedientes", tarea
     eid, mesa = None, None
     try:
-        _paso(None, "investigacion", "ex_guion", f"Investigando {tema['marca']}… 🔎", tarea)
+        _paso(None, "investigacion", "ex_guion", f"Investigando {tema['marca']}: buscando y leyendo fuentes… 🔎", tarea)
         inv = investigar(tema)
         siguiente = next((x["marca"] for x in temas() if x["estado"] == "pendiente" and x["id"] != tema_id), "otra marca")
-        _paso(None, "guion", "ex_guion", f"Escribiendo el guion de {tema['marca']} ✍️", tarea)
+        _paso(None, "guion", "ex_guion", f"Escribiendo el guion de {tema['marca']} ({len(inv['hechos'])} datos con fuente) ✍️", tarea)
         g = escribir_guion(tema, inv, numero, siguiente)
         if len(g["escenas"]) < 3 or sum(len(e["frases"]) for e in g["escenas"]) < 6:
             raise RuntimeError("El guion salió demasiado corto.")
         dudosas = _revisar_cifras(g, inv)
+        arregladas = _arreglar_dudosas(g, inv, dudosas)
         ex._decir("ex_guion", "libre", f"Guion de {tema['marca']} listo ✔")
-        mesa = ex.CARPETA / "_mesa" / f"{numero}-{_slug(tema['marca'])}"
-        shutil.rmtree(mesa, ignore_errors=True)
-        mesa.mkdir(parents=True)
-        partes = {"01-guion-tecnico.md": _md_guion(tema, numero, g), "04-fuentes.md": _md_fuentes(tema, g, inv, dudosas),
+        partes = {"01-guion-tecnico.md": _md_guion(tema, numero, g), "04-fuentes.md": _md_fuentes(tema, g, inv, []),
                   "03-publicacion.md": _md_publicacion(tema, g)}
-        for nombre, texto in partes.items():
-            (mesa / nombre).write_text(texto, encoding="utf-8")
-        _paso(None, "material", "ex_archivista", "Buscando fotos y videos libres 🗄️", tarea)
-        material = buscar_material(tema, g)
-        ex._decir("ex_archivista", "libre", f"{len(material['lista'])} archivos libres para {tema['marca']} ✔")
-        _paso(None, "storyboard", "ex_graficas", "Armando el storyboard 📊", tarea)
-        escribir_storyboard(tema, numero, g, material, mesa)
-        ex._decir("ex_graficas", "libre", "Storyboard listo y revisado ✔")
-        # al expediente (Casos): Ramos lo verifica como siempre
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as z:
             for nombre, texto in partes.items():
                 z.writestr(nombre, texto)
-        r = ex.importar(f"expediente-{numero}.zip", buf.getvalue())
+        r = ex.importar(f"expediente-{numero}.zip", buf.getvalue())  # ya sale en Casos mientras sigue el trabajo
         eid = r["id"]
         destino = ex.carpeta(eid) / "fabrica"
         shutil.rmtree(destino, ignore_errors=True)
         destino.mkdir(parents=True)
-        for nombre in ("storyboard.py", *partes):
-            shutil.copyfile(mesa / nombre, destino / nombre)
-        (destino / "miniatura.py").write_text(MINIATURA_PY, encoding="utf-8")
-        _paso(eid, "storyboard", "ex_miniaturas", "Diseñando las miniaturas 🖼️", tarea)
-        disenar_miniaturas(tema, g, material, destino)
-        ex._decir("ex_miniaturas", "libre", "Miniaturas A y B listas ✔")
-        _escribir(destino / "manifiesto-fotos.json", material["fotos"])
-        _escribir(destino / "manifiesto-videos.json", material["videos"])
+        for nombre, texto in partes.items():
+            (destino / nombre).write_text(texto, encoding="utf-8")
         _escribir(destino / "investigacion.json", inv)
         _escribir(destino / "guion.json", g)
+        with ex._candado:  # sin Ramos: Vera ya comprobó la cita de cada dato en su página (ahorra mucho plan)
+            t = ex.trabajo(eid)
+            t["verificacion"].update(estado="aprobada", aprobada=time.time(), cambios=arregladas,
+                                     nota="Vera comprobó la cita literal de cada dato en su página.")
+            t["chat"].append({"quien": "ex_guion", "t": time.time(), "texto": (
+                f"✔ Cada dato del guion salió de una página real (comprobé la cita). {len(inv['hechos'])} datos con fuente"
+                + (f"; reescribí {arregladas} frase(s) que traían cifras sin fuente." if arregladas else ".")
+                + " Ya va Inés por el material.")})
+            ex._guardar_trabajo(eid, t)
         _poner(eid, tema=tema_id, canal=tema.get("canal") or "quien_mato", numero=numero, marca=tema["marca"],
-               carpeta=f"{numero[-2:]}-{_slug(tema['marca'], 30)}", hechos_pasos=["investigacion", "guion", "material", "storyboard"],
-               paso="verificacion", dudosas=len(dudosas), material=len(material["lista"]), creado=time.time(),
+               carpeta=f"{numero[-2:]}-{_slug(tema['marca'], 30)}", hechos_pasos=["investigacion", "guion", "verificacion"],
+               paso="material", dudosas=len(dudosas), creado=time.time(),
                palabras=sum(len(f["texto"].split()) for e in g["escenas"] for f in e["frases"]))
+        _paso(eid, "material", "ex_archivista", "Buscando fotos de todos lados y videos cortos 🗄️", tarea)
+        material = buscar_material(tema, g, destino)
+        ex._decir("ex_archivista", "libre", f"{len(material['lista'])} fotos y videos para {tema['marca']} ✔")
+        _poner(eid, material=len(material["lista"]), hechos_pasos=sorted(set(fab(eid).get("hechos_pasos") or []) | {"material"}),
+               paso="storyboard")
+        _escribir(destino / "manifiesto-fotos.json", material["fotos"])
+        _escribir(destino / "manifiesto-videos.json", material["videos"])
+        (destino / "miniatura.py").write_text(MINIATURA_PY, encoding="utf-8")
+        ex._decir("ex_graficas", "trabajando", "Armando el storyboard 📊")
+        ex._decir("ex_miniaturas", "trabajando", "Diseñando las miniaturas 🖼️")
+        _poner(eid, render_paso="Nico arma el storyboard y Mina las miniaturas, al mismo tiempo")
+
+        def nico():
+            escribir_storyboard(tema, numero, g, material, destino)
+            ex._decir("ex_graficas", "libre", "Storyboard listo y revisado ✔")
+
+        def mina():
+            disenar_miniaturas(tema, g, material, destino)
+            ex._decir("ex_miniaturas", "libre", "Miniaturas A y B listas ✔")
+
+        with ThreadPoolExecutor(max_workers=2) as pool:  # 👥 los dos trabajan a la vez
+            for fut in [pool.submit(nico), pool.submit(mina)]:
+                fut.result()
+        _poner(eid, hechos_pasos=sorted(set(fab(eid).get("hechos_pasos") or []) | {"storyboard"}), paso="render", render_paso="")
         with _candado:
             lista = temas()
             for x in lista:
                 if x["id"] == tema_id:
                     x["estado"], x["eid"] = "listo", eid
             _guardar_temas(lista)
-        ex._fin_tarea(tarea, resultado=f"Expediente #{numero} listo para verificar")
-        ex.verificar(eid)
+        ex._fin_tarea(tarea, resultado=f"Expediente #{numero} listo para hacer el video")
+        threading.Thread(target=vuelta, daemon=True).start()  # directo al video, sin esperar el minuto
     except Exception as exc:  # noqa: BLE001 — se ve en la Bandeja; el tema regresa a la lista
         limite = isinstance(exc, claude.ErrorIA) and "límite" in str(exc).lower()
         ex._fin_tarea(tarea, error=str(exc)[:300])
+        if eid:  # el caso ya existe: se queda y se retoma desde donde falló (no se empieza otro con otro número)
+            _poner(eid, error=("Se acabó el límite de tu plan; sigo en cuanto vuelva." if limite else f"Falló: {str(exc)[:250]}"))
+            with _candado:
+                lista = temas()
+                for x in lista:
+                    if x["id"] == tema_id:
+                        x["estado"], x["eid"] = "listo", eid
+                _guardar_temas(lista)
+                if limite:
+                    e = estado()
+                    e["espera_hasta"] = time.time() + 3600
+                    e["nota"] = "Se acabó el límite de tu plan de Claude: sigo sola en cuanto vuelva."
+                    _guardar_estado(e)
+            ex._decir("ex_guion", "libre", "Me quedé a medias; lo retomo solo ⏳")
+            return
         ex._decir("ex_guion", "libre", "Se acabó el límite del plan; sigo al rato ⏳" if limite else "Uy, algo falló 😕")
         with _candado:
             lista = temas()
@@ -1207,6 +1439,11 @@ def _zip_render(eid: str) -> Path:
             p = c / "fabrica" / nombre
             if p.exists():
                 z.write(p, nombre)
+        fotos = c / "fabrica" / "material" / "fotos"
+        if fotos.exists():  # las fotos ya bajadas y revisadas en el servidor viajan dentro del paquete
+            for p in fotos.iterdir():
+                if p.suffix.lower() in (".jpg", ".json") and re.fullmatch(r"[a-z0-9._-]+", p.name):
+                    z.write(p, f"material/fotos/{p.name}")
     if codigo_seguro((c / "fabrica" / "storyboard.py").read_text(encoding="utf-8")):
         raise RuntimeError("El storyboard no pasó la revisión de seguridad.")
     return salida
@@ -1337,6 +1574,9 @@ def _render_servidor(eid: str, zipf: Path, azure: dict) -> None:
             for n in z.namelist():
                 if "/" not in n and "\\" not in n and not n.startswith(".") and n.endswith((".md", ".py", ".json", ".jpg")):
                     (ep / n).write_bytes(z.read(n))
+                elif re.fullmatch(r"material/fotos/[a-z0-9._-]+\.(jpg|json)", n):
+                    (ep / "material" / "fotos").mkdir(parents=True, exist_ok=True)
+                    (ep / n).write_bytes(z.read(n))
         if codigo_seguro((ep / "storyboard.py").read_text(encoding="utf-8")):
             raise RuntimeError("El storyboard no pasó la revisión de seguridad.")
 
@@ -1348,7 +1588,9 @@ def _render_servidor(eid: str, zipf: Path, azure: dict) -> None:
                 linea = linea.strip()
                 if linea:
                     ultimas = (ultimas + [linea])[-12:]
-                    _poner(eid, render_paso=f"Servidor · {que}: {linea[:70]}")
+                    m = re.search(r"(\d+)/(\d+)", linea)
+                    extra = {"render_avance": round(int(m.group(1)) / max(1, int(m.group(2))), 3)} if m and que == "haciendo el video" else {}
+                    _poner(eid, render_paso=f"Servidor · {que}: {linea[:70]}", **extra)
             if p.wait() != 0:
                 raise RuntimeError(f"{que} falló: " + " | ".join(ultimas[-4:])[-400:])
 
@@ -1560,6 +1802,15 @@ def _material_por_delante() -> int:
     return n
 
 
+def _caso_sin_terminar() -> str | None:
+    """El caso de la fábrica que todavía no queda subido/programado (los que fallaron 3 veces no detienen todo)."""
+    for x in ex.lista():
+        f = ex.trabajo(x["id"]).get("fabrica")
+        if f and f.get("subida") != "listo" and not (f.get("error") and (f.get("reintentos") or 0) >= 3):
+            return x["id"]
+    return None
+
+
 def meta_videos() -> int:
     e = estado()
     ritmo = min((int(c.get("ritmo_dias") or 3) for c in agenda.lista() if c.get("activo", True)), default=3)
@@ -1594,6 +1845,10 @@ def _curar() -> None:
                 ex.verificar(x["id"])  # Ramos vuelve a verificar lo que se cortó
         if f.get("error") and time.time() - (f.get("error_t") or 0) > 1200 and (f.get("reintentos") or 0) < 3:
             reintentar(x["id"], auto=True)
+        hilo = _hilo.get(f"convertir-{x['id']}")
+        if (f.get("paso") in ("material", "storyboard") and not f.get("error") and not _produciendo()
+                and not (hilo and hilo.is_alive())):
+            _retomar(x["id"])  # se cortó a medias (p. ej. se reinició el servidor): se retoma solo
 
 
 def reintentar(eid: str, auto: bool = False) -> dict:
@@ -1603,6 +1858,8 @@ def reintentar(eid: str, auto: bool = False) -> dict:
     _poner(eid, error=None, error_t=None, nota_auto=None, reintentos=(f.get("reintentos") or 0) + (1 if auto else 0))
     if f.get("subida") == "error":
         return revisar(eid, {"accion": "programar"})
+    if f.get("paso") in ("material", "storyboard") or (f and "storyboard" not in (f.get("hechos_pasos") or [])):
+        return _retomar(eid)
     if f.get("render_estado") in ("error", "en_fila") or f.get("paso") == "render":
         _poner(eid, render_estado=None, render_tid=None)
         if t["verificacion"].get("estado") in ("aprobada", "lista"):
@@ -1661,6 +1918,8 @@ def vuelta() -> None:
         return
     if not _plan_disponible():
         return
+    if _caso_sin_terminar():
+        return  # ☝️ primero se termina el video que va (hasta quedar en el calendario) y luego otro
     if _material_por_delante() >= meta_videos():
         return
     siguiente = next((x for x in temas() if x["estado"] == "pendiente"), None)
@@ -1704,8 +1963,10 @@ def resumen() -> dict:
                           "render_avance": f.get("render_avance"), "video": f.get("video"), "url": f.get("url"),
                           "programado": t.get("programado"), "subida": f.get("subida"), "dudosas": f.get("dudosas", 0),
                           "palabras": f.get("palabras"), "material": f.get("material"), "render_nota": f.get("render_nota"),
-                          "verificacion": t["verificacion"].get("estado"), "cuenta": ex._cuenta(t["datos"])})
+                          "verificacion": t["verificacion"].get("estado"), "cuenta": ex._cuenta(t["datos"]),
+                          "pasos": pasos(t), "t_mov": f.get("t_mov"), "creado": f.get("creado")})
     return {"estado": e, "temas": lista, "casos": casos, "meta": meta_videos(), "por_delante": _material_por_delante(),
+            "en_marcha": _caso_sin_terminar(), "ahora": time.time(),
             "chat": historial_chat()[-60:], "produciendo": _produciendo(), "compus": compus_sala(),
             "azure_ok": bool(_azure()) or _demo(),
             "plan": _plan_disponible(), "pexels": (CANAL_DIR / ".pexels_key").exists(), "demo": _demo()}
@@ -1955,17 +2216,22 @@ def _guion_de_md(md: str) -> dict:
     return {"escenas": escenas}
 
 
-def convertir(eid: str) -> dict:
-    """🎬 Un caso que importaste (con su guion ya verificado) se vuelve video con la fábrica: material libre,
-    storyboard, miniaturas, voz de Azure en tu compu y subida en privado."""
-    if fab(eid).get("hechos_pasos"):
-        return reintentar(eid)
+def _retomar(eid: str) -> dict:
     with _candado:
         if _hilo.get(f"convertir-{eid}") and _hilo[f"convertir-{eid}"].is_alive():
-            return {"error": "Ya lo estoy preparando."}
+            return {"ok": True}
         _hilo[f"convertir-{eid}"] = threading.Thread(target=_convertir, args=(eid,), daemon=True)
         _hilo[f"convertir-{eid}"].start()
     return {"ok": True}
+
+
+def convertir(eid: str) -> dict:
+    """🎬 Un caso que importaste (con su guion ya verificado) se vuelve video con la fábrica: material libre,
+    storyboard, miniaturas, voz de Azure en tu compu y subida en privado."""
+    f = fab(eid)
+    if "storyboard" in (f.get("hechos_pasos") or []):
+        return reintentar(eid)
+    return _retomar(eid)
 
 
 def _convertir(eid: str) -> None:
@@ -1988,23 +2254,31 @@ def _convertir(eid: str) -> None:
         destino = c / "fabrica"
         destino.mkdir(exist_ok=True)
         (destino / "01-guion-tecnico.md").write_text(md, encoding="utf-8")
-        _poner(eid, tema=tema["id"], canal="quien_mato", numero=numero, marca=p["marca"],
-               carpeta=f"{numero[-2:]}-{_slug(p['marca'], 30)}", hechos_pasos=["investigacion", "guion"], paso="material",
+        previo = fab(eid)
+        _poner(eid, tema=previo.get("tema") or tema["id"], canal=previo.get("canal") or "quien_mato", numero=numero, marca=p["marca"],
+               carpeta=previo.get("carpeta") or f"{numero[-2:]}-{_slug(p['marca'], 30)}",
+               hechos_pasos=sorted(set(previo.get("hechos_pasos") or []) | {"investigacion", "guion"}), paso="material", error=None,
                creado=time.time(), palabras=sum(len(f["texto"].split()) for e in g["escenas"] for f in e["frases"]))
         _paso(eid, "material", "ex_archivista", "Buscando fotos y videos libres 🗄️", tarea)
-        material = buscar_material(tema, g)
-        ex._decir("ex_archivista", "libre", f"{len(material['lista'])} archivos libres ✔")
+        material = buscar_material(tema, g, destino)
+        ex._decir("ex_archivista", "libre", f"{len(material['lista'])} fotos y videos ✔")
         _paso(eid, "storyboard", "ex_graficas", "Armando el storyboard 📊", tarea)
-        escribir_storyboard(tema, numero, g, material, destino)
-        ex._decir("ex_graficas", "libre", "Storyboard listo ✔")
         (destino / "miniatura.py").write_text(MINIATURA_PY, encoding="utf-8")
-        disenar_miniaturas(tema, g, material, destino)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as pool:  # 👥 Nico y Mina a la vez
+            futs = [pool.submit(escribir_storyboard, tema, numero, g, material, destino),
+                    pool.submit(disenar_miniaturas, tema, g, material, destino)]
+            for fut in futs:
+                fut.result()
+        ex._decir("ex_graficas", "libre", "Storyboard listo ✔")
         _escribir(destino / "manifiesto-fotos.json", material["fotos"])
         _escribir(destino / "manifiesto-videos.json", material["videos"])
-        _escribir(destino / "guion.json", g)
+        if not (destino / "guion.json").exists():
+            _escribir(destino / "guion.json", g)
         f = fab(eid)
-        _poner(eid, hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"material", "storyboard"}), paso="verificacion",
-               material=len(material["lista"]))
+        aprobada = ex.trabajo(eid)["verificacion"].get("estado") == "aprobada"
+        _poner(eid, hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"material", "storyboard"} | ({"verificacion"} if aprobada else set())),
+               paso="render" if aprobada else "verificacion", material=len(material["lista"]), error=None)
         ex._fin_tarea(tarea, resultado="Listo para hacer el video")
         t = ex.trabajo(eid)
         if t["verificacion"].get("estado") in ("sin_empezar", "interrumpida"):
