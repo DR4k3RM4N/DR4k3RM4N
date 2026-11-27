@@ -20,6 +20,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -1069,18 +1070,37 @@ def _render_expediente(of, t, temporal, avance, nombre_dir, py) -> None:
     def correr(cmd, desde, hasta, que):
         p = subprocess.Popen([*py, "-E", "-P", *cmd], cwd=str(CANAL_YT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, encoding="utf-8", errors="replace", creationflags=sin_ventana)
-        ultimas, va = [], desde
+        ultimas, va, señal, motivo = [], desde, [time.time()], []
+
+        def vigilante():  # 🐕 si la oficina lo canceló o lleva 20 min sin decir nada, se mata (y la compu queda libre)
+            while p.poll() is None:
+                time.sleep(30)
+                if p.poll() is not None:
+                    break
+                try:
+                    r = of.post(f"avance/{tid}", {"paso": f"{que}…", "avance": va})
+                except Exception:  # noqa: BLE001
+                    r = {}
+                if r.get("cancelado"):
+                    motivo.append("la oficina lo canceló")
+                elif time.time() - señal[0] > 1200:
+                    motivo.append("se quedó 20 min sin avanzar")
+                if motivo:
+                    p.kill()
+                    break
+        threading.Thread(target=vigilante, daemon=True).start()
         for linea in p.stdout:
             linea = linea.strip()
             if not linea:
                 continue
+            señal[0] = time.time()
             ultimas = (ultimas + [linea])[-15:]
             m = _re.search(r"(\d+)/(\d+)", linea)
             if m:
                 va = max(va, desde + (hasta - desde) * min(1, int(m.group(1)) / max(1, int(m.group(2)))))
             avance(f"{que}: {linea[:70]}", va)
         if p.wait() != 0:
-            raise RuntimeError(f"{que} falló: " + " | ".join(ultimas[-4:])[-400:])
+            raise RuntimeError(f"{que} falló: " + (motivo[0] if motivo else " | ".join(ultimas[-4:])[-400:]))
 
     for sub in ("fotos", "videos"):
         man = ep / f"manifiesto-{sub}.json"

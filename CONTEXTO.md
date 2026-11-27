@@ -245,6 +245,12 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   tantos renders pendientes como máquinas (máx. 3). Temas propuestos entran directo a la fila (con subir_solo).
   Bandeja muestra todos los casos en marcha (`en_marcha_todos`). Botón 🔄 Reinicio forzoso también en la Bandeja.
 
+- **Render que nunca empieza (63 % = 5/8 pasos, 0 % del video)**: era un video en la fila de la sala que ninguna compu
+  tomaba (la compu tenía su lugar ocupado por un trabajo «fantasma»: el motor colgado no se enteraba de la cancelación).
+  Ahora: 5 min en fila sin que nadie lo tome → se cancela y lo hace el servidor (`render_forzar_srv`); el `correr` de
+  la compu y el del servidor tienen vigilante (20 min sin salida o cancelado → mata el proceso y libera el lugar); si la
+  sala se reinicia y suelta el trabajo, se reenvía al momento (sin contar falla); render del servidor huérfano → reenvío.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

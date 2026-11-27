@@ -1630,7 +1630,7 @@ def enviar_render(eid: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         _poner(eid, error=str(exc)[:300], paso="render")
         return {"error": str(exc)}
-    compu = _elegir_compu(f.get("render_evitar") or [])
+    compu = None if f.get("render_forzar_srv") else _elegir_compu(f.get("render_evitar") or [])
     if compu:  # 🏢 va a la fila de la sala central: la toma la primera compu libre (tus compus primero, luego el servidor)
         evitar = sorted(set(f.get("render_evitar") or []) | {c["id"] for c in compus_sala() if c["pref"] == "no"})
         salida = ex.carpeta(eid) / "render-salida"
@@ -1654,7 +1654,8 @@ def enviar_render(eid: str) -> dict:
         if not _render_srv.acquire(blocking=False):
             _poner(eid, paso="render", render_paso="El servidor está haciendo otro video; este sigue en cuanto termine.")
             return {"ok": True, "espera": True}
-        _poner(eid, render_estado="servidor", paso="render", render_paso="Lo está haciendo el servidor (no hay compu disponible)",
+        _poner(eid, render_estado="servidor", paso="render", render_forzar_srv=None, render_mov_t=time.time(),
+               render_paso="Lo está haciendo el servidor" + (" (ninguna compu lo tomó)" if f.get("render_forzar_srv") else " (no hay compu disponible)"),
                hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion"}), render_desde=time.time())
         threading.Thread(target=_render_servidor, args=(eid, zipf, azure), daemon=True).start()
     else:
@@ -1693,14 +1694,23 @@ def _render_servidor(eid: str, zipf: Path, azure: dict) -> None:
         def correr(cmd, que):
             p = subprocess.Popen([sys.executable, "-E", *cmd], cwd=str(raiz), stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, text=True, errors="replace")
-            ultimas = []
+            ultimas, señal = [], [time.time()]
+
+            def vigilante():  # 🐕 20 min sin decir nada = trabado: se mata y el caso se reintenta
+                while p.poll() is None:
+                    time.sleep(20)
+                    if time.time() - señal[0] > 1200 and p.poll() is None:
+                        ultimas.append("se quedó 20 min sin avanzar")
+                        p.kill()
+            threading.Thread(target=vigilante, daemon=True).start()
             for linea in p.stdout:
                 linea = linea.strip()
                 if linea:
+                    señal[0] = time.time()
                     ultimas = (ultimas + [linea])[-12:]
                     m = re.search(r"(\d+)/(\d+)", linea)
                     extra = {"render_avance": round(int(m.group(1)) / max(1, int(m.group(2))), 3)} if m and que == "haciendo el video" else {}
-                    _poner(eid, render_paso=f"Servidor · {que}: {linea[:70]}", **extra)
+                    _poner(eid, render_paso=f"Servidor · {que}: {linea[:70]}", render_mov_t=time.time(), **extra)
             if p.wait() != 0:
                 raise RuntimeError(f"{que} falló: " + " | ".join(ultimas[-4:])[-400:])
 
@@ -1774,6 +1784,17 @@ def _revisar_render(eid: str, paciencia: int = 1500) -> None:
     if e.get("compu_id") and e["compu_id"] != f.get("render_compu"):  # ya lo tomó una compu (o el servidor)
         _poner(eid, render_compu=e["compu_id"], render_mov_t=time.time())
         f = fab(eid)
+    if est == "en_cola" and not f.get("render_compu") and time.time() - (f.get("render_desde") or time.time()) > 300 \
+            and estado().get("servidor_respaldo", True):
+        # ⏳ 5 min en la fila y ninguna compu lo tomó (ocupadas o trabadas): lo hace el servidor aquí mismo
+        try:
+            requests.post(f"{SALA_URL}/interno/cancelar/{f['render_tid']}", json={}, timeout=5)
+        except requests.RequestException:
+            pass
+        _poner(eid, render_estado=None, render_tid=None, render_forzar_srv=True,
+               render_paso="Ninguna compu lo tomó en 5 min: lo hace el servidor")
+        ex._decir("ex_editor", "trabajando", f"#{f.get('numero')}: ninguna compu lo tomó, lo hago en el servidor 🖥️")
+        return
     if est == "en_cola":
         compu = next((c for c in compus_sala() if c["id"] == f.get("render_compu")), None)
         if f.get("render_compu") and (not compu or not compu["viva"] or not compu["puede"] or compu["pref"] == "no") \
@@ -1807,7 +1828,12 @@ def _revisar_render(eid: str, paciencia: int = 1500) -> None:
     if est == "listo":
         _terminar_render(eid, f)
         return
-    if est in ("error", "cancelado"):
+    if est == "cancelado" or (est == "error" and "reinici" in str(e.get("error") or "")):
+        # la sala se reinició (p. ej. al actualizarse) o soltó el trabajo: se vuelve a mandar ya, sin contarlo como falla
+        _poner(eid, render_estado=None, render_tid=None, render_compu=None,
+               render_paso="La sala soltó el video (se reinició): lo vuelvo a mandar")
+        return
+    if est == "error":
         _poner(eid, render_estado="error", error=f"Tu compu no pudo hacer el video: {e.get('error') or est}"[:300])
         ex._decir("ex_editor", "libre", "Tu compu no pudo con el video 😕")
 
@@ -2122,6 +2148,8 @@ def vuelta() -> None:
             continue
         if f.get("render_estado") == "en_fila" and f.get("render_tid"):
             _revisar_render(x["id"])
+        elif f.get("render_estado") == "servidor" and not _render_srv.locked():  # la oficina se reinició a medio video
+            _poner(x["id"], render_estado=None, render_paso="El servidor se reinició a medio video: lo vuelvo a mandar")
         elif _listo_para_render(x["id"], t) and not f.get("error"):
             enviar_render(x["id"])
         elif (estado().get("subir_solo") and t["verificacion"].get("estado") == "lista" and not f.get("nota_auto")
