@@ -43,7 +43,7 @@ CODIGO_DURA = 15 * 60
 # de dónde se pueden mandar archivos a las compus (🕵️ Expedientes incluido: antes faltaba y la sala rechazaba sus videos)
 RAICES = [REPO / "tiktokshop" / "salida", REPO / "autocanal" / "salida", AQUI / "salida", REPO / "autocanal" / "expedientes",
           *([Path(os.environ["AUTOCANAL_EXPEDIENTES"])] if os.environ.get("AUTOCANAL_EXPEDIENTES") else [])]
-EXT_RESULTADO = {".mp4", ".jpg", ".json"}
+EXT_RESULTADO = {".mp4", ".jpg", ".json", ".srt", ".txt"}  # video, miniaturas, subtítulos, capítulos y créditos
 TIENDA_URL = "http://127.0.0.1:8766"  # oficina de TikTok (para saber a qué productos hacerles carpeta en tus compus)
 MAX_RESULTADO = 2 * 1024 ** 3
 SERVIDOR_ID = "servidor"  # 🖥️ el propio servidor, como una compu más de la sala (se prende desde la oficina central)
@@ -80,11 +80,12 @@ class Sala(Aprendizaje, Proyectos):
         self.analisis: dict = {}  # (compu, carpeta, archivo) → {frases, calidad}  (qué dices y partes movidas)
         self.hojas: dict = {}  # (compu, carpeta, archivo) → tira de 4 cuadros (para que el editor vea el clip)
         self.intentos: list[float] = []
-        for t in self.trabajos.values():  # lo que quedó a medias al apagar: lo vuelve a pedir la oficina
-            if t["estado"] in ("en_cola", "asignado", "trabajando"):
-                t["estado"], t["error"] = "cancelado", "La sala se reinició."
+        # 🔁 lo que estaba a medias NO se tira al reiniciar: la compu sigue trabajando y lo entrega (si se apagó, `ver`
+        # lo marca y su oficina lo vuelve a mandar)
         for c in self.compus.values():
-            c["trabajo"], c["activos"] = None, []
+            vivos = [tid for tid, t in self.trabajos.items() if t.get("compu") == c["id"] and t["estado"] in ("asignado", "trabajando")]
+            c["activos"], c["trabajo"] = vivos, (vivos[0] if vivos else None)
+            c["ultimo"] = time.time()  # le damos chance de volver a dar señales antes de darla por apagada
 
     def _tocar(self) -> None:
         self.version += 1
@@ -541,18 +542,48 @@ class Sala(Aprendizaje, Proyectos):
             self._tocar()
         return {"ok": True}
 
-    def subir(self, c: dict, tid: str, nombre: str, entrada, largo: int) -> dict:
+    def subir(self, c: dict, tid: str, nombre: str, entrada, largo: int, desde: int | None = None, fin: bool = True) -> dict:
+        """El resultado de una compu. Con `desde` va por pedazos: si se corta, se retoma donde se quedó (`recibido`)."""
         t = self.del_compu(c, tid)
         if not t:
             return {"error": "Ese trabajo ya no es tuyo."}
         nombre = Path(nombre).name
         if Path(nombre).suffix.lower() not in EXT_RESULTADO or not nombre.replace(".", "").replace("_", "").replace("-", "").isalnum():
             return {"error": "Nombre de archivo no permitido."}
-        if largo <= 0 or largo > MAX_RESULTADO:
-            return {"error": "Archivo demasiado grande."}
         destino = Path(t["salida"]) / nombre
         temporal = destino.with_name(destino.name + ".subiendo")
         destino.parent.mkdir(parents=True, exist_ok=True)
+        if desde is not None:  # 🧩 por pedazos
+            with self.lock:
+                c["ultimo"] = time.time()
+            ya = temporal.stat().st_size if temporal.exists() else 0
+            if desde < 0:  # solo pregunta cuánto ya llegó
+                return {"ok": True, "recibido": ya}
+            if desde != ya:
+                return {"error": "desfase", "recibido": ya}
+            if largo < 0 or ya + largo > MAX_RESULTADO:
+                return {"error": "Archivo demasiado grande."}
+            restante = largo
+            with open(temporal, "ab") as f:
+                while restante > 0:
+                    trozo = entrada.read(min(1024 * 1024, restante))
+                    if not trozo:
+                        break
+                    f.write(trozo)
+                    restante -= len(trozo)
+            if restante:  # se cortó a medio pedazo: se regresa a donde iba (el pedazo se vuelve a mandar)
+                with open(temporal, "r+b") as f:
+                    f.truncate(ya)
+                return {"error": "La subida se cortó.", "recibido": ya}
+            with self.lock:  # cada pedazo cuenta como avance (así nadie cree que se trabó mientras sube)
+                t["paso"], t["mov"] = f"Subiendo {nombre}: {round((ya + largo) / 1e6)} MB", time.time()
+                self._tocar()
+            if fin:
+                temporal.replace(destino)
+                return {"ok": True, "recibido": destino.stat().st_size, "listo": True}
+            return {"ok": True, "recibido": ya + largo}
+        if largo <= 0 or largo > MAX_RESULTADO:
+            return {"error": "Archivo demasiado grande."}
         restante = largo
         with open(temporal, "wb") as f:
             while restante > 0:
@@ -742,8 +773,11 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
                     return
                 if "application/octet-stream" not in self.headers.get("Content-Type", ""):
                     return self._json({"error": "tipo no permitido"}, 403)
-                r = sala.subir(c, ruta.rsplit("/", 1)[-1], parse_qs(url.query).get("nombre", [""])[0], self.rfile,
-                               int(self.headers.get("Content-Length") or 0))
+                q = parse_qs(url.query)
+                desde = q.get("desde", [None])[0]
+                r = sala.subir(c, ruta.rsplit("/", 1)[-1], q.get("nombre", [""])[0], self.rfile,
+                               int(self.headers.get("Content-Length") or 0),
+                               int(desde) if desde not in (None, "") else None, q.get("fin", ["1"])[0] == "1")
                 return self._json(r, 400 if "error" in r else 200)
             if "application/json" not in self.headers.get("Content-Type", ""):
                 return self._json({"error": "tipo no permitido"}, 403)

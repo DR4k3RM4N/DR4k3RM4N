@@ -240,12 +240,44 @@ class Oficina:
                 for trozo in r.iter_content(1024 * 1024):
                     f.write(trozo)
 
+    PEDAZO = 8 * 1024 * 1024
+
     def subir(self, tid: str, archivo: Path) -> None:
-        with open(archivo, "rb") as f:
-            r = self.s.post(f"{self.base}/subir/{tid}", params={"nombre": archivo.name}, data=f, timeout=(15, 1800),
-                            headers={"Content-Type": "application/octet-stream"})
-        if r.status_code != 200:
-            raise RuntimeError(f"No pude subir {archivo.name}: {r.text[:120]}")
+        """🧩 Sube por pedazos de 8 MB. Si se corta (internet, la sala se reinicia…), pregunta cuánto llegó y sigue desde
+        ahí; aguanta ~30 min de fallas antes de rendirse. Así un video grande ya hecho nunca se pierde por la subida."""
+        total = archivo.stat().st_size
+        cab = {"Content-Type": "application/octet-stream"}
+        url = f"{self.base}/subir/{tid}"
+        desde, fallas = 0, 0
+        while True:
+            try:
+                with open(archivo, "rb") as f:
+                    f.seek(desde)
+                    trozo = f.read(self.PEDAZO)
+                fin = desde + len(trozo) >= total
+                r = self.s.post(url, params={"nombre": archivo.name, "desde": desde, "fin": "1" if fin else "0"},
+                                data=trozo, timeout=(15, 300), headers=cab)
+                j = r.json()
+                if "recibido" in j and (j.get("error") == "desfase" or r.status_code == 200):
+                    desde = int(j["recibido"])
+                    if r.status_code == 200 and (j.get("listo") or (fin and desde >= total)):
+                        return
+                    if r.status_code == 200:
+                        fallas = 0
+                    continue
+                if "ya no es tuyo" in str(j.get("error", "")) or "no permitido" in str(j.get("error", "")):
+                    raise RuntimeError(f"No pude subir {archivo.name}: {j.get('error')}")
+                raise requests.RequestException(str(j.get("error") or r.status_code))
+            except (requests.RequestException, ValueError) as exc:
+                fallas += 1
+                if fallas > 14:  # ~30 min intentando
+                    raise RuntimeError(f"No pude subir {archivo.name} ({exc}); el video quedó guardado en esta compu") from exc
+                time.sleep(min(120, 2 ** fallas))
+                try:  # ¿cuánto alcanzó a llegar?
+                    j = self.s.post(url, params={"nombre": archivo.name, "desde": -1}, data=b"", timeout=(15, 60), headers=cab).json()
+                    desde = int(j.get("recibido", desde))
+                except (requests.RequestException, ValueError, TypeError):
+                    pass
 
 
 # ---------- carpetas de clips en esta compu ----------
@@ -1070,6 +1102,13 @@ def _render_expediente(of, t, temporal, avance, nombre_dir, py) -> None:
             if "/" in n or "\\" in n or n.startswith(".") or not n.endswith((".md", ".py", ".json", ".jpg")):
                 continue
             (ep / n).write_bytes(z.read(n))
+    huella = hashlib.sha1(paquete.read_bytes()).hexdigest()
+    hecho = ep / "render" / ".paquete"
+    previo = next((v for v in sorted((ep / "render").glob("*.mp4")) if "solo-video" not in v.name), None) if (ep / "render").exists() else None
+    if previo and hecho.exists() and hecho.read_text().strip() == huella:
+        # ♻️ este mismo video ya se hizo aquí (p. ej. se cortó la subida): no se vuelve a renderizar, solo se sube
+        avance("El video ya estaba hecho en esta compu: solo lo subo", 0.9)
+        return _subir_render(of, tid, ep, nombre_dir, avance)
     shutil.rmtree(ep / "render", ignore_errors=True)
     sin_ventana = 0x08000000 if WINDOWS else 0
 
@@ -1115,11 +1154,16 @@ def _render_expediente(of, t, temporal, avance, nombre_dir, py) -> None:
                    f"Bajando {sub} libres")
     correr(["motor/motor.py", nombre_dir, "--render"], 0.2, 0.93, "Haciendo el video")
     correr([f"{nombre_dir}/miniatura.py"], 0.93, 0.96, "Miniaturas")
+    (ep / "render" / ".paquete").write_text(huella)  # para no rehacerlo si la subida falla
+    _subir_render(of, tid, ep, nombre_dir, avance)
+
+
+def _subir_render(of, tid, ep: Path, nombre_dir: str, avance) -> None:
     render = ep / "render"
     video = next((v for v in sorted(render.glob("*.mp4")) if "solo-video" not in v.name), None)
     if not video:
         raise RuntimeError("El motor terminó pero no encontré el MP4.")
-    avance("Subiendo el video a la oficina", 0.96)
+    avance("Subiendo el video a la oficina (por pedazos)", 0.96)
     for f in [video, *render.glob("*.srt"), *render.glob("*-capitulos.txt"), *render.glob("*-creditos.txt"),
               *render.glob("miniatura-*.jpg")]:
         of.subir(tid, f)

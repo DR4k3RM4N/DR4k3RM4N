@@ -121,6 +121,8 @@
       () => prender ? "⚡ Listo: tus compus y el servidor editan. Tus compus toman primero cada video; si en 30 s ninguna puede, lo hace el servidor."
         : "Apagado: el servidor ya no toma videos (salvo que no haya ninguna compu).");
   });
+  $("#ed-continuar").addEventListener("click", (e) =>
+    accion(e.currentTarget, "/api/edicion/continuar", {}, (r) => "▶ Listo:\n• " + (r.hechos || []).join("\n• ")));
   $("#ed-reinicio").addEventListener("click", (e) =>
     accion(e.currentTarget, "/api/edicion/reinicio", {}, (r) => "🔄 Reinicio forzoso hecho:\n• " + (r.hechos || []).join("\n• ")));
   $("#ed-srv-n").addEventListener("change", (e) =>

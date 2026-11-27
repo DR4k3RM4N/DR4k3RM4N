@@ -316,6 +316,16 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   «💻 Tus compus» de la Sala central es `/sala-oficina` sin dibujo (solo panel: alta, códigos, proyectos).
   Bug arreglado: `.ed-cuarto`/`#ed-tablero` con display propio le ganaban a `[hidden]` → las pestañas se encimaban.
 
+- **🧩 Que nada se caiga (27 nov)**: Kodak y Circuit City SÍ se renderizaron en la compu; falló la SUBIDA del MP4
+  (SSLEOFError, archivo grande). Ahora: `compu.Oficina.subir` sube en pedazos de 8 MB (`?desde=&fin=`), y si se corta
+  pregunta cuánto llegó (`desde=-1`) y sigue (aguanta ~30 min). `sala.subir` agrega por pedazos (`.subiendo`), cada
+  pedazo cuenta como avance (`paso`/`mov`) y acepta .srt/.txt (antes las rechazaba). La sala YA NO cancela trabajos al
+  reiniciarse: los conserva y recalcula `activos`. La compu guarda la huella del paquete (`render/.paquete`): si le
+  vuelve a llegar el mismo video, solo lo sube. La fábrica: error de conexión/subida → reenvía YA a la misma compu
+  (`render_preferir` → trabajo con `compu` fija), sin contar falla. Sala central: botón «▶ Continuar»
+  (`/api/edicion/continuar`: Expedientes continuar + reintentar proyectos del edificio con error). Probado: sala
+  apagada a media subida de 40 MB → retomó y llegó idéntico.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

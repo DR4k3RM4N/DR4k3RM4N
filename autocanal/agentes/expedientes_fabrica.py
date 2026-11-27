@@ -1641,8 +1641,9 @@ def enviar_render(eid: str) -> dict:
         shutil.rmtree(salida, ignore_errors=True)
         salida.mkdir(parents=True)
         try:
+            preferida = f.get("render_preferir") if any(c["id"] == f.get("render_preferir") and c["viva"] for c in compus_sala()) else None
             r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=15, json={
-                "tipo": "expediente", "origen": "expedientes", "evitar": evitar,
+                "tipo": "expediente", "origen": "expedientes", "evitar": evitar, **({"compu": preferida} if preferida else {}),
                 "etiqueta": f"🕵️ Expediente #{f.get('numero')} · {f.get('marca')}"[:80],
                 "parametros": {"carpeta": f.get("carpeta"), "nombre": f"Expediente-{f.get('numero')}", "azure": azure},
                 "entradas": [str(zipf)], "salida": str(salida)}).json()
@@ -1655,7 +1656,7 @@ def enviar_render(eid: str) -> dict:
                 return enviar_render(eid)
             _poner(eid, paso="render", render_paso=f"⚠️ La sala no lo aceptó: {motivo[:120]}")
             return {"error": motivo}
-        _poner(eid, render_estado="en_fila", render_tid=r["id"], render_compu=None, paso="render",
+        _poner(eid, render_estado="en_fila", render_tid=r["id"], render_compu=None, paso="render", render_preferir=None,
                render_paso="En la fila de la sala de edición", hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion"}),
                render_desde=time.time(), render_mov_t=time.time(), render_avance=0)
         ex._decir("ex_editor", "trabajando", f"Mandé #{f.get('numero')} a la sala de edición 🎬")
@@ -1846,6 +1847,13 @@ def _revisar_render(eid: str, paciencia: int = 1500) -> None:
         # la sala se reinició (p. ej. al actualizarse) o soltó el trabajo: se vuelve a mandar ya, sin contarlo como falla
         _poner(eid, render_estado=None, render_tid=None, render_compu=None,
                render_paso="La sala soltó el video (se reinició): lo vuelvo a mandar")
+        return
+    if est == "error" and re.search(r"subir|Connection|SSL|Max retries|timed out|tiempo|apag|internet|quedó guardado",
+                                    str(e.get("error") or ""), re.I):
+        # 🔌 falló la conexión (casi siempre al subir): esa compu ya tiene el video hecho → se le vuelve a mandar YA,
+        # solo lo sube (no lo rehace) y no cuenta como falla
+        _poner(eid, render_estado=None, render_tid=None, render_compu=None, render_preferir=e.get("compu_id"),
+               render_paso=f"Se cortó la conexión con {e.get('compu') or 'la compu'}: lo retomo ahí mismo (ya tiene el video hecho)")
         return
     if est == "error":
         _poner(eid, render_estado="error", error=f"Tu compu no pudo hacer el video: {e.get('error') or est}"[:300])

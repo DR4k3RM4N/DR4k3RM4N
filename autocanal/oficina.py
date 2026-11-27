@@ -1762,6 +1762,21 @@ class Oficina:
             estilo.ajustar({"cerebro_edicion": d["cerebro"]})
         return {"ok": True, **r}
 
+    def edicion_continuar(self) -> dict:
+        """▶ Continuar: Expedientes reintenta sus casos con problema (desde el paso donde iban; si la compu ya tiene el
+        video hecho, solo lo sube) y los videos del edificio que fallaron se retoman donde se quedaron."""
+        from agentes import expedientes_fabrica as fb
+        hechos = []
+        try:
+            r = fb.continuar()
+            hechos.append(f"Expedientes: reintento {r.get('reintentos', 0)} caso(s) y reviso los que van en video")
+        except Exception as exc:  # noqa: BLE001
+            hechos.append(f"Expedientes falló: {str(exc)[:120]}")
+        for p in list(self.proyectos.values()):
+            if p["estado"] == "error" and "error" not in self.accion_proyecto(p["id"], "reintentar"):
+                hechos.append(f"Edificio: retomo «{p['titulo']}»")
+        return {"ok": True, "hechos": hechos}
+
     def edicion_reinicio(self) -> dict:
         """🔄 Reinicio forzoso: la sala suelta lo trabado, Expedientes destraba sus casos y los videos del edificio que
         fallaron en la edición se reintentan."""
@@ -3017,6 +3032,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"ajustes": estilo.ajustar(datos)})
             if ruta == "/api/edicion/ajustes":  # ⚡ usar todas las compus + servidor, cerebro de edición
                 return self._json(oficina.edicion_ajustes(datos))
+            if ruta == "/api/edicion/continuar":  # ▶ reintentar lo que falló, desde donde iba
+                return self._json(oficina.edicion_continuar())
             if ruta == "/api/edicion/reinicio":  # 🔄 reinicio forzoso de todo lo trabado
                 return self._json(oficina.edicion_reinicio())
             if ruta == "/api/manual":  # lo corriges a mano en la pestaña Estilo

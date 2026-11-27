@@ -106,3 +106,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: v
 
 /* lo escondido se esconde de verdad (antes .ed-cuarto y #ed-tablero le ganaban a [hidden]) */
 [hidden] { display: none !important; }
+
+.ed-dos-botones { display: grid; grid-template-rows: 1fr 1fr; gap: 8px; }
+.ed-dos-botones .ed-boton { padding: 10px 14px; }
+.ed-continuar b { color: var(--verde); }
