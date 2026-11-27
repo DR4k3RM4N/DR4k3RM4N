@@ -1585,10 +1585,11 @@ def compus_sala() -> list[dict]:
              "pref": pref.get(c["id"], "respaldo"), "ocupada": bool(c.get("trabajo"))} for c in compus]
 
 
-def _elegir_compu() -> dict | None:
-    """La preferida si está prendida y puede; si no, cualquier otra de respaldo (las desocupadas primero)."""
+def _elegir_compu(evitar=()) -> dict | None:
+    """La preferida si está prendida y puede; si no, cualquier otra de respaldo (las desocupadas primero).
+    `evitar`: compus donde este video ya se trabó."""
     orden = {"preferida": 0, "respaldo": 1}
-    vivas = [c for c in compus_sala() if c["viva"] and c["puede"] and c["pref"] != "no"]
+    vivas = [c for c in compus_sala() if c["viva"] and c["puede"] and c["pref"] != "no" and c["id"] not in evitar]
     vivas.sort(key=lambda c: (orden.get(c["pref"], 2), c["ocupada"]))
     return vivas[0] if vivas else None
 
@@ -1627,7 +1628,7 @@ def enviar_render(eid: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         _poner(eid, error=str(exc)[:300], paso="render")
         return {"error": str(exc)}
-    compu = _elegir_compu()
+    compu = _elegir_compu(f.get("render_evitar") or [])
     if compu:
         salida = ex.carpeta(eid) / "render-salida"
         shutil.rmtree(salida, ignore_errors=True)
@@ -1644,7 +1645,7 @@ def enviar_render(eid: str) -> dict:
             return {"error": r.get("error") or "La sala no aceptó el trabajo."}
         _poner(eid, render_estado="en_fila", render_tid=r["id"], render_compu=compu["id"], paso="render",
                render_paso=f"Mandado a {compu['nombre']}", hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion"}),
-               render_desde=time.time())
+               render_desde=time.time(), render_mov_t=time.time(), render_avance=0)
         ex._decir("ex_editor", "trabajando", f"Mandé #{f.get('numero')} a {compu['nombre']} 🎬")
     elif estado().get("servidor_respaldo"):
         if not _render_srv.acquire(blocking=False):
@@ -1745,7 +1746,21 @@ def _terminar_render(eid: str, f: dict) -> None:
         ex.al_avisar("Beto", f"El video de ¿Quién MATÓ a {f.get('marca')}? está listo para que lo revises.")
 
 
-def _revisar_render(eid: str) -> None:
+def _destrabar_render(eid: str, f: dict, motivo: str) -> None:
+    """🔀 El video se quedó atorado en una compu: se cancela ahí y va a otra (o al servidor). No regresa a esa compu."""
+    import requests
+    try:
+        requests.post(f"{SALA_URL}/interno/cancelar/{f['render_tid']}", json={}, timeout=5)
+    except requests.RequestException:
+        pass
+    evitar = sorted(set(f.get("render_evitar") or []) | ({f["render_compu"]} if f.get("render_compu") else set()))
+    _poner(eid, render_estado=None, render_tid=None, render_compu=None, render_evitar=evitar,
+           render_paso=f"{motivo}: lo mando a otra compu (o al servidor)…", t_mov=time.time())
+    ex._decir("ex_editor", "trabajando", f"#{f.get('numero')}: {motivo.lower()}, lo cambio de compu 🔀"[:120])
+
+
+def _revisar_render(eid: str, paciencia: int = 1500) -> None:
+    """`paciencia`: segundos sin que avance el video antes de quitárselo a esa compu (25 min; 8 con ▶ Continuar)."""
     import requests
     f = fab(eid)
     try:
@@ -1771,8 +1786,17 @@ def _revisar_render(eid: str) -> None:
                 _poner(eid, avisado_compu=True)
         return
     if est in ("asignado", "trabajando"):
-        ex._decir("ex_editor", "trabajando", f"{e.get('compu') or 'Tu compu'}: {e.get('paso') or 'renderizando'}"[:120])
-        _poner(eid, render_paso=e.get("paso") or "", render_avance=e.get("avance") or 0)
+        avance, paso = e.get("avance") or 0, e.get("paso") or ""
+        if avance != f.get("render_avance") or paso != f.get("render_paso"):
+            _poner(eid, render_paso=paso, render_avance=avance, render_mov_t=time.time())
+            ex._decir("ex_editor", "trabajando", f"{e.get('compu') or 'Tu compu'}: {paso or 'renderizando'}"[:120])
+            return
+        quieto = time.time() - (f.get("render_mov_t") or f.get("render_desde") or time.time())
+        compu = next((c for c in compus_sala() if c["id"] == f.get("render_compu")), None)
+        if compu is not None and not compu["viva"] and quieto > 180:
+            _destrabar_render(eid, f, f"{compu['nombre']} se apagó a medio video")
+        elif quieto > paciencia:
+            _destrabar_render(eid, f, f"Se trabó en {round(float(avance) * 100) if float(avance) <= 1 else round(float(avance))} %")
         return
     if est == "listo":
         _terminar_render(eid, f)
@@ -1998,6 +2022,10 @@ def continuar() -> dict:
         if f.get("error") or f.get("nota_auto"):
             reintentar(x["id"])
             reintentos += 1
+        elif f.get("render_estado") == "en_fila" and f.get("render_tid"):
+            _revisar_render(x["id"], paciencia=480)  # ▶ si lleva 8 min sin moverse, se cambia de compu ya
+        elif f.get("render_estado") == "servidor" and not _render_srv.locked():
+            _poner(x["id"], render_estado=None, render_paso="El servidor se reinició a medio video: lo vuelvo a mandar")
     _curar()
     threading.Thread(target=vuelta, daemon=True).start()
     return {"ok": True, "reintentos": reintentos}

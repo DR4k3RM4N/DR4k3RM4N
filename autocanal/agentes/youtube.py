@@ -176,6 +176,12 @@ def videos_del_canal(canal: str | None = None, n: int = 50) -> list[dict]:
     return salida
 
 
+def borrar_video(url_video: str, canal: str | None = None) -> None:
+    """🗑️ Borra un video de tu canal (no se puede deshacer). Solo cuando tú lo pides."""
+    video_id = url_video.rstrip("/").split("/")[-1].split("=")[-1]
+    _servicio(canal=canal).videos().delete(id=video_id).execute()
+
+
 def editar_video(url_video: str, titulo: str | None = None, descripcion: str | None = None,
                  etiquetas: list[str] | None = None, canal: str | None = None) -> None:
     """Cambia título, descripción o etiquetas de un video ya subido (lo demás se queda igual)."""

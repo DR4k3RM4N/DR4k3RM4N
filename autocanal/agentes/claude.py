@@ -35,7 +35,7 @@ TAREAS = {
     "investigar": ("claude-haiku-5-5", "low"),      # armar el expediente con la evidencia ya juntada
     "guion": ("claude-haiku-5-5", "medium"),        # lo que se escucha en el video (súbelo a Sonnet si sale flojo)
     "blog": ("claude-haiku-5-5", "low"),            # ordenar la investigación en un post
-    "whatsapp": ("claude-haiku-5-5", "low"),        # entender lo que escribes por WhatsApp
+    "whatsapp": ("claude-sonnet-5-5", "low"),       # entender lo que escribes por chat (Sonnet: Haiku no entendía)
     "leer_web": ("claude-haiku-5-5", "low"),        # leer resultados de Google y sacar hechos con fuente
     "estilo": ("claude-sonnet-5-5", "low"),         # estudiar tus miniaturas y entradas (una sola vez)
     "miniatura": ("claude-haiku-5-5", "low"),       # elegir la opción de miniatura más parecida a tu estilo
@@ -79,7 +79,7 @@ class ErrorIA(Exception):
 # Con la suscripción no se paga por token: lo creativo va en Sonnet (mejor guion, ideas y edición).
 TAREAS_SUSCRIPCION = {
     "ideas": "sonnet", "investigar": "sonnet", "guion": "sonnet", "blog": "sonnet", "edicion": "sonnet",
-    "estilo": "sonnet", "leer_web": "haiku", "whatsapp": "haiku", "miniatura": "haiku",
+    "estilo": "sonnet", "leer_web": "haiku", "whatsapp": "sonnet", "miniatura": "haiku",
     # oficina de TikTok Shop y sala de edición
     "prueba": "sonnet", "miniatura_ia": "sonnet", "miniatura_dibujo": "sonnet", "ficha_shop": "opus", "guion_shop": "opus", "tomas_shop": "opus", "sala": "sonnet", "sala_aprender": "haiku",
     "robot": "sonnet", "verificar_exp": "sonnet", "chat_exp": "sonnet", "fabrica_guion": "opus", "fabrica_exp": "sonnet",

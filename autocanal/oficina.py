@@ -147,6 +147,7 @@ class Oficina:
         self.ideas_auto = bool(datos.get("ideas_auto", False))  # ideas solas cada mañana: apagado salvo que lo prendas
         self.piloto = bool(datos.get("piloto", False))  # 🚀 Paola arranca sola la mejor idea (tú solo revisas y publicas)
         self.deseos = datos.get("deseos", [])  # ⭐ apps que salieron en anuncios, para probarlas y grabarlas después
+        self.ordenes_hechas = datos.get("ordenes_hechas", [])  # 📌 órdenes de una sola vez que ya se cumplieron
         self.gasto = datos.get("gasto", {})  # USD por día (AAAA-MM-DD)
         ia.al_gastar = self._gasto
         self.wa = datos.get("whatsapp", {"ultimo_entrante": 0, "numero": "", "vistos": []})
@@ -171,7 +172,38 @@ class Oficina:
         threading.Thread(target=self._ciclo_tampico, daemon=True).start()
         if self.por_reanudar:
             threading.Thread(target=self._reanudar, daemon=True).start()
+        threading.Thread(target=self._ordenes_unicas, daemon=True).start()
         ia.antes_de_llamar = self._revisar_tope
+
+    # 📌 Órdenes que Miguel pidió (por el chat con Claude) para hacerse UNA vez al actualizarse el servidor.
+    ORDENES = [
+        {"id": "2026-11-27-reeditar-lana", "nicho": "fraudes", "n": 3, "accion": "reeditar",
+         "texto": "Con el estilo nuevo del canal (chat + recortes)."},
+    ]
+
+    def _ordenes_unicas(self) -> None:
+        time.sleep(90)  # que la oficina termine de arrancar
+        if self.demo:
+            return
+        from agentes import canales as canales_mod
+        for o in self.ORDENES:
+            if o["id"] in self.ordenes_hechas:
+                continue
+            with self.lock:
+                self.ordenes_hechas.append(o["id"])
+                self._tocar()
+            ids = {c["id"] for c in canales_mod.lista() if c.get("nicho") == o["nicho"]}
+            with self.lock:
+                hechos = sorted((p for p in self.proyectos.values() if (p.get("canal") or "principal") in ids
+                                 and p["estado"] == "publicado"), key=lambda p: -(p.get("publicado_t") or p.get("creado") or 0))
+            elegidos = hechos[:o["n"]]
+            for p in elegidos:
+                r = self.accion_proyecto(p["id"], o["accion"], o["texto"])
+                print(f"  · orden {o['id']}: {p['titulo']} → {r}", flush=True)
+            if elegidos:
+                self.avisar_jefe(f"🎬 Como pediste, Edu vuelve a editar con el estilo nuevo: "
+                                 + ", ".join(p["titulo"] for p in elegidos)
+                                 + ". Cuando queden, Carla sube los nuevos solos; los anteriores los borras tú (o dime «bórralos»).")
 
     # ---------- estado ----------
     def _tocar(self) -> None:
@@ -182,7 +214,7 @@ class Oficina:
                 "propuestas": self.propuestas[-200:], "proyectos": self.proyectos,
                 "preferencias": self.preferencias[-30:], "reglas": self.reglas[-40:], "log": self.log[-300:],
                 "ultima_busqueda": self.ultima_busqueda, "ideas_auto": self.ideas_auto, "piloto": self.piloto,
-                "deseos": self.deseos[-300:], "tareas": self.tareas[-300:],
+                "deseos": self.deseos[-300:], "tareas": self.tareas[-300:], "ordenes_hechas": self.ordenes_hechas[-50:],
                 "gasto": dict(sorted(self.gasto.items())[-120:]),
                 "whatsapp": {**self.wa, "vistos": self.wa.get("vistos", [])[-200:]},
             }, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -386,7 +418,10 @@ class Oficina:
         try:
             from agentes import canales as canales_mod
             videos = sorted(self.proyectos.values(), key=lambda p: -p["creado"])
-            plan = chat_jefe.interpretar(texto_jefe, ideas, videos, canales_mod.lista())
+            with self.lock:
+                platica = [m for m in self.log if m.get("quien") in ("jefe", "productora")][-13:-1]
+                deseos = [d for d in self.deseos if d["estado"] == "pendiente"][-60:]
+            plan = chat_jefe.interpretar(texto_jefe, ideas, videos, canales_mod.lista(), platica, deseos)
         except Exception as exc:  # noqa: BLE001
             return self._responder(canal, f"No te entendí bien ({exc}). Escribe *ayuda* para ver qué puedo hacer.")
         partes = [plan["respuesta"]] if plan.get("respuesta") else []
@@ -452,6 +487,38 @@ class Oficina:
                                   + (". Si son públicos, se programan en la 📅 agenda y te aviso cada uno." if tipo == "publicar" else ""))
                 if fallas:
                     partes.append("No se pudo con: " + ", ".join(fallas))
+            elif tipo in ("reeditar", "rehacer", "borrar_youtube"):  # 🔁 videos ya hechos o publicados
+                nums = [x for x in (acc.get("numeros") or []) if x] or ([n] if n else [])
+                elegidos = [videos[x - 1] for x in nums if 0 < x <= len(videos)]
+                if not elegidos:
+                    partes.append("No supe a qué videos te refieres; dime sus nombres o números.")
+                    continue
+                if tipo == "borrar_youtube" and not re.search(r"borr|elimin|quit|baj|reemplaz", texto_jefe, re.I):
+                    partes.append("Para borrar de YouTube necesito que me lo digas claro (por ejemplo: «borra el 3»).")
+                    continue
+                hechos, fallas = [], []
+                for v in elegidos:
+                    r = self.accion_proyecto(v["id"], tipo, texto, reemplazar=bool(acc.get("reemplazar")))
+                    (fallas if "error" in r else hechos).append(v["titulo"] if "error" not in r else f"{v['titulo']} ({r['error']})")
+                verbo = {"reeditar": "🎬 Edu vuelve a editar", "rehacer": "✏️ Rehago desde el guion",
+                         "borrar_youtube": "🗑️ Borrando de YouTube"}[tipo]
+                if hechos:
+                    extra = ""
+                    if tipo != "borrar_youtube":
+                        extra = (". Cuando queden, Carla sube los nuevos con la misma fecha"
+                                 + (" y borra los anteriores de YouTube." if acc.get("reemplazar") else "; los anteriores los borras tú (o dime «bórralos»)."))
+                    partes.append(f"{verbo}: " + ", ".join(f"*{t}*" for t in hechos) + extra)
+                if fallas:
+                    partes.append("No se pudo con: " + ", ".join(fallas))
+            elif tipo == "quitar_deseos":  # ⭐ limpiar la lista de deseos
+                with self.lock:
+                    pendientes = [d for d in self.deseos if d["estado"] == "pendiente"][-60:]
+                    quitados = [pendientes[x - 1] for x in (acc.get("numeros") or []) if 0 < x <= len(pendientes)]
+                    for d in quitados:
+                        d["estado"] = "descartado"
+                    self._tocar()
+                partes.append(("⭐ Quité de tu lista de deseos: " + ", ".join(d["nombre"] for d in quitados)) if quitados
+                              else "No encontré apps así en tu lista de deseos.")
             elif tipo == "piloto":
                 with self.lock:
                     self.piloto = texto.lower() in ("on", "si", "sí", "prender", "true", "1")
@@ -1437,7 +1504,7 @@ class Oficina:
             p = self.proyectos[app_id]
             p["estado"], p["etapa"] = "revision", "revision"
             p["reanudado"] = 0
-            solo = estilo.cargar()["ajustes"].get("publicar_solo")
+            solo = estilo.cargar()["ajustes"].get("publicar_solo") or p.pop("rehecho", False)  # 🔁 ya estaba publicado: sube solo
             if solo:  # 🚀 confías en el equipo: Carla lo programa en el siguiente horario libre de la agenda
                 p["estado"], p["privacidad"], p["titulo_n"] = "publicando", "public", 1
             self._tocar()
@@ -1564,9 +1631,11 @@ class Oficina:
         self.avisar_jefe(f"Jefe, {p['titulo']} tuvo un problema. Está en tu bandeja.")
 
     def accion_proyecto(self, app_id: str, accion: str, texto: str = "", titulo_n: int = 1, privacidad: str = "",
-                        titulo_libre: str = "") -> dict:
+                        titulo_libre: str = "", reemplazar: bool = False) -> dict:
         if accion == "mejorar_titulo":  # fuera del candado: tarda unos segundos en lo que contesta Claude
             return self.mejorar_titulo(app_id, texto)
+        if accion in ("reeditar", "rehacer", "borrar_youtube"):
+            return self._rehacer_publicado(app_id, accion, texto, reemplazar)
         with self.lock:
             p = self.proyectos.get(app_id)
             if not p:
@@ -1620,6 +1689,62 @@ class Oficina:
                 self._tocar()
             else:
                 return {"error": "Esa acción no se puede hacer ahora."}
+        return {"ok": True}
+
+    def _rehacer_publicado(self, app_id: str, accion: str, texto: str, reemplazar: bool) -> dict:
+        """🔁 Reeditar (solo la edición) o rehacer (desde el guion) un video, aunque ya esté en YouTube: el nuevo se sube
+        con la misma fecha. 🗑️ Borrar de YouTube solo cuando el jefe lo pide."""
+        from agentes import youtube
+
+        with self.lock:
+            p = self.proyectos.get(app_id)
+            if not p:
+                return {"error": "no existe"}
+            if p["estado"] in ("produccion", "publicando"):
+                return {"error": "está trabajándose ahorita"}
+            f = config.SALIDA / app_id / "publicado.json"
+            pub = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+            canal_yt = pub.get("canal") or p.get("canal") or None
+        if accion == "borrar_youtube":
+            if not pub.get("youtube"):
+                return {"error": "no está en YouTube"}
+            if self.demo:
+                time.sleep(0.5)
+            else:
+                try:
+                    youtube.borrar_video(pub["youtube"], canal=canal_yt)
+                except Exception as exc:  # noqa: BLE001
+                    return {"error": f"YouTube no dejó: {str(exc)[:120]}"}
+            with self.lock:
+                pub.setdefault("borrados", []).append(pub.pop("youtube"))
+                for k in ("programado", "programado_utc", "miniatura_puesta", "privacidad", "enlace_en_youtube"):
+                    pub.pop(k, None)
+                f.write_text(json.dumps(pub, ensure_ascii=False, indent=2), encoding="utf-8")
+                if p["estado"] == "publicado":
+                    p["estado"], p["etapa"] = "descartado", "descartado"
+                p["publicado"] = pub
+                self.log.append({"t": time.time(), "quien": "community", "texto": f"🗑️ Borré de YouTube: {p['titulo']}"})
+                self._tocar()
+            return {"ok": True}
+        if not (config.SALIDA / app_id / "guion.json").exists():
+            return {"error": "no tiene guion guardado"}
+        with self.lock:
+            if pub.get("youtube"):  # el que está en YouTube queda como «anterior»: el nuevo hereda su fecha
+                pub["anterior"] = {k: pub.get(k) for k in ("youtube", "programado", "programado_utc", "titulo")}
+                for k in ("youtube", "programado", "programado_utc", "miniatura_puesta", "miniatura_error", "privacidad",
+                          "privacidad_pedida", "enlace_en_youtube"):
+                    pub.pop(k, None)
+                f.write_text(json.dumps(pub, ensure_ascii=False, indent=2), encoding="utf-8")
+            p["reemplazar"] = bool(reemplazar and (pub.get("anterior") or {}).get("youtube"))
+            p["rehecho"] = bool((pub.get("anterior") or {}).get("youtube"))
+            p["estado"], p["error"] = "produccion", None
+            p["etapa"] = "video" if accion == "reeditar" else "guion"
+            if texto:
+                p["notas"] = (p.get("notas", "") + "\n" + texto).strip()
+            self.log.append({"t": time.time(), "quien": "jefe", "texto": f"{'🎬 Reeditar' if accion == 'reeditar' else '✏️ Rehacer'}: {p['titulo']}"
+                             + (f" ({texto})" if texto else "")})
+            self._tocar()
+        threading.Thread(target=self._producir, args=(app_id, p.get("notas", ""), p["etapa"], set()), daemon=True).start()
         return {"ok": True}
 
     def _usar_titulo(self, app_id: str, titulo: str) -> int:
@@ -1791,6 +1916,19 @@ class Oficina:
         if hay_fila:
             self.cupo_lleno.pop(cid, None)
             threading.Thread(target=self._reintentar_cupo, daemon=True).start()
+        anterior = ((pub or {}).get("anterior") or {}).get("youtube")
+        if anterior and (pub or {}).get("youtube") and anterior != pub.get("youtube") and p.pop("reemplazar", False):
+            try:  # 🔁 el nuevo ya está arriba: ahora sí se borra el anterior (lo pediste)
+                if not self.demo:
+                    from agentes import youtube
+                    youtube.borrar_video(anterior, canal=cid)
+                self.decir("community", f"Borré la versión anterior de {titulo} en YouTube 🗑️")
+                f = config.SALIDA / app_id / "publicado.json"
+                pub.setdefault("borrados", []).append(anterior)
+                pub.pop("anterior", None)
+                f.write_text(json.dumps(pub, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception as exc:  # noqa: BLE001
+                self.decir("community", f"No pude borrar la versión anterior de {titulo}: {str(exc)[:120]}")
         donde = "en YouTube y en el blog" if (pub or {}).get("blog") else "en YouTube"
         pedida, real = (pub or {}).get("privacidad_pedida"), (pub or {}).get("privacidad")
         if (pub or {}).get("programado"):

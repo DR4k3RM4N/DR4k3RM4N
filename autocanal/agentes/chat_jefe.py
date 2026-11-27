@@ -30,8 +30,12 @@ AYUDA = (
     "le pica a los anuncios de apps de dinero (van a tu lista de deseos) y el equipo arma el video"
 )
 
-SYSTEM = """Eres Paola, la productora de un canal de YouTube que investiga apps que prometen pagar dinero.
-Tu jefe te escribe por chat (WhatsApp o Telegram). Conviertes su mensaje en acciones para el equipo y le contestas.
+SYSTEM = """Eres Paola, la productora de la oficina que hace los videos de YouTube de Miguel (tu jefe): el canal de
+apps que prometen pagar y sus otros canales (p. ej. «Cuida Tu Lana», de fraudes). Te escribe por chat. Conviertes su
+mensaje en acciones para el equipo y le contestas. Eres lista: usa la PLÁTICA RECIENTE para entender mensajes cortos
+o correcciones («no, pero cuida tu lana», «esos», «el de ayer») y la lista de VIDEOS (con canal, estado y fecha) para
+saber a cuáles se refiere («los últimos 3 de Cuida Tu Lana» = los 3 primeros de ese canal en la lista, que ya viene
+de más nuevo a más viejo). No le preguntes lo que puedes deducir; pregunta solo si de verdad es ambiguo.
 
 Reglas:
 - Las ideas pendientes están numeradas. Usa ese número en "numero". Si no queda claro a cuál se refiere,
@@ -62,12 +66,22 @@ Reglas:
   "prueba X en el cel", "ya la tengo instalada, grábala"). En "texto" el nombre de la app tal cual lo dijo; en
   "numero" pon 1 si dijo que YA la tiene instalada o abierta en el cel, 0 si no. En "canal" el id si lo pidió para
   un canal (ej. una app de préstamos para el canal de fraudes); vacío si no.
-- MUY IMPORTANTE: solo puedes hacer las acciones de esta lista. Si pide algo que no está aquí (editar o
-  borrar un video ya publicado, cambiar su título en YouTube, etc.), NO digas que lo vas a hacer ni que le avisas
-  a alguien: dile con honestidad que eso todavía no lo puede hacer el equipo, y sugiere que se lo pida a quien
-  programa la oficina. Nunca inventes resultados ni cifras.
+- "reeditar" = volver a EDITAR video(s) (aunque ya estén publicados) con lo que ya tienen (guion y voz iguales),
+  p. ej. para el estilo nuevo de edición. "rehacer" = rehacerlo desde el guion (guion, voz y edición nuevos).
+  Pon los números en "numeros" y lo que quiere cambiar (si dijo) en "texto". Si ya estaba publicado, el video nuevo
+  se sube solo con la misma fecha programada. "reemplazar" = true si pidió borrar o reemplazar el anterior en
+  YouTube (se borra hasta que el nuevo ya subió); false si dijo que él los borra o no dijo nada.
+- "borrar_youtube" = BORRAR de YouTube video(s) ya subidos (números en "numeros"). Solo si lo pidió claramente
+  («borra», «elimina», «bájalo de YouTube»); nunca lo deduzcas. Es para siempre.
+- "quitar_deseos" = quitar apps de la ⭐ lista de deseos: pon en "numeros" los números de la LISTA DE DESEOS que
+  cumplen lo que pidió (p. ej. todas las de apuestas o casino). Si además dice «no vuelvas a…», agrega un "corregir".
+- Para acciones sobre varios videos usa "numeros" (lista); "numero" queda para una sola idea o video.
+- MUY IMPORTANTE: solo puedes hacer las acciones de esta lista. Si pide algo que no está aquí (hacer shorts,
+  cambiar descripciones en YouTube, etc.), NO digas que lo vas a hacer: dile con honestidad que eso todavía no lo
+  hace el equipo. Nunca inventes resultados ni cifras. Nunca digas «pídeselo a quien programa la oficina».
 - Si solo saluda o platica, contesta breve y amable, sin acciones.
-- "respuesta": 1 o 2 frases en español de México, cálida y directa, como compañera de trabajo."""
+- "respuesta": 1 o 2 frases en español de México, cálida y directa, como compañera de trabajo. Di qué vas a
+  hacer con nombres concretos (qué videos), no generalidades."""
 
 SCHEMA = {
     "type": "object",
@@ -78,14 +92,17 @@ SCHEMA = {
             "properties": {
                 "tipo": {"type": "string", "enum": ["aprobar", "rechazar", "comentar", "pedir_ideas", "estado",
                                                      "pendientes", "corregir", "cambios", "miniaturas",
-                                                     "publicar", "reintentar", "descartar", "piloto", "grabar_app"]},
+                                                     "publicar", "reintentar", "descartar", "piloto", "grabar_app",
+                                                     "reeditar", "rehacer", "borrar_youtube", "quitar_deseos"]},
                 "numero": {"type": "integer", "description": "Número de la idea o del video; 0 si no aplica"},
+                "numeros": {"type": "array", "items": {"type": "integer"}, "description": "Varios videos (o deseos); [] si no aplica"},
+                "reemplazar": {"type": "boolean", "description": "reeditar/rehacer: borrar el anterior de YouTube al subir el nuevo"},
                 "texto": {"type": "string"},
                 "agente": {"type": "string", "enum": ["", "productora", "investigador", "guionista", "locutor",
                                                       "disenadora", "editor", "redactora", "community", "todos"]},
                 "canal": {"type": "string", "description": "id del canal si aplica solo a uno; vacío si no"},
             },
-            "required": ["tipo", "numero", "texto", "agente", "canal"],
+            "required": ["tipo", "numero", "numeros", "reemplazar", "texto", "agente", "canal"],
             "additionalProperties": False,
         }},
     },
@@ -116,16 +133,28 @@ def rapido(texto: str) -> dict | None:
     return None
 
 
-def interpretar(texto: str, ideas: list[dict], proyectos: list[dict], canales: list[dict] | None = None) -> dict:
+def interpretar(texto: str, ideas: list[dict], proyectos: list[dict], canales: list[dict] | None = None,
+                platica: list[dict] | None = None, deseos: list[dict] | None = None) -> dict:
     r = rapido(texto)
     if r is not None:
         return r
+    nombres = {c["id"]: c.get("nombre") for c in canales or []}
+    import datetime as dt
+
+    def fecha(p: dict) -> str:
+        t = p.get("publicado_t") or p.get("creado") or 0
+        return dt.datetime.fromtimestamp(t).strftime("%d/%m %H:%M") if t else ""
+
     contexto = {
         "ideas_pendientes": [{"numero": p.get("num", i), "titulo": p["titulo"], "video": p.get("angulo", "")} for i, p in enumerate(ideas, 1)],
-        "videos": [{"numero": i, "titulo": p["titulo"], "estado": p["estado"], "canal": p.get("canal", "principal")}
-                   for i, p in enumerate(proyectos[:10], 1)],
+        "videos (del más nuevo al más viejo)": [
+            {"numero": i, "titulo": p["titulo"], "estado": p["estado"], "canal": nombres.get(p.get("canal") or "principal", p.get("canal") or "principal"),
+             "fecha": fecha(p), "en_youtube": bool((p.get("publicado") or {}).get("youtube"))}
+            for i, p in enumerate(proyectos[:40], 1)],
         "canales": [{"id": c["id"], "nombre": c.get("nombre")} for c in canales or []],
+        "lista_de_deseos": [{"numero": i, "app": d.get("nombre")} for i, d in enumerate(deseos or [], 1)],
     }
+    previa = "\n".join(f"{'Miguel' if m.get('quien') == 'jefe' else 'Paola'}: {m.get('texto', '')[:300]}" for m in (platica or [])[-10:])
     return claude.json_estructurado(
-        SYSTEM, f"CONTEXTO:\n{json.dumps(contexto, ensure_ascii=False)}\n\nMENSAJE DEL JEFE:\n{texto[:1500]}",
-        SCHEMA, tarea="whatsapp")
+        SYSTEM, f"CONTEXTO:\n{json.dumps(contexto, ensure_ascii=False)}\n\nPLÁTICA RECIENTE:\n{previa or '(ninguna)'}"
+        f"\n\nMENSAJE NUEVO DEL JEFE:\n{texto[:1500]}", SCHEMA, tarea="whatsapp")

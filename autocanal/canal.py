@@ -444,6 +444,12 @@ def publicar(app_id: str, titulo_n: int = 1, privacidad: str | None = None) -> d
             desc = "\n".join(l for l in guion["descripcion"].splitlines() if "{{BLOG_URL}}" not in l)
         sintetico = config.env("VOZ_MOTOR", "edge") != "propia"
         publicar_en, programado = _hora_programada(privacidad or config.env("YT_PRIVACIDAD", "private"), app_id)
+        previo = (pub.get("anterior") or {})  # 🔁 un video rehecho conserva la fecha que ya tenía (si no ha pasado)
+        if publicar_en and previo.get("programado_utc"):
+            import datetime as dt
+            cuando = dt.datetime.strptime(previo["programado_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+            if cuando > dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=45):
+                publicar_en, programado = previo["programado_utc"], previo.get("programado") or programado
         pub["youtube"] = youtube.subir(carpeta / "video.mp4", carpeta / "miniatura.jpg",
                                        guion["titulos"][titulo_n - 1], desc, guion["etiquetas"], sintetico, privacidad,
                                        publicar_en, canal=canal)

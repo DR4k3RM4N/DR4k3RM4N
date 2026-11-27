@@ -219,6 +219,16 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   "descartar" (N obligatorio), "piloto" on/off. Paola NO debe prometer acciones que no existen (regla en el prompt).
   El canal viejo no puede verificar teléfono → YouTube rechaza sus miniaturas (403); Cuida Tu Lana ya verificado.
 
+- **Chat más listo y videos ya publicados (27 nov)**: `chat_jefe.interpretar` usa Sonnet (tarea whatsapp), recibe la
+  plática reciente (12 mensajes jefe/Paola), hasta 40 videos con canal/estado/fecha y la ⭐ lista de deseos. Acciones
+  nuevas: "reeditar" (solo la edición, `desde="video"`), "rehacer" (desde el guion), con "numeros" (varios) y
+  "reemplazar"; "borrar_youtube" (solo si el texto dice borra/elimina…; `youtube.borrar_video`); "quitar_deseos".
+  `Oficina._rehacer_publicado`: el link viejo pasa a `publicado.json["anterior"]`, el nuevo se sube solo
+  (`p["rehecho"]`) con la misma fecha si aún no pasa (`canal.publicar` reusa `anterior.programado_utc`) y, si pidió
+  reemplazar, se borra el anterior hasta que el nuevo ya subió. Borrado → estado "descartado", `pub["borrados"]`.
+- **📌 Órdenes de una vez** (`Oficina.ORDENES`, se guardan en `ordenes_hechas`): al arrancar (90 s) cumple las que
+  falten. Primera: reeditar los últimos 3 publicados de Cuida Tu Lana con el estilo nuevo (sin borrar los viejos).
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes
@@ -708,3 +718,6 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   y frases dudosas (se quita la oración; si no queda nada, «Y la historia no termina ahí.»). Sin Ramos en la fábrica.
 - La investigación se guarda en `investigaciones/<tema>.json` (14 días): si el plan se acaba en el guion, no se repite.
 - Con el plan en pausa no se queman reintentos automáticos (máx. 2). Chat y verificación de casos importados: Sonnet.
+- Render trabado: `_revisar_render` guarda `render_mov_t`; si el avance no se mueve 25 min (8 con ▶ Continuar) o la
+  compu se apaga a medio video, `_destrabar_render` cancela en la sala y lo manda a otra compu (no a la misma:
+  `render_evitar`) o al servidor. Continuar también rescata renders del servidor cortados por un reinicio.
