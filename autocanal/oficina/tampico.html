@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1208">
+<title>Tampiqueando</title>
+<link rel="stylesheet" href="/static/estilo.css">
+<style>
+  body.tp { min-height: 100vh; }
+  .tp-barra { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    border-bottom: 3px solid #e8a33d; background: linear-gradient(90deg, #2a1708, #3d2210); color: #fff3e0; }
+  .tp-barra h1 { margin: 0; font-size: 22px; }
+  .tp-barra p { margin: 2px 0 0; font-size: 13px; opacity: .8; }
+  .tp-links { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tp-links a { color: #fff3e0; text-decoration: none; border: 1px solid #e8a33d88; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+  .tp-main { max-width: 1100px; margin: 0 auto; padding-block: 16px 40px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+</style>
+</head>
+<body class="tp">
+<header class="tp-barra">
+  <div><h1>🌮 Tampiqueando</h1><p>Foodie de Tampico, Madero y Altamira</p></div>
+  <nav class="tp-links"><a href="/">🏢 Edificio</a><a href="/edicion">🎬 Sala central</a></nav>
+</header>
+<main class="tp-main"><div id="tampico"><p class="pista">Cargando…</p></div></main>
+<script src="/static/tampico.js"></script>
+</body>
+</html>

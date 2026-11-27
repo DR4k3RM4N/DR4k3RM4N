@@ -26,7 +26,11 @@
     if (nombre === "casos") window.dispatchEvent(new CustomEvent("pestana", { detail: "expedientes" }));
     pintar(true);
   }
-  document.querySelectorAll("[data-exp-tab]").forEach((b) => b.addEventListener("click", () => abrir(b.dataset.expTab)));
+  document.querySelectorAll("[data-exp-tab]").forEach((b) => b.addEventListener("click", () => {
+    abrir(b.dataset.expTab);
+    // en el cel el panel queda abajo de la oficina: que se vea lo que abriste, sin buscarlo
+    if (matchMedia("(max-width: 900px)").matches) $(".ag-pestanas").scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
   const abrirCaso = (id) => { abrir("casos"); window.dispatchEvent(new CustomEvent("exp-abrir", { detail: id })); };
 
   let resumen = null, agendaDatos = null, fabrica = null;

@@ -294,6 +294,11 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   ninguna compu. Arreglado (RAICES + `AUTOCANAL_EXPEDIENTES`); si la sala rechaza algo, se ve en el caso y lo hace el
   servidor (`render_forzar_srv`).
 
+- **🌮 Tampiqueando en su propia página (27 nov)**: `/tampico` (`oficina/tampico.html` + `tampico.js`, el panel que
+  antes vivía en app.js). En el edificio la pestaña 🌮 solo enlaza ahí y hay chip «🌮 Tampiqueando ↗» arriba.
+- **Chat de Expedientes**: la caja para escribir queda pegada abajo del panel (sticky) y la lista mide
+  `100vh - 360px`; en el cel, al tocar una pestaña la página baja a ella (antes había que darle Tab para verla).
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes
