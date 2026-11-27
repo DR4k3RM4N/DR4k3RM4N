@@ -1215,6 +1215,14 @@ def _zip_render(eid: str) -> Path:
 def _azure() -> dict:
     """La clave de Azure vive en el servidor (.env); se le presta a la compu que hace el video y ella la borra."""
     clave, region = config.env("AZURE_SPEECH_KEY"), config.env("AZURE_SPEECH_REGION", "eastus")
+    if not clave:  # la leo del .env en este momento: así no hace falta reiniciar la oficina después de pegarla
+        try:
+            from dotenv import dotenv_values
+            vals = dotenv_values(config.BASE / ".env")
+            clave = (vals.get("AZURE_SPEECH_KEY") or "").strip().strip('"').strip("'")
+            region = (vals.get("AZURE_SPEECH_REGION") or region or "eastus").strip().strip('"').strip("'")
+        except Exception:  # noqa: BLE001
+            pass
     archivo = CANAL_DIR / ".azure_speech"
     if not clave and archivo.exists():
         partes = [x.strip() for x in archivo.read_text(encoding="utf-8-sig").splitlines() if x.strip()]
