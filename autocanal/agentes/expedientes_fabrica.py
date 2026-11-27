@@ -952,33 +952,86 @@ ESQ_MINI = {"type": "object", "additionalProperties": False, "required": ["a", "
                          "der_archivo": {"type": "string"}, "der_texto": {"type": "string"}, "der_etiqueta": {"type": "string"}}}}}
 
 
-def _dibujar_realista(prompt: str, destino: Path) -> bool:
-    """Una foto realista con Gemini (~4 centavos) cuando no hay una foto libre que sirva. Sin texto ni logos."""
-    import base64
+PROMPT_FOTO = ("\n\nPhotorealistic YouTube thumbnail photo, cinematic lighting, sharp subject, shallow depth of field, "
+               "slightly desaturated background, strong contrast, the person in the right third, the left third dark and "
+               "uncluttered for a headline, nothing important in the bottom-right corner. ABSOLUTELY NO text, letters, "
+               "numbers, signs with words, logos, brand names or watermarks. The person is a generic, non-famous adult "
+               "(not a real public figure).")
+
+
+def motor_imagenes() -> str:
+    """Quién dibuja la escena realista de la miniatura: Cloudflare (gratis) primero, Gemini (de paga) de respaldo."""
+    if config.env("CLOUDFLARE_ACCOUNT_ID") and config.env("CLOUDFLARE_AI_TOKEN"):
+        return "cloudflare"
+    if config.env("GEMINI_API_KEY"):
+        return "gemini"
+    return ""
+
+
+def _guardar_imagen(datos: bytes, destino: Path) -> None:
     from PIL import Image, ImageOps
+    img = Image.open(io.BytesIO(datos)).convert("RGB")
+    ImageOps.fit(img, (1920, 1080), centering=(0.5, 0.4)).save(destino, quality=95)
+
+
+def _cloudflare(texto: str, destino: Path) -> bool:
+    """FLUX.1 [schnell] en Cloudflare Workers AI: cuota gratis diaria (sin tarjeta)."""
+    import base64
+    import requests
+    cuenta, token = config.env("CLOUDFLARE_ACCOUNT_ID"), config.env("CLOUDFLARE_AI_TOKEN")
+    modelo = config.env("CLOUDFLARE_MODELO_IMAGEN", "@cf/black-forest-labs/flux-1-schnell")
+    r = requests.post(f"https://api.cloudflare.com/client/v4/accounts/{cuenta}/ai/run/{modelo}", timeout=120,
+                      headers={"Authorization": f"Bearer {token}"}, json={"prompt": texto[:2000], "steps": 8})
+    if r.status_code != 200:
+        raise RuntimeError(f"Cloudflare ({r.status_code}): {r.text[:200]}")
+    img = (r.json().get("result") or {}).get("image")
+    if not img:
+        raise RuntimeError("Cloudflare no regresó imagen.")
+    _guardar_imagen(base64.b64decode(img), destino)
+    return True
+
+
+def _gemini(texto: str, destino: Path) -> bool:
+    import base64
     from . import ilustrador
-    if not config.env("GEMINI_API_KEY"):
-        return False
-    texto = (prompt + "\n\nPhotorealistic YouTube thumbnail photo, cinematic lighting, 16:9 (1920x1080), sharp subject, "
-             "shallow depth of field, slightly desaturated background, strong contrast, the person in the right third, the "
-             "left third dark and uncluttered for a headline, nothing important in the bottom-right corner. ABSOLUTELY NO "
-             "text, letters, numbers, signs with words, logos, brand names or watermarks. The person is a generic, "
-             "non-famous adult (not a real public figure).")
-    modelo = config.env("GEMINI_MODELO_IMAGEN", "gemini-2.5-flash-image")
-    for con_formato in (True, False):
-        r = ilustrador._pedir(modelo, [{"text": texto}], con_formato)
-        if r.status_code != 200:
+    modelos = list(dict.fromkeys([m for m in (config.env("GEMINI_MODELO_IMAGEN"), "gemini-3.1-flash-image-preview",
+                                              "gemini-2.5-flash-image") if m]))
+    ultimo = ""
+    for modelo in modelos:
+        for con_formato in (True, False):
+            r = ilustrador._pedir(modelo, [{"text": texto}], con_formato)
+            if r.status_code != 200:
+                ultimo = f"{modelo} ({r.status_code}): {r.text[:150]}"
+                if r.status_code in (401, 403, 429):
+                    raise RuntimeError(f"Gemini: {ultimo}")
+                continue
+            for cand in r.json().get("candidates", []):
+                for parte in (cand.get("content") or {}).get("parts", []):
+                    datos = (parte.get("inlineData") or parte.get("inline_data") or {}).get("data")
+                    if datos:
+                        _guardar_imagen(base64.b64decode(datos), destino)
+                        gasto = float(config.env("PRECIO_IMAGEN", "0.04") or 0)
+                        if claude.al_gastar and gasto:
+                            claude.al_gastar(None, "miniatura", "gemini (imagen)", gasto, 0, 0, "miniatura realista (Expedientes)")
+                        return True
+    raise RuntimeError(f"Gemini no dibujó: {ultimo}")
+
+
+def _dibujar_realista(prompt: str, destino: Path) -> bool:
+    """La escena realista de la miniatura (persona genérica + el lugar del caso), sin texto ni logos."""
+    texto = prompt + PROMPT_FOTO
+    errores = []
+    for motor_ in ("cloudflare", "gemini"):
+        if motor_ == "cloudflare" and not (config.env("CLOUDFLARE_ACCOUNT_ID") and config.env("CLOUDFLARE_AI_TOKEN")):
             continue
-        for cand in r.json().get("candidates", []):
-            for parte in (cand.get("content") or {}).get("parts", []):
-                datos = (parte.get("inlineData") or parte.get("inline_data") or {}).get("data")
-                if datos:
-                    img = Image.open(io.BytesIO(base64.b64decode(datos))).convert("RGB")
-                    ImageOps.fit(img, (1920, 1080)).save(destino, quality=95)
-                    gasto = float(config.env("PRECIO_IMAGEN", "0.04") or 0)
-                    if claude.al_gastar and gasto:
-                        claude.al_gastar(None, "miniatura", "gemini (imagen)", gasto, 0, 0, "miniatura realista (Expedientes)")
-                    return True
+        if motor_ == "gemini" and not config.env("GEMINI_API_KEY"):
+            continue
+        try:
+            return (_cloudflare if motor_ == "cloudflare" else _gemini)(texto, destino)
+        except Exception as exc:  # noqa: BLE001 — si uno falla, se intenta con el otro
+            errores.append(str(exc)[:200])
+    if errores:
+        print("  · imagen realista: " + " | ".join(errores), flush=True)
     return False
 
 
@@ -997,8 +1050,9 @@ def disenar_miniaturas(tema: dict, g: dict, material: dict, destino: Path) -> di
             "Eres Mina, diseñadora de miniaturas del canal «¿Quién MATÓ a…?».\n\n" + REGLAS_MINIATURA,
             f"VIDEO: ¿Quién MATÓ a {tema['marca']}?\nGANCHO: {tema.get('gancho', '')}\n"
             f"IDEAS DEL GUION: A = {' / '.join(g.get('miniatura_a') or [])} · B = {' vs '.join((g.get('miniatura_b') or [])[:2])}\n"
-            f"FOTOS LIBRES DISPONIBLES:\n{lista}\n\nDiseña la A (la principal) y la B (para probar). Usa archivos de la "
-            "lista tal cual; si ninguna foto sirve para la A, pide fondo=ia con un prompt realista.",
+            f"FOTOS DISPONIBLES:\n{lista}\n\nIMAGEN REALISTA (persona + escena): "
+            + ("DISPONIBLE: úsala para la A (fondo=ia)." if motor_imagenes() else "NO disponible: usa fondo=foto.")
+            + "\n\nDiseña la A (la principal) y la B (para probar). Usa archivos de la lista tal cual.",
             ESQ_MINI, tarea=TAREA, que=f"miniaturas {tema['marca']}")
     validas = {m["archivo"] for m in fotos}
     a = cfg["a"]
@@ -1968,7 +2022,7 @@ def resumen() -> dict:
     return {"estado": e, "temas": lista, "casos": casos, "meta": meta_videos(), "por_delante": _material_por_delante(),
             "en_marcha": _caso_sin_terminar(), "ahora": time.time(),
             "chat": historial_chat()[-60:], "produciendo": _produciendo(), "compus": compus_sala(),
-            "azure_ok": bool(_azure()) or _demo(),
+            "azure_ok": bool(_azure()) or _demo(), "imagenes": motor_imagenes(),
             "plan": _plan_disponible(), "pexels": (CANAL_DIR / ".pexels_key").exists(), "demo": _demo()}
 
 

@@ -677,6 +677,10 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
     polaroid «EVIDENCIA» con el logo/producto real, sello opcional, nada abajo a la derecha.
   · Avance en vivo: tarjeta «🎬 Ahorita» en la Bandeja (pasos ✅/⏳, barra %, `t_mov` = último movimiento; avance del
     render de la compu o del servidor).
+- **Imagen realista de la miniatura** (`_dibujar_realista`): Cloudflare Workers AI FLUX.1 schnell gratis
+  (`CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_AI_TOKEN`, modelo `CLOUDFLARE_MODELO_IMAGEN`) primero; Gemini de respaldo
+  (`GEMINI_API_KEY`; modelos `gemini-3.1-flash-image-preview` → `gemini-2.5-flash-image`, la API de imágenes no es
+  gratis). Guía: `autocanal/despliegue/GUIA_IMAGENES_IA.md`. Mina solo pide fondo=ia si hay motor.
 - **Miniaturas (Mina, `ex_miniaturas`)**: `disenar_miniaturas` con `REGLAS_MINIATURA` (1 sujeto, 1-3 palabras
   gigantes con número/contraste, foto de fachada/producto en B/N, cinta/sello, nada abajo a la derecha, B = pantalla
   dividida) → `miniatura.json`; si no hay foto buena, `_dibujar_realista` con Gemini (~4 ¢, solo si hay

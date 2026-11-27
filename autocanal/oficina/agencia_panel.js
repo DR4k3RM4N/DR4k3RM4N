@@ -103,6 +103,7 @@
             <small class="pista">${c.viva ? (c.puede ? (c.ocupada ? "ocupada" : "lista") : esc(c.motivo)) : "apagada"}</small></span>
           <select data-fab-compu="${esc(c.id)}">${[["preferida", "⭐ Preferida"], ["respaldo", "Respaldo"], ["no", "🚫 No usar"]].map(([v, t]) => `<option value="${v}" ${c.pref === v ? "selected" : ""}>${t}</option>`).join("")}</select></div>`).join("") || `<p class="pista">No hay compus en la sala.</p>`}
         <label class="fab-switch"><input type="checkbox" data-fab-servidor ${e.servidor_respaldo ? "checked" : ""}> Si no hay ninguna, que lo haga el servidor (más lento)</label>
+        <p class="pista">🖼️ Imágenes realistas para miniaturas: ${fabrica.imagenes === "cloudflare" ? "Cloudflare (gratis) ✔" : fabrica.imagenes === "gemini" ? "Gemini (~4-7 ¢ por imagen) ✔" : "sin conectar (usa la mejor foto real; guía: despliegue/GUIA_IMAGENES_IA.md)"}</p>
         ${!fabrica.azure_ok ? `<p class="error">🎙️ Falta la clave de Azure en el servidor (AZURE_SPEECH_KEY en el .env): sin ella no hay voz.</p>` : ""}
       </details>
       ${!fabrica.pexels ? `<p class="pista">🎞️ Sin clave de Pexels en el servidor: solo fotos de Wikimedia (opcional).</p>` : ""}
