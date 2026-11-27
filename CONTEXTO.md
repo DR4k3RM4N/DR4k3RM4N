@@ -282,6 +282,13 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   `claude._suscripcion_pausada_hasta` sigue vigente. Manifiesto lleva siempre `estilo_edicion` (lana|pro) y `cerebro`.
   Cuida Tu Lana siempre con su director (lana).
 
+- **Expedientes trabado (2ª vuelta, 27 nov)**: la vuelta de la fábrica ahora tiene latido (`LATIDO`); si una vuelta se
+  cuelga >10 min, Continuar/Reinicio arrancan otra (`_arrancar_ciclo`). Cada caso va en su try (`_vuelta_caso`), el
+  resto en `_vuelta_resto`. Reinicio forzoso «de verdad»: caso en paso render sin moverse 15 min → cancela, limpia
+  todo (evitar, reintentos, error) y llama `enviar_render` ya. Voz de Azure contada una vez por caso
+  (`azure.casos`); si se acaba, se ve en el caso. Sala que no contesta 10 min → render en el servidor. La Bandeja
+  muestra 🩺 versión del servidor (git), hace cuánto revisó la fábrica, si la sala contesta y el último error.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

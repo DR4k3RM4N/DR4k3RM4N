@@ -1618,12 +1618,16 @@ def enviar_render(eid: str) -> dict:
     chars = sum(len(ln) - 2 for ln in _guion_final(eid).splitlines() if ln.startswith("> "))
     mes = dt.date.today().strftime("%Y-%m")
     e = estado()
-    uso = e.get("azure") if (e.get("azure") or {}).get("mes") == mes else {"mes": mes, "chars": 0}
+    uso = e.get("azure") if (e.get("azure") or {}).get("mes") == mes else {"mes": mes, "chars": 0, "casos": []}
+    uso.setdefault("casos", [])
+    if eid in uso["casos"]:
+        chars = 0  # 🔁 reenviar el mismo video no vuelve a contar su voz
     tope = int(config.env("AZURE_LIMITE_MES", "480000") or 480000)
     if uso["chars"] + chars > tope:
         e["nota"] = (f"La voz gratis de Azure ya casi se acaba este mes ({uso['chars']:,} de {tope:,} caracteres): "
                      "los videos que faltan se hacen el día 1 del siguiente mes.")
         _guardar_estado(e)
+        _poner(eid, paso="render", render_paso=f"⏸️ Sin voz gratis de Azure este mes ({uso['chars']:,} de {tope:,}): sigue el día 1")
         return {"error": "Azure sin caracteres este mes"}
     try:
         zipf = _zip_render(eid)
@@ -1662,7 +1666,7 @@ def enviar_render(eid: str) -> dict:
         _poner(eid, paso="render", render_paso=_motivo_sin_compu() or "Esperando a una compu")
         return {"ok": True, "espera": True}
     e = estado()
-    e["azure"] = {"mes": mes, "chars": uso["chars"] + chars}
+    e["azure"] = {"mes": mes, "chars": uso["chars"] + chars, "casos": sorted(set(uso["casos"]) | {eid})[-60:]}
     if e.get("nota", "").startswith("La voz gratis de Azure"):
         e["nota"] = ""
     _guardar_estado(e)
@@ -1779,6 +1783,11 @@ def _revisar_render(eid: str, paciencia: int = 1500) -> None:
     try:
         e = requests.get(f"{SALA_URL}/interno/trabajo/{f['render_tid']}", timeout=5).json()
     except (requests.RequestException, ValueError):
+        if time.time() - (f.get("render_desde") or time.time()) > 600 and estado().get("servidor_respaldo", True):
+            _poner(eid, render_estado=None, render_tid=None, render_forzar_srv=True,
+                   render_paso="La sala de edición no contesta: lo hace el servidor")
+        elif not str(f.get("render_paso") or "").startswith("La sala de edición no contesta"):
+            _poner(eid, render_paso="La sala de edición no contesta (¿se reinició?): reintento")
         return
     est = e.get("estado")
     if e.get("compu_id") and e["compu_id"] != f.get("render_compu"):  # ya lo tomó una compu (o el servidor)
@@ -2076,6 +2085,8 @@ def continuar() -> dict:
             if x["estado"] == "saltado" and x.get("intentos"):  # saltados por fallas, no por ti
                 x.update(estado="pendiente", intentos=0, error=None)
         _guardar_temas(lista)
+    if _ciclo_colgado():
+        _arrancar_ciclo()
     reintentos = 0
     for x in ex.lista():
         f = fab(x["id"])
@@ -2112,11 +2123,33 @@ def reinicio_forzoso() -> dict:
             if x["estado"] == "saltado" and x.get("intentos"):
                 x.update(estado="pendiente", intentos=0, error=None)
         _guardar_temas(lista)
+    if _ciclo_colgado():  # la vuelta de la fábrica se quedó esperando algo: se arranca otra limpia
+        _arrancar_ciclo()
+        hechos.append("la fábrica estaba colgada: la reinicié")
     for x in ex.lista():
         f = fab(x["id"])
         if not f or f.get("subida") == "listo":
             continue
         nombre = f"#{f.get('numero')} {f.get('marca')}"
+        quieto = time.time() - (f.get("render_mov_t") or f.get("t_mov") or 0)
+        if f.get("paso") == "render" and quieto > 900 and not (f.get("render_estado") == "servidor" and _render_srv.locked()):
+            # 💥 a la fuerza: se tira todo lo del render y se manda otra vez YA (la sala o, si nadie, el servidor)
+            if f.get("render_tid"):
+                try:
+                    import requests
+                    requests.post(f"{SALA_URL}/interno/cancelar/{f['render_tid']}", json={}, timeout=5)
+                except Exception:  # noqa: BLE001
+                    pass
+            _poner(x["id"], render_estado=None, render_tid=None, render_compu=None, render_evitar=[], render_ok=None,
+                   render_forzar_srv=None, error=None, error_t=None, reintentos=0, render_paso="Reinicio forzoso: lo mando otra vez")
+            try:
+                r = enviar_render(x["id"])
+            except Exception as exc:  # noqa: BLE001
+                r = {"error": str(exc)}
+            hechos.append(f"{nombre}: " + (f"no se pudo mandar ({r['error']})" if r.get("error")
+                                           else "lo hace el servidor" if fab(x["id"]).get("render_estado") == "servidor"
+                                           else "en la fila de la sala (si ninguna compu lo toma en 5 min, el servidor)"))
+            continue
         if f.get("error"):
             _poner(x["id"], reintentos=0)
             reintentar(x["id"])
@@ -2140,12 +2173,25 @@ def reinicio_forzoso() -> dict:
 
 def vuelta() -> None:
     """Una pasada: renders que revisar, casos que mandar a tu compu y, si toca, el siguiente tema."""
-    _curar()
+    try:
+        _curar()
+    except Exception as exc:  # noqa: BLE001
+        LATIDO["error"] = f"curar: {exc}"[:200]
     for x in ex.lista():
+        try:
+            _vuelta_caso(x)
+        except Exception as exc:  # noqa: BLE001 — un caso con problema no detiene a los demás
+            LATIDO["error"] = f"#{x.get('numero')}: {exc}"[:200]
+            print(f"  · fábrica: caso {x.get('numero')}: {exc}", flush=True)
+    _vuelta_resto()
+
+
+def _vuelta_caso(x: dict) -> None:
+    if True:  # (antes era el cuerpo del for de vuelta())
         t = ex.trabajo(x["id"])
         f = t.get("fabrica")
         if not f:
-            continue
+            return
         if f.get("render_estado") == "en_fila" and f.get("render_tid"):
             _revisar_render(x["id"])
         elif f.get("render_estado") == "servidor" and not _render_srv.locked():  # la oficina se reinició a medio video
@@ -2156,6 +2202,10 @@ def vuelta() -> None:
               and not f.get("render_estado")):
             if _auto_aprobar(x["id"], t):
                 enviar_render(x["id"])
+
+
+def _vuelta_resto() -> None:
+    """Después de revisar los casos: ligar el canal y, si toca, arrancar el siguiente tema."""
     _ligar_canal()
     e = estado()
     if not e["activa"] or e.get("en_curso") or time.time() < e.get("espera_hasta", 0):
@@ -2182,16 +2232,53 @@ def iniciar() -> None:
     if _hilo.get("ciclo") and _hilo["ciclo"].is_alive():
         return
 
+    _arrancar_ciclo(espera=20)
+
+
+LATIDO = {"inicio": 0.0, "fin": 0.0, "error": "", "hilo": 0}  # 💓 cada vuelta de la fábrica (para ver si se colgó)
+
+
+def _arrancar_ciclo(espera: int = 0) -> None:
+    LATIDO["hilo"] += 1
+    mio = LATIDO["hilo"]
+
     def ciclo():
-        time.sleep(20)
-        while True:
+        time.sleep(espera)
+        while LATIDO["hilo"] == mio:  # si se arrancó otro ciclo (este se colgó), este se retira al despertar
+            LATIDO["inicio"] = time.time()
             try:
                 vuelta()
+                LATIDO["error"] = ""
             except Exception as exc:  # noqa: BLE001 — la fábrica nunca tumba la oficina
+                LATIDO["error"] = str(exc)[:200]
                 print(f"  · fábrica de expedientes: {exc}", flush=True)
+            LATIDO["fin"] = time.time()
             time.sleep(60)
     _hilo["ciclo"] = threading.Thread(target=ciclo, daemon=True)
     _hilo["ciclo"].start()
+
+
+def _ciclo_colgado() -> bool:
+    """La vuelta empezó hace más de 10 min y no ha terminado (algo se quedó esperando para siempre)."""
+    return LATIDO["inicio"] > LATIDO["fin"] and time.time() - LATIDO["inicio"] > 600
+
+
+def _diagnostico() -> dict:
+    """🩺 Para saber qué pasa sin entrar al servidor: versión instalada, la vuelta de la fábrica y la sala."""
+    import subprocess as sp
+    raiz = Path(__file__).resolve().parents[2]
+    try:
+        version = sp.run(["git", "-C", str(raiz), "log", "-1", "--format=%h · %cd", "--date=format:%d/%m %H:%M"],
+                         capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, sp.SubprocessError):
+        version = ""
+    try:
+        import requests
+        sala = "ok" if requests.get(f"{SALA_URL}/api/estado", timeout=3).ok else "no contesta"
+    except Exception:  # noqa: BLE001
+        sala = "no contesta"
+    return {"version": version, "vuelta_hace": round(time.time() - LATIDO["fin"]) if LATIDO["fin"] else None,
+            "colgada": _ciclo_colgado(), "error": LATIDO["error"], "sala": sala}
 
 
 def resumen() -> dict:
@@ -2211,6 +2298,7 @@ def resumen() -> dict:
                           "pasos": pasos(t), "t_mov": f.get("t_mov"), "creado": f.get("creado")})
     return {"estado": e, "temas": lista, "casos": casos, "meta": meta_videos(), "por_delante": _material_por_delante(),
             "en_marcha": _caso_en_marcha(), "en_marcha_todos": _casos_en_marcha(), "ahora": time.time(),
+            "diagnostico": _diagnostico(),
             "chat": historial_chat()[-60:], "produciendo": _produciendo(), "compus": compus_sala(),
             "azure_ok": bool(_azure()) or _demo(), "imagenes": motor_imagenes(),
             "plan": _plan_disponible(), "pexels": (CANAL_DIR / ".pexels_key").exists(), "demo": _demo()}

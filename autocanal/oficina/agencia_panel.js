@@ -96,6 +96,7 @@
       ${e.azure ? `<p class="pista">🎙️ Voz de Azure este mes: ${(e.azure.chars || 0).toLocaleString("es-MX")} de ~480,000 caracteres (≈ ${Math.max(0, Math.floor((480000 - (e.azure.chars || 0)) / 18000))} videos más)</p>` : ""}
       <p>📦 Material por delante: <b>${fabrica.por_delante}</b> de ${fabrica.meta} videos
         <label class="pista">· juntar para <select data-fab-meta>${[30, 60, 90, 180, 365].map((n) => `<option value="${n}" ${+e.meta_dias === n ? "selected" : ""}>${n} días</option>`).join("")}</select></label></p>
+      ${(() => { const d = fabrica.diagnostico || {}; return `<p class="pista">🩺 Servidor: versión ${esc(d.version || "?")} · fábrica ${d.colgada ? "⚠️ colgada (dale Reinicio forzoso)" : d.vuelta_hace == null ? "arrancando" : `revisó hace ${d.vuelta_hace} s`} · sala de edición: ${esc(d.sala || "?")}${d.error ? ` · último error: <span class="error">${esc(d.error)}</span>` : ""}</p>`; })()}
       <div class="fila"><button class="btn btn-mini btn-primario" data-fab-continuar title="Quita esperas, destraba lo atorado y reintenta lo que falló">▶ Continuar ahora</button>
         <button class="btn btn-mini" data-fab-reinicio title="Destraba todo a la fuerza: los videos trabados se cambian de compu o van al servidor">🔄 Reinicio forzoso</button>
         <a class="btn btn-mini" href="/edicion" target="_blank" rel="noopener">🎬 Sala de edición ↗</a>
@@ -139,7 +140,8 @@
       <ol class="fab-pasos">${pasos.map((p) => `<li class="fab-p-${esc(p.estado)} ${p.clave === c.paso ? "actual" : ""}">${ICONO_PASO[p.estado] || "○"} ${esc(p.etiqueta)}</li>`).join("")}</ol>
       <div class="fab-barra"><b style="width:${pct}%"></b></div>
       <p>${c.error ? `⚠️ <span class="error">${esc(c.error)}</span> <button class="btn btn-mini" data-fab-reintentar="${esc(c.id)}">🔁 Reintentar</button>`
-        : `⏳ <b>${esc(actual?.etiqueta || c.paso || "")}</b>${c.render_paso ? ` — ${esc(c.render_paso)}` : ""}${enRender ? ` (${Math.round(c.render_avance * 100)} %)` : ""}`}</p>
+        : `⏳ <b>${esc(actual?.etiqueta || c.paso || "")}</b>${c.render_paso ? ` — ${esc(c.render_paso)}` : ""}${enRender ? ` (${Math.round(c.render_avance * 100)} %)` : ""}
+          ${c.paso === "render" ? `<span class="pista"> · estado: ${esc({ en_fila: "en la sala", servidor: "en el servidor", listo: "listo", error: "con error" }[c.render_estado] || "sin mandar")}</span>` : ""}`}</p>
       <p class="pista">Último movimiento: ${esc(haceCuanto(c.t_mov))} · ${pct} % del video${quieto ? " · ⚠️ lleva rato sin moverse: dale ▶ Continuar ahora" : ""}</p>
     </section>`;
   }
