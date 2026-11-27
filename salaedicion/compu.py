@@ -804,7 +804,7 @@ def editar_edu(of: "Oficina", t: dict, temporal: Path, avance, con_claude: bool 
         destino.parent.mkdir(parents=True, exist_ok=True)
         of.bajar(tid, e["n"], destino)
     (mesa / "manifiesto.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
-    if m.get("estilo_edicion") == "lana" and ESTADO_MOTION["texto"] == "listo":  # 🐑 estilo fijo, sin gastar plan
+    if m.get("estilo_edicion") in ("lana", "pro") and ESTADO_MOTION["texto"] == "listo":  # 🎬 director automático: sin gastar plan
         import editor_youtube
         final = editor_youtube.editar_auto(mesa, m, avance, log)
         if final:

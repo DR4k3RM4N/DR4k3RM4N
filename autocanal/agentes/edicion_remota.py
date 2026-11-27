@@ -136,6 +136,8 @@ def _preparar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -
                   "solo_grabacion": bool(ctx.get("solo_grabacion"))}
     if canales.get(canales.actual()).get("nicho") == "fraudes":
         manifiesto["estilo_edicion"] = "lana"
+    elif estilo_mod.cargar()["ajustes"].get("cerebro_edicion", "auto") == "auto":
+        manifiesto["estilo_edicion"] = "pro"  # el director automático Pro (sin Claude)
     if manifiesto["solo_grabacion"]:
         manifiesto["direccion"] = SOLO_GRABACION_EDICION + "\n\n" + manifiesto["direccion"]
     return entradas, manifiesto
@@ -149,11 +151,17 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
 
     from . import estilo as estilo_mod
     # 🎬 si tu compu puede (Claude Code + Remotion) y está prendido en Estilo, la edición la dirige Claude
-    tipo = "edu_ia" if (estilo_mod.cargar()["ajustes"].get("editor_claude", True) and compus_libres("edu_ia")) else "edu"
     from . import canales as canales_mod
-    estilo_fijo = "lana" if canales_mod.get(canales_mod.actual()).get("nicho") == "fraudes" else ""
-    if estilo_fijo and compus_libres("edu_estilo"):  # 🐑 Cuida Tu Lana: estilo chat + recortes, sin gastar plan
+    cerebro = estilo_mod.cargar()["ajustes"].get("cerebro_edicion", "auto")
+    lana = canales_mod.get(canales_mod.actual()).get("nicho") == "fraudes"
+    # 🎬 por defecto edita el director automático (estilo del canal, en tus compus, sin gastar plan); Claude solo si
+    # lo eliges en la sala central. Cuida Tu Lana siempre con su estilo (cel + recortes).
+    if (lana or cerebro == "auto") and compus_libres("edu_estilo"):
         tipo = "edu_estilo"
+    elif cerebro == "claude" and compus_libres("edu_ia"):
+        tipo = "edu_ia"
+    else:
+        tipo = "edu"
     if tipo == "edu" and not compus_libres():
         return None
     efectos.planear(escenas, carpeta)  # el plan de efectos se hace aquí (la compu no tiene tus claves)

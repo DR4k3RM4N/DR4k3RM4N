@@ -264,6 +264,16 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   Remotion: `--gl=angle` en Windows con tarjeta (si falla, reintenta sin él) y `--concurrency` = núcleos/(2×videos a
   la vez) (`herramientas._concurrencia`). En Windows todo lo que lanza la compu corre con prioridad «debajo de normal».
 
+- **🎬 Director automático Pro (27 nov)**: `salaedicion/estilo_pro.py` edita los videos del edificio SIN Claude (Claude
+  solo escribe el guion). Ajuste `cerebro_edicion` ("auto" por defecto | "claude"), en Estilo y en la sala central;
+  `edicion_remota`: auto → trabajo `edu_estilo` con `estilo_edicion="pro"` (fraudes → "lana"); claude → `edu_ia`.
+  Reglas: grabación/captura protagonista (grabación completa al centro; capturas DENTRO de un cel a la derecha y lo
+  dicho a la izquierda), capas a los lados sin encimarse (`Lados` por tramos de tiempo, se acortan si hace falta), gancho
+  con texto de golpe + zoom, citas «…» de la narración en grande cuando se dicen, cifras como contador, reseña real
+  cuando se habla de reseñas, cintillo con el rótulo, emoji de la palabra (👍💬💸🏦👥⚠️🪤📱📺⏳), zoom/sacudida en cada
+  frase, cortinilla en regancho, cierre con sello del veredicto + señales reales, mascota en lado libre, sfx y
+  subtítulos karaoke. Comparado lado a lado con una edición dirigida por Claude: quedaron parejos.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

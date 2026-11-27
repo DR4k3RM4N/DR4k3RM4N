@@ -198,12 +198,14 @@ def editar_auto(mesa: Path, m: dict, avance, log) -> Path | None:
     """🐑 Edición con estilo fijo (Cuida Tu Lana: chat + recortes) SIN Claude: el edu.json se arma con código y se
     renderiza con el kit Edu. No gasta nada del plan. None si algo falla (y se usa la plantilla)."""
     import estilo_lana
+    import estilo_pro
 
     _, borrador = preparar(mesa, m)
     total = sum(e["duracion"] for e in borrador["escenas"])
-    edu = estilo_lana.armar(mesa, m, borrador)
+    # 🐑 Cuida Tu Lana tiene su estilo (cel + recortes); los demás canales, el director «Pro»
+    edu = (estilo_lana if m.get("estilo_edicion") == "lana" else estilo_pro).armar(mesa, m, borrador)
     (mesa / "edu.json").write_text(json.dumps(edu, ensure_ascii=False, indent=1), encoding="utf-8")
-    avance("🐑 Armando la edición (chat + recortes)", 0.1)
+    avance("🎬 Armando la edición con el estilo del canal", 0.1)
     entorno = {**__import__("os").environ, "SALA_EDITOR_DIR": str(mesa)}
     proceso = subprocess.Popen([sys.executable, str(AQUI / "herramientas.py"), "edu", "edu.json", "video_final.mp4"],
                                cwd=str(mesa), env=entorno, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,

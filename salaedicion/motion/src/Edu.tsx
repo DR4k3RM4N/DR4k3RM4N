@@ -496,16 +496,16 @@ const Resena: React.FC<P> = ({ c, dur, acento }) => {
   const estrellas = Math.max(0, Math.min(5, Math.round(c.estrellas ?? 1)));
   return (
     <En x={c.x} y={c.y ?? 0.5} style={{ opacity: sale }}>
-      <div style={{ width: 1300, background: "#fff", borderRadius: 34, padding: "40px 50px", boxShadow: SOMBRA,
+      <div style={{ width: lado(c) ? 600 : 1300, background: "#fff", borderRadius: 34, padding: lado(c) ? "28px 32px" : "40px 50px", boxShadow: SOMBRA,
         transform: `translateX(${(1 - entra) * 900}px) rotate(${(1 - entra) * 6 - 1.5}deg)` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 22, fontFamily: MONT, fontWeight: 800, fontSize: 40, color: "#333" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 22, fontFamily: MONT, fontWeight: 800, fontSize: lado(c) ? 30 : 40, color: "#333", flexWrap: "wrap" }}>
           <div style={{ width: 74, height: 74, borderRadius: 99, background: acento, display: "grid", placeItems: "center", fontSize: 40 }}>
             {(c.usuario || "U").slice(0, 1).toUpperCase()}</div>
           {c.usuario || "Usuario"}
-          <span style={{ marginLeft: "auto", fontSize: 54, letterSpacing: 4 }}>
+          <span style={{ marginLeft: "auto", fontSize: lado(c) ? 40 : 54, letterSpacing: 4 }}>
             {"★★★★★".slice(0, estrellas)}<span style={{ color: "#ccc" }}>{"★★★★★".slice(estrellas)}</span></span>
         </div>
-        <div style={{ marginTop: 24, fontFamily: MONT, fontWeight: 600, fontSize: 48, color: "#111", lineHeight: 1.3 }}>
+        <div style={{ marginTop: 24, fontFamily: MONT, fontWeight: 600, fontSize: lado(c) ? 34 : 48, color: "#111", lineHeight: 1.3 }}>
           “{texto.slice(0, n)}{n < texto.length ? "▌" : "”"}</div>
       </div>
     </En>

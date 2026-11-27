@@ -1153,7 +1153,7 @@
           ${chk("barra_progreso", "Barra de progreso")}${chk("sonido_cambios", "Sonido en cada cambio de escena")}
         </div>
         ${subida("mascota", e.archivos.mascota)}${subida("fondo", e.archivos.fondo)}
-        <div class="ajustes">${chk("editor_claude", "🎬 Que Claude dirija la edición en mi compu (animaciones, celular, chats, datos, sellos…). Si la compu está apagada, se usa la plantilla")}</div>
+        <div class="ajustes"><label>🧠 Quién dirige la edición ${sel("cerebro_edicion", [["auto", "🎬 Director automático Pro (estilo del canal, no gasta tu plan)"], ["claude", "Claude en tu compu (usa tu plan)"]])}</label></div>
         <div class="ajustes">${chk("dos_voces", "Dos voces (una pregunta o reacciona, como en los videos que pegan)")}
           <label>Mascota en la esquina ${sel("mascota_lado", [["derecha", "Derecha"], ["izquierda", "Izquierda"]])}</label>
           ${chk("probar_en_cel", "📱 Si mi Android está conectado a mi compu, que el robot pruebe la app antes de investigar")}

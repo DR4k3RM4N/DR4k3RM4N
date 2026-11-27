@@ -1737,7 +1737,7 @@ class Oficina:
         except Exception as exc:  # noqa: BLE001
             exp_info = {"casos": [], "error": str(exc)[:200]}
         return {"sala": sala, "edificio": edificio, "expedientes": exp_info, "ahora": time.time(),
-                "cerebro": "claude" if estilo.cargar()["ajustes"].get("editor_claude", True) else "auto"}
+                "cerebro": estilo.cargar()["ajustes"].get("cerebro_edicion", "auto")}
 
     def edicion_ajustes(self, d: dict) -> dict:
         from agentes import expedientes_fabrica as fb
@@ -1759,7 +1759,7 @@ class Oficina:
                 e["servidor_respaldo"] = True
                 fb._guardar_estado(e)
         if d.get("cerebro") in ("auto", "claude"):
-            estilo.ajustar({"editor_claude": d["cerebro"] == "claude"})
+            estilo.ajustar({"cerebro_edicion": d["cerebro"]})
         return {"ok": True, **r}
 
     def edicion_reinicio(self) -> dict:

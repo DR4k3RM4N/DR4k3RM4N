@@ -127,8 +127,8 @@
     accion(e.currentTarget, "/api/edicion/ajustes", { servidor_a_la_vez: Number(e.target.value) }, () => `El servidor edita hasta ${e.target.value} video(s) a la vez.`));
   $("#ed-cerebro").addEventListener("change", (e) =>
     accion(e.currentTarget, "/api/edicion/ajustes", { cerebro: e.target.value }, () => e.target.value === "claude"
-      ? "🧠 Claude dirige la edición de los videos del edificio en tu compu (usa tu plan). Cuida Tu Lana sigue con su estilo fijo."
-      : "🧠 Edición automática: no gasta tu plan."));
+      ? "🧠 Claude dirige la edición de los videos del edificio en tu compu (usa tu plan). Cuida Tu Lana sigue con su estilo."
+      : "🎬 Director automático Pro: edita con el estilo de cada canal en tus compus, sin gastar tu plan."));
   cargar();
   setInterval(() => { if (!document.hidden) cargar(); }, 3000);
 })();
