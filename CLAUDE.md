@@ -4,8 +4,9 @@ Trabajas con **Miguel** (GitHub DR4k3RM4N), de México. Tiene el canal de YouTub
 **appsquesipagan.com**. Este repo tiene su "oficina" de agentes de IA que hace los videos sola (`autocanal/`).
 Ahora quiere una **segunda oficina para TikTok Shop**.
 
-**Antes de hacer nada, lee `CONTEXTO.md`.** Ahí está todo el historial, cómo está montado el servidor, qué falta
-y el plan de la oficina de TikTok Shop.
+**`CONTEXTO.md` es grande (~20 mil palabras): NO lo leas completo.** Busca solo la sección del tema que te piden
+(`grep -n "^## " CONTEXTO.md` para ver el índice y luego lee esa parte; p. ej. Expedientes = sección «3n», TikTok Shop,
+Tampiqueando, sala de edición…). Así se gasta menos del plan de Miguel. Accesos y reglas del servidor: este archivo.
 
 ## Cómo hablarle
 - En español de México, casual y directo ("va", "jefe", "chido" está bien). Él no es programador.
