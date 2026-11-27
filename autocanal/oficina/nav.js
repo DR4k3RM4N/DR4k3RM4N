@@ -9,6 +9,7 @@
   }
   const OFICINAS = [
     { url: "/", ico: "🏢", nombre: "Edificio", sub: "YouTube y tu despacho" },
+    { url: "/director", ico: "🎯", nombre: "Director", sub: "Prioridades, enfoque e informe" },
     { url: "/edicion", ico: "🎬", nombre: "Sala central", sub: "Edición: compus y servidor" },
     { url: "/expedientes", ico: "🕵️", nombre: "Expedientes", sub: "¿Quién MATÓ a…?" },
     { url: "/tiktok-shop", ico: "🛒", nombre: "TikTok Shop", sub: "Guiones y tomas" },

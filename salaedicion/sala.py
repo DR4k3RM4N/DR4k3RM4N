@@ -46,6 +46,41 @@ RAICES = [REPO / "tiktokshop" / "salida", REPO / "autocanal" / "salida", AQUI / 
 EXT_RESULTADO = {".mp4", ".jpg", ".json", ".srt", ".txt"}  # video, miniaturas, subtítulos, capítulos y créditos
 TIENDA_URL = "http://127.0.0.1:8766"  # oficina de TikTok (para saber a qué productos hacerles carpeta en tus compus)
 MAX_RESULTADO = 2 * 1024 ** 3
+DIRECTOR = REPO / "autocanal" / "director.json"  # 🎯 prioridades y enfoque que elige el jefe en /director
+_DIR = {"t": 0.0, "orden": ["fraudes", "expedientes", "apps", "personal", "tiktok", "tampico"], "enfoque": None}
+
+
+def director() -> dict:
+    if time.time() - _DIR["t"] > 20:
+        _DIR["t"] = time.time()
+        try:
+            d = json.loads(DIRECTOR.read_text(encoding="utf-8"))
+            _DIR["orden"] = d.get("orden") or _DIR["orden"]
+            _DIR["enfoque"] = d.get("enfoque")
+        except (OSError, ValueError):
+            pass
+    return _DIR
+
+
+def categoria(t: dict) -> str:
+    if t.get("categoria"):
+        return t["categoria"]
+    o = str(t.get("origen") or "")
+    if o == "expedientes":
+        return "expedientes"
+    if o in ("tiktok", "tienda"):
+        return "tiktok"
+    if "tampiq" in (o + str(t.get("etiqueta") or "")).lower():
+        return "tampico"
+    return "apps" if o == "youtube" else "personal"
+
+
+def rango(t: dict) -> int:
+    orden = director()["orden"]
+    c = categoria(t)
+    return orden.index(c) if c in orden else len(orden)
+
+
 SERVIDOR_ID = "servidor"  # 🖥️ el propio servidor, como una compu más de la sala (se prende desde la oficina central)
 SERVIDOR_CARPETA = Path.home() / ".salaedicion-servidor"
 ESPERA_SERVIDOR = 30  # segundos que un video espera a tus compus antes de que lo tome el servidor
@@ -306,6 +341,7 @@ class Sala(Aprendizaje, Proyectos):
         t = {"id": uuid.uuid4().hex[:10], "tipo": str(d.get("tipo", "cris")), "origen": str(d.get("origen", "")),
              "fija": fija or None, "local": d.get("local") or None,
              "evitar": [str(x) for x in (d.get("evitar") or [])][:10],  # compus donde ya se trabó
+             "categoria": str(d.get("categoria") or "")[:20] or None,  # 🎯 para las prioridades del director
              "etiqueta": str(d.get("etiqueta", ""))[:80], "parametros": d.get("parametros") or {}, "entradas": entradas,
              "salida": str(salida), "clasificar": str(d.get("clasificar", "")), "estado": "en_cola", "compu": None,
              "slot": None, "creado": time.time(), "inicio": None, "fin": None, "error": None, "paso": "", "avance": 0,
@@ -376,9 +412,13 @@ class Sala(Aprendizaje, Proyectos):
                             c["trabajo_cel"] = cel_t["id"]
                             self._tocar()
                 extra["trabajo_cel"] = self._para_compu(cel_t) if cel_t else None
+            enfoque = director()["enfoque"]
+
             def sirve(t: dict) -> bool:
                 if c["id"] in (t.get("evitar") or []):
                     return False
+                if enfoque and t["tipo"] != "probar_app" and categoria(t) != enfoque:
+                    return False  # 🎯 enfoque: solo la categoría elegida usa las máquinas (lo demás espera)
                 if c.get("interno") and not t.get("fija") and time.time() - t["creado"] < ESPERA_SERVIDOR and any(
                         self.viva(o) and not o.get("interno") and t["tipo"] in (o.get("tipos") or []) for o in self.compus.values()):
                     return False  # primero tus compus; si en 30 s ninguna lo toma, lo hace el servidor
@@ -391,7 +431,7 @@ class Sala(Aprendizaje, Proyectos):
                 c["capacidad"] = cap
                 activos = [x for x in (c.get("activos") or []) if activo(self.trabajos.get(x))]
                 libres = min(cap - len(activos), int(d.get("libres", cap)))
-                for t in sorted(self.trabajos.values(), key=lambda t: t["creado"]):
+                for t in sorted(self.trabajos.values(), key=lambda t: (rango(t), t["creado"])):  # 🎯 primero lo prioritario
                     if libres <= 0:
                         break
                     if sirve(t):
@@ -406,8 +446,9 @@ class Sala(Aprendizaje, Proyectos):
                 return {"trabajo": self._para_compu(actual), **extra}
             c["trabajo"] = None
             libre = d.get("libre", True)
-            pendiente = next((t for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])
+            pendiente = next((t for t in sorted(self.trabajos.values(), key=lambda t: (rango(t), t["creado"]))
                               if t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])
+                              and sirve(t)
                               and not (dos_carriles and t["tipo"] == "probar_app")
                               and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia", "edu_estilo", "probar_ssh", "expediente"))),
                              None) if libre else None

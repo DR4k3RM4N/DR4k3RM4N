@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<title>Director de producción</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  /* Layout: encabezado, luego dos columnas (prioridades + enfoque | informe del cerebro), abajo los pendientes */
+  :root { --fondo: #0e1116; --panel: #161b22; --panel2: #1d2430; --borde: #2a3340; --texto: #e8edf3; --suave: #8b97a6;
+    --oro: #ffd23f; --verde: #3ddc84; --rojo: #ff6b6b; --azul: #4da3ff; --sans: "Inter", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--texto); font: 400 14px/1.5 var(--sans); }
+  header { padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    border-bottom: 1px solid var(--borde); background: #0b0e12; }
+  header h1 { margin: 0; font-size: 21px; font-weight: 800; }
+  header p { margin: 3px 0 0; color: var(--suave); font-size: 13px; max-width: 70ch; }
+  main { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; padding-block: 18px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .dos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 16px; }
+  .tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  h2 { margin: 0; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--suave); }
+  .pista { color: var(--suave); font-size: 12.5px; margin: 0; }
+  ol.prio { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  ol.prio li { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; background: var(--panel2);
+    border: 1px solid var(--borde); border-radius: 10px; padding: 8px 10px; }
+  ol.prio li.enfocada { border-color: var(--oro); box-shadow: inset 3px 0 0 var(--oro); }
+  ol.prio li.en-espera { opacity: .5; }
+  .num { font: 700 15px var(--mono); color: var(--oro); text-align: center; }
+  .cuenta { font: 600 12px var(--mono); color: var(--suave); white-space: nowrap; }
+  button { font: 600 13px var(--sans); cursor: pointer; border-radius: 8px; border: 1px solid var(--borde); background: #222a36; color: var(--texto); padding: 6px 10px; }
+  button:hover, button:focus-visible { border-color: var(--azul); outline: none; }
+  button:disabled { opacity: .45; cursor: default; }
+  .principal { background: var(--oro); color: #111; border-color: var(--oro); font-weight: 800; }
+  select, textarea { width: 100%; background: var(--panel2); color: var(--texto); border: 1px solid var(--borde); border-radius: 8px; padding: 8px 10px; font: inherit; }
+  .enfoque-activo { background: #2a2410; border: 1px solid #5c4a14; color: #ffd98a; border-radius: 10px; padding: 10px 12px; margin: 0; }
+  .informe p { margin: 0; }
+  .informe ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+  .informe h3 { margin: 4px 0 2px; font-size: 13px; }
+  .atorado li { color: #ffc2c2; }
+  .fila { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .pend { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .pcaja { background: var(--panel2); border: 1px solid var(--borde); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .pcaja b { font-size: 14px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font: 600 11.5px var(--mono); padding: 2px 8px; border-radius: 99px; background: #0f141c; border: 1px solid var(--borde); }
+  .chip.err { color: var(--rojo); border-color: #5a2a2a; }
+  .chip.ok { color: var(--verde); }
+  .pcaja ul { margin: 0; padding-left: 16px; font-size: 12px; color: var(--suave); }
+  .notas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .notas li { display: flex; justify-content: space-between; gap: 10px; background: var(--panel2); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+  .notas li span { min-width: 0; overflow-wrap: anywhere; }
+  .aviso { margin: 0; color: #ffd98a; }
+  @media (max-width: 860px) { .dos { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎯 Director de producción</h1>
+  <p>Decide qué va primero en todas tus oficinas: las compus y el servidor editan en este orden, y el piloto arranca primero el canal de más arriba.</p>
+</header>
+<main>
+  <div class="dos">
+    <section class="tarjeta" aria-labelledby="t-prio">
+      <h2 id="t-prio">Prioridades</h2>
+      <p class="pista">De arriba hacia abajo. Usa ⬆ para subir una.</p>
+      <ol class="prio" id="prio"></ol>
+      <h2>Enfocarme en un solo canal</h2>
+      <p class="pista">Con enfoque, solo esa oficina usa las máquinas y arranca videos nuevos. Lo demás espera, no se pierde.</p>
+      <div class="fila">
+        <select id="enfoque" aria-label="Enfoque"><option value="">Sin enfoque: todas, en el orden de arriba</option></select>
+      </div>
+      <p id="enfoque-txt" class="enfoque-activo" hidden></p>
+    </section>
+    <section class="tarjeta informe" aria-labelledby="t-inf">
+      <div class="fila" style="justify-content: space-between"><h2 id="t-inf">🧠 Lo que ve el director</h2>
+        <button id="pedir" type="button">Revisar ahora</button></div>
+      <div id="informe"><p class="pista">Todavía sin informe. Se hace solo cada 4 horas (con tu plan de Claude), o dale «Revisar ahora».</p></div>
+      <h2>Enséñale (aprende de esto)</h2>
+      <form class="fila" id="form-nota"><textarea id="nota" rows="2" maxlength="400" placeholder="Ej. los lunes primero Cuida Tu Lana; no me sugieras rehacer videos ya publicados"></textarea>
+        <button class="principal" type="submit">Guardar</button></form>
+      <ul class="notas" id="notas"></ul>
+    </section>
+  </div>
+  <section class="tarjeta" aria-labelledby="t-pend">
+    <h2 id="t-pend">Pendientes en cada oficina</h2>
+    <p class="pista" id="sala-txt"></p>
+    <div class="pend" id="pend"></div>
+  </section>
+  <p class="aviso" id="aviso" hidden></p>
+</main>
+<script src="/static/nav.js"></script>
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  let d = null;
+  async function api(cuerpo) {
+    const r = await fetch("/api/director", cuerpo ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) } : {});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+    return j;
+  }
+  function avisar(t) { $("#aviso").hidden = !t; $("#aviso").textContent = t || ""; }
+  function pintar() {
+    const cat = d.categorias, p = d.pendientes || {};
+    const cuenta = (c) => { const x = p[c] || {}; return `${x.produccion || 0} en marcha · ${x.error || 0} con problema`; };
+    $("#prio").innerHTML = d.orden.map((c, i) => `<li class="${d.enfoque === c ? "enfocada" : d.enfoque ? "en-espera" : ""}">
+      <span class="num">${i + 1}</span><span>${esc(cat[c])}</span><span class="cuenta">${esc(cuenta(c))}</span>
+      <button type="button" data-subir="${esc(c)}" ${i ? "" : "disabled"} aria-label="Subir ${esc(cat[c])}">⬆</button></li>`).join("");
+    if (document.activeElement?.id !== "enfoque") {
+      $("#enfoque").innerHTML = `<option value="">Sin enfoque: todas, en el orden de arriba</option>` +
+        d.orden.map((c) => `<option value="${esc(c)}" ${d.enfoque === c ? "selected" : ""}>Solo ${esc(cat[c])}</option>`).join("");
+    }
+    $("#enfoque-txt").hidden = !d.enfoque;
+    $("#enfoque-txt").textContent = d.enfoque ? `🎯 Enfocado en ${cat[d.enfoque]}: lo demás espera (lo que ya va, sigue).` : "";
+    const inf = d.informe;
+    $("#informe").innerHTML = inf && inf.resumen ? `<p>${esc(inf.resumen)}</p>
+      ${inf.atorado?.length ? `<h3>⚠️ Atorado</h3><ul class="atorado">${inf.atorado.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${inf.acciones?.length ? `<h3>✅ Hoy conviene</h3><ul>${inf.acciones.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      <p class="pista">Revisado ${esc(new Date(inf.t * 1000).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</p>`
+      : `<p class="pista">Todavía sin informe. Se hace solo cada 4 horas (con tu plan de Claude), o dale «Revisar ahora».</p>`;
+    $("#notas").innerHTML = (d.notas || []).map((n, i) => `<li><span>${esc(n.texto)}</span><button type="button" data-quitar="${i}" aria-label="Quitar nota">✕</button></li>`).join("");
+    const s = p._sala || {};
+    $("#sala-txt").textContent = `Sala de edición: ${s.compus ?? "?"} máquina(s) prendida(s) · ${s.cola ?? "?"} video(s) en fila.`;
+    $("#pend").innerHTML = d.orden.map((c) => {
+      const x = p[c] || {};
+      return `<article class="pcaja"><b>${esc(cat[c])}</b><div class="chips">
+        <span class="chip">${x.produccion || 0} en marcha</span><span class="chip ok">${x.revision || 0} para revisar</span>
+        <span class="chip ${x.error ? "err" : ""}">${x.error || 0} con problema</span>${x.ideas ? `<span class="chip">${x.ideas} ideas/temas</span>` : ""}</div>
+        ${(x.detalle || []).length ? `<ul>${x.detalle.slice(0, 4).map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}</article>`;
+    }).join("");
+  }
+  async function cargar() { try { d = await api(); pintar(); } catch (err) { avisar(err.message); } }
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    try {
+      if (b.dataset.subir) { await api({ subir: b.dataset.subir }); return cargar(); }
+      if (b.dataset.quitar !== undefined) { await api({ quitar_nota: Number(b.dataset.quitar) }); return cargar(); }
+      if (b.id === "pedir") {
+        b.disabled = true; b.textContent = "Revisando… (1 min)";
+        await api({ informe: true }); avisar(""); await cargar();
+      }
+    } catch (err) { avisar(`⚠️ ${err.message}`); }
+    finally { if (b.id === "pedir") { b.disabled = false; b.textContent = "Revisar ahora"; } }
+  });
+  $("#enfoque").addEventListener("change", async (e) => {
+    try { await api({ enfoque: e.target.value || null }); await cargar(); } catch (err) { avisar(err.message); }
+  });
+  $("#form-nota").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const t = $("#nota").value.trim();
+    if (!t) return;
+    try { await api({ nota: t }); $("#nota").value = ""; await cargar(); } catch (err) { avisar(err.message); }
+  });
+  cargar();
+  setInterval(() => { if (!document.hidden) cargar(); }, 15000);
+})();
+</script>
+</body>
+</html>

@@ -2225,6 +2225,9 @@ def _vuelta_resto() -> None:
         return
     if not _plan_disponible():
         return
+    from . import director
+    if not director.permitido("expedientes"):
+        return  # 🎯 el jefe se enfocó en otro canal: los casos que van siguen, pero no se arrancan nuevos
     if _caso_sin_terminar():
         return  # ☝️ primero se termina el video que va (hasta quedar en el calendario) y luego otro
     if _material_por_delante() >= meta_videos():

@@ -183,7 +183,8 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
     salida.mkdir(parents=True)
     try:
         r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=15, json={
-            "tipo": tipo, "origen": "youtube",
+            "tipo": tipo, "origen": "youtube", "categoria": __import__("agentes.director", fromlist=["x"]).categoria_canal(
+                __import__("agentes.canales", fromlist=["x"]).actual()),
             "etiqueta": f"{'🎬 Claude' if tipo == 'edu_ia' else '🐑 Estilo' if tipo == 'edu_estilo' else 'Edu'}: {manifiesto['ctx']['ficha']['title']}"[:80],
             "parametros": {"manifiesto": manifiesto}, "entradas": entradas, "salida": str(salida)}).json()
         tid = r.get("id")

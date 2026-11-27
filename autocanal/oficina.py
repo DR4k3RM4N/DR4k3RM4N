@@ -164,6 +164,8 @@ class Oficina:
         expedientes.al_avisar = self._aviso_expediente
         from agentes import expedientes_fabrica
         expedientes_fabrica.iniciar()  # 🏭 la fábrica de expedientes: una vuelta cada minuto
+        from agentes import director
+        director.iniciar(self)  # 🎯 el director de producción: prioridades, enfoque e informe
         threading.Thread(target=self._ambiente, daemon=True).start()
         threading.Thread(target=self._agenda, daemon=True).start()
         threading.Thread(target=self._ciclo_deseos, daemon=True).start()
@@ -1356,8 +1358,11 @@ class Oficina:
         lugares = max(0, self.a_la_vez() - self.en_produccion())
         if not lugares:
             return False
-        mejores = sorted(candidatas, key=lambda c: (not c.get("idea_jefe"), orden.get(c.get("potencial_vistas"), 3),
-                                                    not c.get("inspiracion")))
+        from agentes import director
+        # 🎯 el director manda: primero el canal que va más arriba en tus prioridades; con enfoque, solo ese canal
+        candidatas = [c for c in candidatas if director.permitido(director.categoria_canal(c.get("canal")))]
+        mejores = sorted(candidatas, key=lambda c: (director.rango(director.categoria_canal(c.get("canal"))), not c.get("idea_jefe"),
+                                                    orden.get(c.get("potencial_vistas"), 3), not c.get("inspiracion")))
         arrancadas, vistas = [], set()
         from agentes import prueba as prueba_mod
         sin_cel = None  # se pregunta una sola vez
@@ -2888,6 +2893,14 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 self.end_headers()
                 self.wfile.write(cuerpo)
                 return
+            if ruta in ("/director", "/director/"):  # 🎯 el director de producción
+                return self._archivo(WEB / "director.html", WEB)
+            if ruta == "/api/director":
+                from agentes import director
+                e = director.estado()
+                return self._json({"orden": e["orden"], "enfoque": e["enfoque"], "notas": e["notas"],
+                                   "informe": (e["informes"] or [None])[-1], "categorias": director.CATEGORIAS,
+                                   "pendientes": director.pendientes(oficina), "ahora": time.time()})
             if ruta in ("/tampico", "/tampico/"):  # 🌮 Tampiqueando en su propia página
                 return self._archivo(WEB / "tampico.html", WEB)
             if ruta in ("/edicion", "/edicion/"):  # 🎬 la sala de edición central (todas las compus y el servidor)
@@ -3032,6 +3045,12 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"ajustes": estilo.ajustar(datos)})
             if ruta == "/api/edicion/ajustes":  # ⚡ usar todas las compus + servidor, cerebro de edición
                 return self._json(oficina.edicion_ajustes(datos))
+            if ruta == "/api/director":  # 🎯 prioridades, enfoque, notas o pedir el informe ya
+                from agentes import director
+                if datos.get("informe"):
+                    r = director.informe(oficina, forzar=True)
+                    return self._json(r, 400 if r.get("error") and not r.get("resumen") else 200)
+                return self._json(director.ajustar(datos))
             if ruta == "/api/edicion/continuar":  # ▶ reintentar lo que falló, desde donde iba
                 return self._json(oficina.edicion_continuar())
             if ruta == "/api/edicion/reinicio":  # 🔄 reinicio forzoso de todo lo trabado

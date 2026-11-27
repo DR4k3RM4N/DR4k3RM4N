@@ -326,6 +326,15 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   (`/api/edicion/continuar`: Expedientes continuar + reintentar proyectos del edificio con error). Probado: sala
   apagada a media subida de 40 MB → retomó y llegó idéntico.
 
+- **🎯 Director de producción (27 nov)**: `agentes/director.py` + página `/director` (en el menú). Estado en
+  `autocanal/director.json` (gitignored): `orden` (por defecto fraudes → expedientes → apps → personal → tiktok →
+  tampico), `enfoque` (una categoría o null), `notas` (correcciones del jefe) e `informes`. La sala lee ese archivo
+  (`sala.director()`, cada 20 s): asigna la fila por `(rango, creado)` y con enfoque solo da máquinas a esa categoría
+  (`categoria(t)`: campo `categoria` del trabajo o por origen; edicion_remota manda `categoria_canal`). El piloto del
+  edificio filtra/ordena por `director.permitido/rango`; la fábrica de Expedientes no arranca temas nuevos si el
+  enfoque es otro. Informe con IA cada 4 h (tarea "director": Sonnet por el plan, SOLO_PLAN) con resumen, atorado y
+  acciones; «Revisar ahora» lo pide ya. Probado: sala toma Lana y Expedientes antes que TikTok; con enfoque, solo ese.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes
