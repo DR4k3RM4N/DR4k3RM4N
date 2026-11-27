@@ -22,6 +22,20 @@ ESTILO_ARCHIVOS = ("estilo.json", "fondo_relleno", "mascota.png", "musica.mp3", 
                    "fuente_negrita.ttf", "cara.png")
 
 
+def cerebro_ahora() -> str:
+    """«hibrido» si se eligió Claude y el plan tiene uso ahorita; si el plan está en pausa (límite), «auto»."""
+    import time
+
+    from . import claude as ia
+    from . import estilo as estilo_mod
+    elegido = estilo_mod.cargar()["ajustes"].get("cerebro_edicion", "hibrido")
+    if elegido == "auto":
+        return "auto"
+    if time.time() < getattr(ia, "_suscripcion_pausada_hasta", 0):
+        return "auto"  # 🔁 se acabó el plan: el director toma el relevo hasta que vuelva
+    return "hibrido"
+
+
 def compus_libres(tipo: str = "edu") -> int:
     import requests
     try:
@@ -134,10 +148,8 @@ def _preparar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -
                                       ensure_ascii=False, default=str)[:8000],
                   "prueba": {"momentos": prueba.get("momentos") or []},
                   "solo_grabacion": bool(ctx.get("solo_grabacion"))}
-    if canales.get(canales.actual()).get("nicho") == "fraudes":
-        manifiesto["estilo_edicion"] = "lana"
-    elif estilo_mod.cargar()["ajustes"].get("cerebro_edicion", "auto") == "auto":
-        manifiesto["estilo_edicion"] = "pro"  # el director automático Pro (sin Claude)
+    manifiesto["estilo_edicion"] = "lana" if canales.get(canales.actual()).get("nicho") == "fraudes" else "pro"
+    manifiesto["cerebro"] = cerebro_ahora()  # "hibrido" (Claude con relevo del director) o "auto"
     if manifiesto["solo_grabacion"]:
         manifiesto["direccion"] = SOLO_GRABACION_EDICION + "\n\n" + manifiesto["direccion"]
     return entradas, manifiesto
@@ -152,14 +164,14 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
     from . import estilo as estilo_mod
     # 🎬 si tu compu puede (Claude Code + Remotion) y está prendido en Estilo, la edición la dirige Claude
     from . import canales as canales_mod
-    cerebro = estilo_mod.cargar()["ajustes"].get("cerebro_edicion", "auto")
+    cerebro = cerebro_ahora()
     lana = canales_mod.get(canales_mod.actual()).get("nicho") == "fraudes"
-    # 🎬 por defecto edita el director automático (estilo del canal, en tus compus, sin gastar plan); Claude solo si
-    # lo eliges en la sala central. Cuida Tu Lana siempre con su estilo (cel + recortes).
-    if (lana or cerebro == "auto") and compus_libres("edu_estilo"):
-        tipo = "edu_estilo"
-    elif cerebro == "claude" and compus_libres("edu_ia"):
+    # 🧠 híbrido: Claude dirige (puliendo la base del director) mientras haya plan; sin plan, el director automático.
+    # Cuida Tu Lana siempre con su estilo (cel + recortes). Una máquina que no para.
+    if not lana and cerebro == "hibrido" and compus_libres("edu_ia"):
         tipo = "edu_ia"
+    elif compus_libres("edu_estilo"):
+        tipo = "edu_estilo"
     else:
         tipo = "edu"
     if tipo == "edu" and not compus_libres():

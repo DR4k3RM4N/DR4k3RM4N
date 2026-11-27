@@ -274,6 +274,14 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   frase, cortinilla en regancho, cierre con sello del veredicto + señales reales, mascota en lado libre, sfx y
   subtítulos karaoke. Comparado lado a lado con una edición dirigida por Claude: quedaron parejos.
 
+- **🧠 Modo híbrido (27 nov, por defecto)**: `cerebro_edicion` = "hibrido" | "auto". Híbrido: Claude Code dirige en
+  la compu (trabajo `edu_ia`) pero ya NO empieza de cero: `editor_youtube.editar` deja en `edu.json` la edición del
+  director Pro y el CLAUDE.md le pide pulirla (contexto, humor, ritmo) → mucho menos plan por video. Si Claude se
+  detiene por el límite (`ULTIMO["limite"]`), la compu anota `plan_pausado.txt` (1 h sin intentar Claude) y entrega con
+  `editar_auto`; si eso falla, plantilla. En el servidor `edicion_remota.cerebro_ahora()` manda "auto" si
+  `claude._suscripcion_pausada_hasta` sigue vigente. Manifiesto lleva siempre `estilo_edicion` (lana|pro) y `cerebro`.
+  Cuida Tu Lana siempre con su director (lana).
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

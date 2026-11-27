@@ -804,28 +804,33 @@ def editar_edu(of: "Oficina", t: dict, temporal: Path, avance, con_claude: bool 
         destino.parent.mkdir(parents=True, exist_ok=True)
         of.bajar(tid, e["n"], destino)
     (mesa / "manifiesto.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
-    if m.get("estilo_edicion") in ("lana", "pro") and ESTADO_MOTION["texto"] == "listo":  # 🎬 director automático: sin gastar plan
-        import editor_youtube
-        final = editor_youtube.editar_auto(mesa, m, avance, log)
-        if final:
-            shutil.copyfile(final, mesa / "video.mp4")
-            avance("Subiendo el video a la oficina", 0.96)
-            of.subir(tid, mesa / "video.mp4")
-            of.post(f"terminar/{tid}", {"ok": True, "resultado": {"video": "video.mp4", "editor": "estilo"}})
-            log(f"Edité «{t.get('etiqueta')}» con el estilo del canal.")
-            return
-        avance("El estilo no salió: lo edito con la plantilla", 0.5)
-    elif con_claude and claude_code() and ESTADO_MOTION["texto"] == "listo":
+    def entregar(final: Path, editor: str, aviso: str) -> None:
+        shutil.copyfile(final, mesa / "video.mp4")
+        avance("Subiendo el video a la oficina", 0.96)
+        of.subir(tid, mesa / "video.mp4")
+        of.post(f"terminar/{tid}", {"ok": True, "resultado": {"video": "video.mp4", "editor": editor}})
+        log(aviso)
+
+    listo_motion = ESTADO_MOTION["texto"] == "listo"
+    estilo = m.get("estilo_edicion")
+    # 🧠 Claude dirige mientras haya plan (puliendo la base del director); si el plan se acaba, entra el director
+    quiere_claude = (m.get("cerebro") in ("hibrido", "claude") or (con_claude and not m.get("cerebro"))) and estilo != "lana"
+    if quiere_claude and claude_code() and listo_motion and not plan_pausado():
         import editor_youtube
         final = editor_youtube.editar(mesa, m, claude_code(), avance, log)
         if final:
-            shutil.copyfile(final, mesa / "video.mp4")
-            avance("Subiendo el video a la oficina", 0.96)
-            of.subir(tid, mesa / "video.mp4")
-            of.post(f"terminar/{tid}", {"ok": True, "resultado": {"video": "video.mp4", "editor": "claude"}})
-            log(f"Claude editó «{t.get('etiqueta')}».")
-            return
-        avance("Claude no terminó: lo edito con la plantilla", 0.5)
+            return entregar(final, "claude", f"Claude editó «{t.get('etiqueta')}».")
+        if editor_youtube.ULTIMO["limite"]:
+            pausar_plan()
+            avance("Se acabó tu plan de Claude: edita el director automático", 0.5)
+        else:
+            avance("Claude no terminó: edita el director automático", 0.5)
+    if estilo in ("lana", "pro") and listo_motion:  # 🎬 director automático: no gasta plan
+        import editor_youtube
+        final = editor_youtube.editar_auto(mesa, m, avance, log)
+        if final:
+            return entregar(final, "director", f"Edité «{t.get('etiqueta')}» con el director automático.")
+        avance("El director no pudo: lo edito con la plantilla", 0.5)
     entorno = {**os.environ, "AUTOCANAL_ESTILO": str(mesa / "estilo"), "AUTOCANAL_SIN_COLA": "1",
                "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
     proceso = subprocess.Popen([sys.executable, "-m", "agentes.edicion_remota", str(mesa)], cwd=str(REPO / "autocanal"),
@@ -1119,6 +1124,26 @@ def _render_expediente(of, t, temporal, avance, nombre_dir, py) -> None:
               *render.glob("miniatura-*.jpg")]:
         of.subir(tid, f)
     log(f"Expediente {nombre_dir}: video listo ({round(video.stat().st_size / 1e6)} MB).")
+
+
+PLAN_PAUSA = CARPETA / "plan_pausado.txt"
+
+
+def plan_pausado() -> bool:
+    """¿Se acabó el plan de Claude hace poco? (se vuelve a probar a la hora)."""
+    try:
+        return time.time() < float(PLAN_PAUSA.read_text().strip() or 0)
+    except (OSError, ValueError):
+        return False
+
+
+def pausar_plan(segundos: int = 3600) -> None:
+    try:
+        PLAN_PAUSA.parent.mkdir(parents=True, exist_ok=True)
+        PLAN_PAUSA.write_text(str(time.time() + segundos))
+        log("Se acabó el plan de Claude: el director automático edita la siguiente hora.")
+    except OSError:
+        pass
 
 
 def actualizarme() -> None:

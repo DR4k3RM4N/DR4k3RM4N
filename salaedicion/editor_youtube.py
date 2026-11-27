@@ -164,18 +164,38 @@ def preparar(mesa: Path, m: dict) -> tuple[str, dict]:
     return texto, borrador
 
 
-def editar(mesa: Path, m: dict, claude: str, avance, log) -> Path | None:
-    """Claude edita. Regresa video_final.mp4 si quedó bien; None si no (y se usa la plantilla)."""
-    import editor_ia
+ULTIMO = {"limite": False}  # ¿la última vez Claude se detuvo por el límite del plan?
 
+PUNTO_DE_PARTIDA = """
+
+## Tu punto de partida (ahorra tu plan)
+`edu.json` YA trae una edición completa hecha por el director automático del canal (capas a tiempo con cada palabra,
+citas, cifras, reseñas reales, emojis, zooms, cortinillas, sonidos y cierre). **No la empieces de cero: revísala y
+mejórala** donde un editor humano haría la diferencia: dale contexto a las cifras («$1,500 para tareas VIP»), un toque
+de humor o sarcasmo en el gancho, mejor ritmo donde se sienta lento, la mascota reaccionando en el momento justo, y
+quita lo que estorbe. Renderiza solo tramos para revisar y el video completo UNA vez.
+"""
+
+
+def editar(mesa: Path, m: dict, claude: str, avance, log) -> Path | None:
+    """Claude edita. Regresa video_final.mp4 si quedó bien; None si no (y entra el director automático)."""
+    import editor_ia
+    import estilo_pro
+
+    ULTIMO["limite"] = False
     _, borrador = preparar(mesa, m)
+    try:  # 🎬 el director automático deja la edición base; Claude solo la pule (mucho menos plan por video)
+        borrador = estilo_pro.armar(mesa, m, borrador)
+        (mesa / "edu.json").write_text(json.dumps(borrador, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 — si falla, Claude empieza del borrador vacío como antes
+        log(f"El director no pudo dejar la base: {exc}")
     total = sum(e["duracion"] for e in borrador["escenas"])
     py = editor_ia._ruta(editor_ia.python_exe())
     herramientas = editor_ia._ruta(AQUI / "herramientas.py")
     (mesa / "CLAUDE.md").write_text(GUIA.format(
         titulo=m["ctx"]["ficha"].get("title", ""), canal=m.get("canal_nombre") or "Apps que sí pagan",
         acento=borrador["acento"], direccion=(m.get("direccion") or "(sin indicaciones extra)")[:8000],
-        t=f'"{py}" "{herramientas}"'), encoding="utf-8")
+        t=f'"{py}" "{herramientas}"') + PUNTO_DE_PARTIDA, encoding="utf-8")
     avance("Claude está dirigiendo la edición", 0.08)
     inicio = time.time()
     try:
@@ -183,6 +203,7 @@ def editar(mesa: Path, m: dict, claude: str, avance, log) -> Path | None:
                          lambda paso, f: avance(f"🎬 Claude: {paso}", 0.08 + 0.8 * min(1, (time.time() - inicio) / 3600)),
                          minutos=90)
     except Exception as exc:  # noqa: BLE001
+        ULTIMO["limite"] = "límite" in str(exc).lower() or "limit" in str(exc).lower()
         log(f"Claude no terminó la edición: {exc}")
     final = mesa / "video_final.mp4"
     if not final.exists():

@@ -55,7 +55,7 @@
     $("#ed-todas-sub").textContent = usarSrv ? "Prendido: el servidor también edita (tus compus primero). Toca para apagarlo."
       : "Apagado: el servidor solo edita si no hay ninguna compu.";
     if (document.activeElement?.id !== "ed-srv-n") $("#ed-srv-n").value = String(s.ajustes?.servidor_a_la_vez || 1);
-    if (document.activeElement?.id !== "ed-cerebro") $("#ed-cerebro").value = datos.cerebro || "auto";
+    if (document.activeElement?.id !== "ed-cerebro") $("#ed-cerebro").value = datos.cerebro === "claude" ? "hibrido" : datos.cerebro || "hibrido";
 
     const vivas = compus.filter((c) => c.viva);
     const editando = compus.reduce((a, c) => a + (c.activos || []).length, 0);
@@ -126,8 +126,8 @@
   $("#ed-srv-n").addEventListener("change", (e) =>
     accion(e.currentTarget, "/api/edicion/ajustes", { servidor_a_la_vez: Number(e.target.value) }, () => `El servidor edita hasta ${e.target.value} video(s) a la vez.`));
   $("#ed-cerebro").addEventListener("change", (e) =>
-    accion(e.currentTarget, "/api/edicion/ajustes", { cerebro: e.target.value }, () => e.target.value === "claude"
-      ? "🧠 Claude dirige la edición de los videos del edificio en tu compu (usa tu plan). Cuida Tu Lana sigue con su estilo."
+    accion(e.currentTarget, "/api/edicion/ajustes", { cerebro: e.target.value }, () => e.target.value !== "auto"
+      ? "🧠 Híbrido: Claude pule cada video mientras haya plan; cuando se acaba, el director automático sigue solo y Claude regresa cuando vuelve el plan."
       : "🎬 Director automático Pro: edita con el estilo de cada canal en tus compus, sin gastar tu plan."));
   cargar();
   setInterval(() => { if (!document.hidden) cargar(); }, 3000);

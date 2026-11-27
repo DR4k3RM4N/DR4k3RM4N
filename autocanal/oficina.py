@@ -1737,7 +1737,7 @@ class Oficina:
         except Exception as exc:  # noqa: BLE001
             exp_info = {"casos": [], "error": str(exc)[:200]}
         return {"sala": sala, "edificio": edificio, "expedientes": exp_info, "ahora": time.time(),
-                "cerebro": estilo.cargar()["ajustes"].get("cerebro_edicion", "auto")}
+                "cerebro": estilo.cargar()["ajustes"].get("cerebro_edicion", "hibrido")}
 
     def edicion_ajustes(self, d: dict) -> dict:
         from agentes import expedientes_fabrica as fb
@@ -1758,7 +1758,7 @@ class Oficina:
                               {k: v for k, v in (e.get("compus") or {}).items() if v != "no"}
                 e["servidor_respaldo"] = True
                 fb._guardar_estado(e)
-        if d.get("cerebro") in ("auto", "claude"):
+        if d.get("cerebro") in ("auto", "hibrido", "claude"):
             estilo.ajustar({"cerebro_edicion": d["cerebro"]})
         return {"ok": True, **r}
 
