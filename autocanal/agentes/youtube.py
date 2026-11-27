@@ -150,3 +150,46 @@ def agregar_a_descripcion(url_video: str, texto: str, canal: str | None = None) 
     snippet["description"] = (snippet.get("description", "").rstrip() + "\n\n" + texto)[:5000]
     yt.videos().update(part="snippet", body={"id": video_id, "snippet": {
         k: snippet[k] for k in ("title", "description", "categoryId", "tags", "defaultLanguage") if k in snippet}}).execute()
+
+
+def videos_del_canal(canal: str | None = None, n: int = 50) -> list[dict]:
+    """Los videos del canal (también privados y programados): id, título, estado y fecha."""
+    yt = _servicio(canal=canal)
+    ch = yt.channels().list(part="contentDetails", mine=True).execute().get("items", [])
+    if not ch:
+        return []
+    lista = ch[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    ids, pagina = [], None
+    while len(ids) < n:
+        r = yt.playlistItems().list(part="contentDetails", playlistId=lista, maxResults=50, pageToken=pagina).execute()
+        ids += [x["contentDetails"]["videoId"] for x in r.get("items", [])]
+        pagina = r.get("nextPageToken")
+        if not pagina:
+            break
+    salida = []
+    for i in range(0, len(ids[:n]), 50):
+        r = yt.videos().list(part="snippet,status", id=",".join(ids[i:i + 50])).execute()
+        for v in r.get("items", []):
+            salida.append({"id": v["id"], "titulo": v["snippet"]["title"], "estado": v["status"].get("privacyStatus"),
+                           "programado": v["status"].get("publishAt", ""), "fecha": v["snippet"].get("publishedAt", "")[:10],
+                           "url": f"https://youtu.be/{v['id']}"})
+    return salida
+
+
+def editar_video(url_video: str, titulo: str | None = None, descripcion: str | None = None,
+                 etiquetas: list[str] | None = None, canal: str | None = None) -> None:
+    """Cambia título, descripción o etiquetas de un video ya subido (lo demás se queda igual)."""
+    video_id = url_video.rstrip("/").split("/")[-1].split("=")[-1]
+    yt = _servicio(canal=canal)
+    datos = yt.videos().list(part="snippet", id=video_id).execute().get("items", [])
+    if not datos:
+        raise RuntimeError("No encontré ese video en tu canal.")
+    sn = datos[0]["snippet"]
+    if titulo:
+        sn["title"] = titulo[:100]
+    if descripcion is not None and descripcion.strip():
+        sn["description"] = descripcion[:5000]
+    if etiquetas:
+        sn["tags"] = etiquetas[:30]
+    yt.videos().update(part="snippet", body={"id": video_id, "snippet": {
+        k: sn[k] for k in ("title", "description", "categoryId", "tags", "defaultLanguage") if k in sn}}).execute()

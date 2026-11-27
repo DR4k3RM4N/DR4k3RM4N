@@ -1116,7 +1116,8 @@ ESQUEMA_CHAT = {
             "properties": {"tipo": {"type": "string", "enum": ["cambiar_frase", "usar_original", "usar_propuesta",
                                                                "reverificar", "editar_narracion", "nota", "hacer_video",
                                                                "reintentar", "rehacer_video", "subir_programado",
-                                                               "subir_privado", "continuar"]},
+                                                               "subir_privado", "continuar", "editar_video",
+                                                               "miniatura_video"]},
                            "dato": {"type": "string"}, "escena": {"type": "integer"}, "frase": {"type": "string"},
                            "frase_nueva": {"type": "string"}, "para": {"type": "string"}, "nota": {"type": "string"}},
             "required": ["tipo", "dato", "escena", "frase", "frase_nueva", "para", "nota"], "additionalProperties": False}},
@@ -1149,6 +1150,9 @@ lo dejes «anotado»:
 - reintentar: volver a intentar el paso que falló. rehacer_video: que la compu haga el video otra vez.
 - subir_programado / subir_privado: subir el video ya hecho, con la siguiente fecha de la agenda o sin fecha.
 - continuar: destrabar la fábrica y seguir (si se quedó esperando).
+- editar_video: cambiar un video que YA está en el canal (frase = cuál video, p. ej. «Sears»; frase_nueva = título \
+nuevo o vacío; nota = descripción nueva completa o vacía). miniatura_video: Mina le hace miniatura nueva a un video \
+del canal y la sube (frase = cuál video). Sí puedes: el canal está conectado.
 - cambiar_frase: cambiar la frase nueva propuesta de un dato de la verificación (dato = su id, frase_nueva).
 - usar_original / usar_propuesta: en ese dato se queda la frase original o la propuesta.
 - reverificar: que Ramos vuelva a revisar ese dato con las fuentes.
@@ -1260,14 +1264,18 @@ def _responder(eid: str, p: dict, texto: str) -> None:
                 x = (fb.convertir(eid) if tipo == "hacer_video" else fb.reintentar(eid) if tipo == "reintentar"
                      else fb.revisar(eid, {"accion": "rehacer_video"}) if tipo == "rehacer_video"
                      else fb.subir_ya(eid, con_fecha=tipo == "subir_programado") if tipo in ("subir_programado", "subir_privado")
-                     else fb.continuar() if tipo == "continuar" else None)
+                     else fb.continuar() if tipo == "continuar"
+                     else fb.editar_video_canal(ac.get("frase", ""), titulo=ac.get("frase_nueva", ""), descripcion=ac.get("nota", "")) if tipo == "editar_video"
+                     else fb.miniatura_video(ac.get("frase", "")) if tipo == "miniatura_video" else None)
             except Exception as exc:  # noqa: BLE001
                 x = {"error": str(exc)[:200]}
             if x is not None:
                 hechos.append(f"✖ {x['error']}" if "error" in x else {
                     "hacer_video": "🎬 Arranqué la preparación del video.", "reintentar": "🔁 Lo estoy reintentando.",
                     "rehacer_video": "🎬 Mandé a hacer el video otra vez.", "subir_programado": "📤 Subiendo en privado con fecha.",
-                    "subir_privado": "📤 Subiendo en privado.", "continuar": "▶ La fábrica sigue."}[tipo])
+                    "subir_privado": "📤 Subiendo en privado.", "continuar": "▶ La fábrica sigue.",
+                    "editar_video": "✏️ Cambié el video en YouTube.",
+                    "miniatura_video": "🖼️ Mina ya está haciendo la miniatura (te aviso en el chat de la agencia)."}[tipo])
         if hechos:
             with _candado:
                 t = trabajo(eid)

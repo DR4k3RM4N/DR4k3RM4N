@@ -653,6 +653,12 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   si no hay `C:/Windows/Fonts/bahnschrift.ttf`; `actualizar.sh` instala `fonts-roboto`). **Clave de Azure solo en el
   servidor**: `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` en `autocanal/.env` (o `canal-youtube/.azure_speech`); se
   presta en `parametros.azure` del trabajo, la compu escribe `.azure_speech` y lo borra al terminar.
+- **Videos que ya están en el canal** (también los que Miguel subió a mano, como Sears y Tupperware):
+  `youtube.videos_del_canal` / `youtube.editar_video` (permiso «youtube» que ya tiene el canal). En la fábrica:
+  `videos_canal` (caché 10 min, va en el contexto del chat), `editar_video_canal` (título/descripción) y
+  `miniatura_video` (fotos libres de Commons de la marca → Mina diseña → MINIATURA_PY con el motor en el servidor →
+  `youtube.poner_miniatura`; pide teléfono verificado en el canal). Acciones de chat `editar_video` y `miniatura_video`
+  (en el de la agencia y en el de cada caso).
 - **Miniaturas (Mina, `ex_miniaturas`)**: `disenar_miniaturas` con `REGLAS_MINIATURA` (1 sujeto, 1-3 palabras
   gigantes con número/contraste, foto de fachada/producto en B/N, cinta/sello, nada abajo a la derecha, B = pantalla
   dividida) → `miniatura.json`; si no hay foto buena, `_dibujar_realista` con Gemini (~4 ¢, solo si hay

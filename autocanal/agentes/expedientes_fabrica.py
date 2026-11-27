@@ -1723,7 +1723,7 @@ def archivo_render(eid: str, nombre: str) -> Path | None:
 CHAT = ex.CARPETA / "chat_agencia.json"
 ACCIONES = ["continuar", "pausar", "prender", "producir", "hacer_video", "agregar_tema", "primero", "saltar", "aprobar_tema",
             "proponer_temas", "reintentar", "rehacer_video", "subir", "meta_dias", "ritmo", "hora", "subir_solo",
-            "mensaje_caso", "usar_compu", "servidor_respaldo", "ninguna"]
+            "mensaje_caso", "usar_compu", "servidor_respaldo", "editar_video", "miniatura_video", "ninguna"]
 ESQ_CHAT = {"type": "object", "additionalProperties": False, "required": ["quien", "respuesta", "acciones"], "properties": {
     "quien": {"type": "string", "enum": [i for i, *_ in ex.EQUIPO]},
     "respuesta": {"type": "string", "description": "lo que le contestas a Miguel (corto, español de México, de tú)"},
@@ -1780,6 +1780,9 @@ def _contexto_chat() -> str:
                                           f"{'puede' if c['puede'] else 'no puede: ' + c['motivo']}, {c['pref']})"
                                           for c in r["compus"]) or "ninguna en la sala")
                   + f" · servidor de respaldo: {'sí' if e.get('servidor_respaldo') else 'no'}")
+    vids = videos_canal()
+    lineas.append("VIDEOS EN TU CANAL (YouTube): " + ("; ".join(f"«{v['titulo']}» ({v['estado']}{', programado ' + v['programado'][:10] if v.get('programado') else ''}, {v['url']})" for v in vids[:25])
+                                                     or ("ninguno o no pude leerlos" if _canal_yt() else "el canal de YouTube no está elegido en Canales")))
     sig = [x for x in r["temas"] if x["estado"] in ("pendiente", "propuesto", "produciendo")][:15]
     lineas.append("TEMAS: " + "; ".join(f"{x['marca']} ({x['estado']})" for x in sig))
     for c in ag["canales"]:
@@ -1801,6 +1804,12 @@ def _ejecutar(a: dict) -> str:
     if tipo == "subir_solo":
         ajustar({"subir_solo": a["si"]})
         return "📤 Subirá sola en privado." if a["si"] else "📤 Ya no sube sola: te los deja para revisar."
+    if tipo == "editar_video":
+        r = editar_video_canal(a["marca"] or a["caso"], titulo=a["texto"], descripcion=a["gancho"])
+        return f"✖ {r['error']}" if "error" in r else f"✏️ Cambié «{r['video']}» en YouTube."
+    if tipo == "miniatura_video":
+        r = miniatura_video(a["marca"] or a["caso"])
+        return f"✖ {r['error']}" if "error" in r else f"🖼️ Mina ya está haciendo la miniatura de «{r['video']}» (te aviso aquí cuando la suba)."
     if tipo == "usar_compu":
         nombre = _slug(a["marca"] or a["texto"])
         c = next((x for x in compus_sala() if nombre and (nombre in _slug(x["nombre"]) or nombre in _slug(x["id"]))), None)
@@ -1904,7 +1913,7 @@ def _responder_agencia(texto: str) -> None:
                 "ACCIONES: continuar (destrabar y seguir ya), pausar, prender, producir {marca}, agregar_tema {marca, "
                 "gancho}, primero {marca}, saltar {marca}, aprobar_tema {marca}, proponer_temas {numero}, reintentar "
                 "{caso}, hacer_video {caso} (convierte en video un caso importado, o reintenta), rehacer_video {caso}, subir {caso, si=con fecha}, meta_dias {numero}, ritmo {numero de días}, "
-                "hora {texto HH:MM}, subir_solo {si}, usar_compu {marca = nombre de la compu, numero = preferida|respaldo|no}, servidor_respaldo {si}, mensaje_caso {caso, texto} (para cambiar frases o datos de un "
+                "hora {texto HH:MM}, subir_solo {si}, usar_compu {marca = nombre de la compu, numero = preferida|respaldo|no}, servidor_respaldo {si}, editar_video {marca = cuál video de VIDEOS EN TU CANAL, texto = título nuevo (vacío = no cambiar), gancho = descripción nueva completa (vacío = no cambiar)}, miniatura_video {marca = cuál video} (Mina le hace miniatura nueva y la sube), mensaje_caso {caso, texto} (para cambiar frases o datos de un "
                 "guion: lo atiende Ramos), ninguna.\n\nEQUIPO:\n" + equipo,
                 f"SITUACIÓN AHORA:\n{_contexto_chat()}\n\nPLÁTICA RECIENTE:\n{previos or '(nada)'}\n\nMIGUEL: {texto}",
                 ESQ_CHAT, tarea=TAREA, que="chat de la agencia")
@@ -2054,3 +2063,130 @@ def subir_ya(eid: str, con_fecha: bool = True) -> dict:
         return {"error": "Todavía no hay video: primero hay que hacerlo (hacer_video)."}
     _poner(eid, paso="revision")
     return revisar(eid, {"accion": "programar" if con_fecha else "privado"})
+
+
+# ---------------------------------------------------------------- 📺 videos que ya están en tu canal
+_cache_videos: dict = {"t": 0, "lista": []}
+
+
+def _canal_yt() -> str:
+    return next((c.get("canal_youtube") for c in agenda.lista() if c.get("canal_youtube")), "")
+
+
+def videos_canal(forzar: bool = False) -> list[dict]:
+    """Los videos del canal de la serie (con caché de 10 min para no gastar cuota de YouTube)."""
+    if _demo():
+        return [{"id": "demoSears", "titulo": "¿Quién MATÓ a Sears?", "estado": "public", "programado": "", "fecha": "2026-11-20",
+                 "url": "https://youtu.be/demoSears"},
+                {"id": "demoTupp", "titulo": "¿Quién MATÓ a Tupperware?", "estado": "private", "programado": "", "fecha": "2026-11-24",
+                 "url": "https://youtu.be/demoTupp"}]
+    canal = _canal_yt()
+    if not canal:
+        return []
+    if forzar or time.time() - _cache_videos["t"] > 600:
+        from . import youtube
+        try:
+            _cache_videos.update(t=time.time(), lista=youtube.videos_del_canal(canal=canal))
+        except Exception as exc:  # noqa: BLE001
+            print(f"  · no pude leer los videos del canal: {exc}", flush=True)
+    return _cache_videos["lista"]
+
+
+def _buscar_video(ref: str) -> dict | None:
+    ref = (ref or "").strip()
+    lista = videos_canal()
+    if not ref:
+        return None
+    vid = ref.rstrip("/").split("/")[-1].split("=")[-1]
+    s = _slug(ref)
+    return (next((v for v in lista if v["id"] == vid), None)
+            or next((v for v in lista if s and s in _slug(v["titulo"])), None)
+            or next((v for v in lista if s and any(p in _slug(v["titulo"]) for p in s.split("-") if len(p) > 3)), None))
+
+
+def editar_video_canal(ref: str, titulo: str = "", descripcion: str = "") -> dict:
+    v = _buscar_video(ref)
+    if not v:
+        return {"error": f"No encontré en tu canal un video que se llame como «{ref}»."}
+    if not titulo and not descripcion:
+        return {"error": "¿Qué le cambio? (título o descripción)"}
+    if not _demo():
+        from . import youtube
+        youtube.editar_video(v["url"], titulo=titulo or None, descripcion=descripcion or None, canal=_canal_yt())
+        _cache_videos["t"] = 0
+    return {"ok": True, "video": v["titulo"]}
+
+
+def miniatura_video(ref: str) -> dict:
+    """🖼️ Mina le hace miniatura nueva (A, la que jala) a un video que ya está en tu canal y la sube."""
+    v = _buscar_video(ref)
+    if not v:
+        return {"error": f"No encontré en tu canal un video que se llame como «{ref}»."}
+    threading.Thread(target=_miniatura_video, args=(v,), daemon=True).start()
+    return {"ok": True, "video": v["titulo"]}
+
+
+def _miniatura_video(v: dict) -> None:
+    m = re.search(r"MAT[OÓ] a (.+?)\??$", v["titulo"], flags=re.I)
+    marca = (m.group(1) if m else v["titulo"]).strip(" ?¿")
+    tarea = ex._tarea("ex_miniaturas", "Miniatura nueva", v["titulo"][:60])
+    ex._decir("ex_miniaturas", "trabajando", f"Haciendo la miniatura de {marca} 🖼️")
+    raiz = ex.CARPETA / "_miniaturas" / _slug(marca)
+    try:
+        shutil.rmtree(raiz, ignore_errors=True)
+        ep = raiz / "01-miniatura"
+        (ep / "material" / "fotos").mkdir(parents=True)
+        material = {"lista": [], "fotos": [], "videos": []}
+        if not _demo():  # fotos libres de la marca en Wikimedia (sin gastar Claude)
+            fl = _fuentes_libres()
+            vistos = set()
+            for q in (f"{marca} store", f"{marca} logo", f"{marca}", f"{marca} building"):
+                try:
+                    res = fl.commons(q, 10)
+                except Exception:  # noqa: BLE001
+                    continue
+                for x in res:
+                    if x["titulo"] in vistos or not _licencia_libre(x.get("licencia")) or (x.get("ancho") or 0) < 900 \
+                            or not (x.get("mime") or "").startswith(("image/jpeg", "image/png")):
+                        continue
+                    vistos.add(x["titulo"])
+                    material["fotos"].append(x)
+                if len(material["fotos"]) >= 6:
+                    break
+            thumbs = fl.commons_thumbs([x["titulo"] for x in material["fotos"]]) if material["fotos"] else {}
+            manif = []
+            for i, x in enumerate(material["fotos"][:6], 1):
+                nombre = f"{_slug(marca, 20)}-{i}" + (Path((thumbs.get(x["titulo"]) or x["url"]).split("?")[0]).suffix.lower() or ".jpg")
+                manif.append({"nombre": nombre, "url": thumbs.get(x["titulo"]) or x["url"], "fuente": x["fuente"],
+                              "licencia": x.get("licencia"), "autor": x.get("autor"), "pagina": x.get("pagina"), "titulo": x["titulo"]})
+                material["lista"].append({"archivo": f"material/fotos/{nombre}", "describe": x["titulo"][:80], "video": False,
+                                          "escenas": [1], "fuente": x["fuente"]})
+            _escribir(raiz / "manifiesto.json", manif)
+            if manif:
+                fl.descargar(str(raiz / "manifiesto.json"), str(ep / "material" / "fotos"))
+        disenar_miniaturas({"marca": marca, "gancho": ""}, {"miniatura_a": [], "miniatura_b": []}, material, ep)
+        (ep / "miniatura.py").write_text(MINIATURA_PY, encoding="utf-8")
+        if _demo():
+            resultado = "(demo) Aquí Mina haría la miniatura y la subiría."
+        else:
+            shutil.copytree(MOTOR, raiz / "motor", ignore=shutil.ignore_patterns("__pycache__"))
+            r = subprocess.run([sys.executable, "-E", "01-miniatura/miniatura.py"], cwd=str(raiz), capture_output=True,
+                               text=True, timeout=300)
+            mini = ep / "render" / "miniatura-A.jpg"
+            if r.returncode != 0 or not mini.exists():
+                raise RuntimeError((r.stderr or r.stdout or "no salió la imagen")[-300:])
+            from . import youtube
+            youtube.poner_miniatura(v["url"], mini, canal=_canal_yt())
+            destino = ex.CARPETA / "miniaturas"
+            destino.mkdir(exist_ok=True)
+            shutil.copyfile(mini, destino / f"{_slug(marca)}-A.jpg")
+            resultado = f"✔ Le puse miniatura nueva a «{v['titulo']}» ({v['url']})."
+        _chat_poner({"quien": "ex_miniaturas", "texto": resultado})
+        ex._fin_tarea(tarea, resultado=resultado[:120])
+        ex._decir("ex_miniaturas", "libre", "Miniatura lista ✔")
+    except Exception as exc:  # noqa: BLE001
+        _chat_poner({"quien": "ex_miniaturas", "texto": f"😕 No pude con la miniatura de «{v['titulo']}»: {str(exc)[:250]}"})
+        ex._fin_tarea(tarea, error=str(exc)[:200])
+        ex._decir("ex_miniaturas", "libre", "No pude con la miniatura 😕")
+    finally:
+        shutil.rmtree(raiz, ignore_errors=True)
