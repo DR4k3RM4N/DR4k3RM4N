@@ -251,6 +251,14 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   la compu y el del servidor tienen vigilante (20 min sin salida o cancelado → mata el proceso y libera el lugar); si la
   sala se reinicia y suelta el trabajo, se reenvía al momento (sin contar falla); render del servidor huérfano → reenvío.
 
+- **🐑 Cuida Tu Lana v2 (27 nov)**: el cel SIEMPRE al centro y su pantalla cambia con lo que se dice: capa Edu
+  `pantalla` (`estilo`: resenas = reseñas reales tecleándose con estrellas y círculo en la palabra clave completa;
+  app = ficha con ícono, estrellas y descargas reales; alerta = señal del expediente que llega vibrando; dato = la
+  cifra tal cual se dice; `fijo` = el cel no vuelve a entrar). `estilo_lana._pantallas` elige por escena (visual del
+  guion + palabras: reseña/comentario, estrellas/descargas, cifras con `CIFRA_RE`, fraude/amenaza…); escenas largas
+  cambian de pantalla a media escena; 2 cifras → cada una cuando se dice. El manifiesto manda la ficha (score,
+  installs). Orden única `2026-11-27-reeditar-lana-v2` (reemplaza a la v1; espera a que terminen si van a medias).
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

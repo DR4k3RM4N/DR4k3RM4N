@@ -32,7 +32,7 @@ export type Mensaje = { de: "ellos" | "yo"; texto: string };
 export type Capa = {
   tipo: "texto" | "titulo_seccion" | "dato" | "celular" | "chat" | "resena" | "lista" | "comparativa" | "alerta" |
     "sello" | "flecha" | "circulo" | "imagen" | "mascota" | "emoji" | "zoom_golpe" | "sacudida" | "destello" | "cintillo" |
-    "nota" | "raya";
+    "nota" | "raya" | "pantalla";
   desde: number; // segundos desde el inicio de la escena
   hasta?: number; // segundos desde el inicio de la escena (por defecto: fin de la escena)
   texto?: string; textos?: string[]; titulo?: string;
@@ -42,6 +42,8 @@ export type Capa = {
   estrellas?: number; usuario?: string;
   x?: number; y?: number; tamano?: number; color?: string; estilo?: string; lado?: "izquierda" | "derecha"; angulo?: number;
   resaltar?: string; // chat: palabra que se encierra con un círculo rojo
+  resenas?: { usuario?: string; estrellas?: number; texto: string }[]; // pantalla «resenas»: copiadas tal cual
+  icono?: string; fijo?: boolean; // pantalla: icono de la app; fijo = el cel ya estaba (no vuelve a entrar)
 };
 export type Escena = {
   audio?: string; duracion: number; palabras?: Palabra[]; fondo?: Fondo; capas?: Capa[];
@@ -315,6 +317,107 @@ const Encierra: React.FC<{ texto: string; palabra?: string; desde: number; f: nu
       </span>
       {texto.slice(k + palabra.length)}
     </>
+  );
+};
+
+// 📱 el cel del estilo «Cuida Tu Lana»: siempre al centro; lo que muestra cambia según lo que se dice
+const MarcoCel: React.FC<{ c: Capa; entra: number; sale: number; children: React.ReactNode }> = ({ c, entra, sale, children }) => {
+  const { height } = useVideoConfig();
+  const alto = height * 0.9 * (c.tamano || 1);
+  return (
+    <En x={c.x ?? 0.5} y={0.5} style={{ opacity: c.fijo ? 1 : sale }}>
+      <div style={{ width: alto * 0.5, height: alto, borderRadius: 60, background: "#0b141a", border: "18px solid #1f1f24",
+        boxShadow: "0 40px 90px rgba(0,0,0,.6)", overflow: "hidden", display: "flex", flexDirection: "column",
+        transform: c.fijo ? "none" : `translateY(${(1 - entra) * 300}px)` }}>
+        <div style={{ background: "#202c33", color: "#e9edef", fontFamily: MONT, fontWeight: 800, fontSize: 30, padding: "26px 28px",
+          display: "flex", alignItems: "center", gap: 16, flex: "none" }}>
+          {c.icono ? <Img src={src(c.icono)} style={{ width: 54, height: 54, borderRadius: 14, objectFit: "cover" }} />
+            : <div style={{ width: 54, height: 54, borderRadius: 14, background: "#3b4a54", display: "grid", placeItems: "center", fontSize: 30 }}>📱</div>}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nombre || "App"}</span>
+        </div>
+        <div style={{ flex: 1, padding: 26, display: "flex", flexDirection: "column", gap: 22, position: "relative" }}>{children}</div>
+      </div>
+    </En>
+  );
+};
+
+const Estrellas: React.FC<{ n: number; tam: number }> = ({ n, tam }) => (
+  <span style={{ fontSize: tam, letterSpacing: 2 }}>
+    {[1, 2, 3, 4, 5].map((k) => <span key={k} style={{ color: k <= n ? (n <= 2 ? "#ff5b5b" : "#FFD60A") : "#3b4a54" }}>★</span>)}
+  </span>
+);
+
+const Pantalla: React.FC<P> = ({ c, dur, peligro }) => {
+  const { f, fps, entra, sale } = useCapa(dur);
+  const modo = c.estilo || "dato";
+  if (modo === "resenas") {  // ⭐ reseñas reales que se escriben solas, una tras otra
+    const lista = (c.resenas || []).slice(0, 3);
+    const cada = Math.max(30, (dur - 10) / Math.max(1, lista.length));
+    return (
+      <MarcoCel c={c} entra={entra} sale={sale}>
+        <div style={{ fontFamily: MONT, fontWeight: 800, fontSize: 30, color: "#8696a0", letterSpacing: 1 }}>RESEÑAS</div>
+        {lista.map((r, k) => {
+          const ini = 6 + k * cada;
+          if (f < ini) return null;
+          const s = spring({ frame: f - ini, fps, config: { damping: 14, stiffness: 200 } });
+          const n = Math.floor(interpolate(f, [ini + 6, ini + 6 + Math.max(12, Math.min(cada - 8, r.texto.length * 0.7))], [0, r.texto.length], clamp));
+          const marca = c.resaltar && r.texto.toLowerCase().includes(c.resaltar.toLowerCase()) && n >= r.texto.length;
+          return (
+            <div key={k} style={{ background: "#16232b", borderRadius: 22, padding: "20px 22px", transform: `scale(${s})`, transformOrigin: "left top",
+              opacity: k < lista.length - 1 && f > ini + cada ? 0.55 : 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 10 }}>
+                <div style={{ width: 48, height: 48, borderRadius: 99, background: ["#7b5cff", "#00a884", "#ff7a59"][k % 3], color: "#fff",
+                  fontFamily: MONT, fontWeight: 900, fontSize: 26, display: "grid", placeItems: "center" }}>{(r.usuario || "U").slice(0, 1).toUpperCase()}</div>
+                <div style={{ fontFamily: MONT, fontWeight: 700, fontSize: 26, color: "#e9edef", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{r.usuario || "Usuario"}</div>
+              </div>
+              {r.estrellas ? <Estrellas n={Math.round(r.estrellas)} tam={34} /> : null}
+              <div style={{ fontFamily: MONT, fontWeight: 600, fontSize: 30, color: "#e9edef", lineHeight: 1.3, marginTop: 8 }}>
+                {marca ? <Encierra texto={r.texto} palabra={c.resaltar} desde={ini + 6 + Math.min(cada - 8, r.texto.length * 0.7)} f={f} />
+                  : r.texto.slice(0, n)}
+              </div>
+            </div>
+          );
+        })}
+      </MarcoCel>
+    );
+  }
+  if (modo === "app") {  // 🛒 la ficha de la app (solo los datos que de verdad vienen)
+    const s = spring({ frame: f - 4, fps, config: { damping: 12 } });
+    return (
+      <MarcoCel c={c} entra={entra} sale={sale}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 26, marginTop: 40, transform: `scale(${s})` }}>
+          {c.icono ? <Img src={src(c.icono)} style={{ width: 220, height: 220, borderRadius: 48, objectFit: "cover", boxShadow: "0 20px 40px rgba(0,0,0,.5)" }} /> : null}
+          <div style={{ fontFamily: MONT, fontWeight: 900, fontSize: 44, color: "#fff", textAlign: "center", lineHeight: 1.15 }}>{c.nombre}</div>
+          {c.estrellas ? <div style={{ display: "flex", alignItems: "center", gap: 12 }}><Estrellas n={Math.round(c.estrellas)} tam={46} />
+            <span style={{ fontFamily: MONT, fontWeight: 800, fontSize: 40, color: "#e9edef" }}>{c.estrellas.toFixed(1)}</span></div> : null}
+          {c.texto ? <div style={{ fontFamily: MONT, fontWeight: 700, fontSize: 34, color: "#8696a0", textAlign: "center" }}>{c.texto}</div> : null}
+          <div style={{ marginTop: 20, background: "#00a884", color: "#fff", fontFamily: MONT, fontWeight: 900, fontSize: 36, padding: "18px 70px", borderRadius: 20 }}>Instalar</div>
+        </div>
+      </MarcoCel>
+    );
+  }
+  if (modo === "alerta") {  // ⚠️ notificación de peligro que llega vibrando
+    const s = spring({ frame: f - 6, fps, config: { damping: 9, stiffness: 240 } });
+    const vibra = f > 6 && f < 22 ? Math.sin(f * 3) * 10 : 0;
+    return (
+      <MarcoCel c={c} entra={entra} sale={sale}>
+        <div style={{ marginTop: 30, background: "#2a0f12", border: `4px solid ${peligro}`, borderRadius: 28, padding: "30px 28px",
+          transform: `translateX(${vibra}px) scale(${s})`, boxShadow: `0 0 40px ${peligro}55` }}>
+          <div style={{ fontFamily: ANTON, fontSize: 64, color: peligro, lineHeight: 1 }}>⚠️ {c.titulo || "CUIDADO"}</div>
+          <div style={{ fontFamily: MONT, fontWeight: 800, fontSize: 38, color: "#fff", lineHeight: 1.25, marginTop: 16 }}>{c.texto}</div>
+        </div>
+      </MarcoCel>
+    );
+  }
+  // 📊 el dato en grande, como pantalla de banco/calculadora
+  const s = spring({ frame: f - 6, fps, config: { damping: 11, stiffness: 220 } });
+  return (
+    <MarcoCel c={c} entra={entra} sale={sale}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: 20, textAlign: "center" }}>
+        {c.titulo ? <div style={{ fontFamily: MONT, fontWeight: 800, fontSize: 32, color: "#8696a0", letterSpacing: 1 }}>{c.titulo.toUpperCase()}</div> : null}
+        <div style={{ fontFamily: ANTON, fontSize: 108, lineHeight: 1, color: "#FFD60A", transform: `scale(${s})`, textTransform: "uppercase" }}>{c.texto}</div>
+      </div>
+    </MarcoCel>
   );
 };
 
@@ -618,7 +721,7 @@ const Raya: React.FC<P> = ({ c, dur, peligro }) => {
 const PIEZAS: Record<string, React.FC<P>> = {
   texto: Texto, titulo_seccion: TituloSeccion, dato: Dato, celular: Celular, chat: Chat, resena: Resena, lista: Lista,
   comparativa: Comparativa, alerta: Alerta, sello: Sello, imagen: Imagen, mascota: Mascota, emoji: Emoji, flecha: Flecha,
-  circulo: Circulo, cintillo: Cintillo, nota: Nota, raya: Raya,
+  circulo: Circulo, cintillo: Cintillo, nota: Nota, raya: Raya, pantalla: Pantalla,
 };
 
 // ---------- una escena ----------

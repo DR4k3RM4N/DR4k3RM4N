@@ -179,7 +179,27 @@ class Oficina:
     ORDENES = [
         {"id": "2026-11-27-reeditar-lana", "nicho": "fraudes", "n": 3, "accion": "reeditar",
          "texto": "Con el estilo nuevo del canal (chat + recortes)."},
+        {"id": "2026-11-27-reeditar-lana-v2", "nicho": "fraudes", "n": 3, "accion": "reeditar",
+         "reemplaza": "2026-11-27-reeditar-lana",
+         "texto": "Con el estilo del canal: el cel muestra lo que se va diciendo (reseñas, cifras, alertas)."},
     ]
+
+    def _cumplir_orden(self, o: dict, ids: list[str]) -> None:
+        """Cada video se rehace en cuanto termina lo que esté haciendo (hasta 6 h de espera)."""
+        pendientes, limite = list(ids), time.time() + 6 * 3600
+        while pendientes and time.time() < limite:
+            for pid in list(pendientes):
+                p = self.proyectos.get(pid)
+                if not p or p["estado"] == "descartado":
+                    pendientes.remove(pid)
+                    continue
+                if p["estado"] in ("produccion", "publicando"):
+                    continue  # todavía va en lo anterior: espera
+                r = self.accion_proyecto(pid, o["accion"], o["texto"])
+                print(f"  · orden {o['id']}: {p['titulo']} → {r}", flush=True)
+                pendientes.remove(pid)
+            if pendientes:
+                time.sleep(120)
 
     def _ordenes_unicas(self) -> None:
         time.sleep(90)  # que la oficina termine de arrancar
@@ -189,17 +209,21 @@ class Oficina:
         for o in self.ORDENES:
             if o["id"] in self.ordenes_hechas:
                 continue
+            if any(x.get("reemplaza") == o["id"] and x["id"] not in self.ordenes_hechas for x in self.ORDENES):
+                with self.lock:  # una orden más nueva hace lo mismo pero mejor: esta ya no se hace
+                    self.ordenes_hechas.append(o["id"])
+                    self._tocar()
+                continue
             with self.lock:
                 self.ordenes_hechas.append(o["id"])
                 self._tocar()
             ids = {c["id"] for c in canales_mod.lista() if c.get("nicho") == o["nicho"]}
-            with self.lock:
+            with self.lock:  # los últimos publicados (aunque ahorita se estén rehaciendo por una orden anterior)
                 hechos = sorted((p for p in self.proyectos.values() if (p.get("canal") or "principal") in ids
-                                 and p["estado"] == "publicado"), key=lambda p: -(p.get("publicado_t") or p.get("creado") or 0))
+                                 and p.get("publicado_t") and p["estado"] != "descartado"),
+                                key=lambda p: -(p.get("publicado_t") or 0))
             elegidos = hechos[:o["n"]]
-            for p in elegidos:
-                r = self.accion_proyecto(p["id"], o["accion"], o["texto"])
-                print(f"  · orden {o['id']}: {p['titulo']} → {r}", flush=True)
+            threading.Thread(target=self._cumplir_orden, args=(o, [p["id"] for p in elegidos]), daemon=True).start()
             if elegidos:
                 self.avisar_jefe(f"🎬 Como pediste, Edu vuelve a editar con el estilo nuevo: "
                                  + ", ".join(p["titulo"] for p in elegidos)

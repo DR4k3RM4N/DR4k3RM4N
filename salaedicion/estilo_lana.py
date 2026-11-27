@@ -88,10 +88,102 @@ def _rotulo(e: dict) -> str:
     return " ".join(t.split()[:5])
 
 
+RESENA_RE = re.compile(r"rese[ñn]a|comentari|opini|usuarios? (dic|cuent|report|se quej)|la gente (dic|cuent|se quej)|calific", re.I)
+APP_RE = re.compile(r"estrellas|calificaci|descarg|play store|tienda|instal", re.I)
+CIFRA_RE = re.compile(r"(\$\s?[\d.,]+(?:\s?(?:mil|millones|pesos))?|[\d.,]+\s?%|\d[\d.,]*\s+(?:mil|millones|pesos|días|dias|horas|llamadas|veces|minutos|semanas|meses|años|usuarios|personas|denuncias|quejas))", re.I)
+ALERTA_RE = re.compile(r"fraud|estaf|amenaz|extors|exhib|contactos|robo|cuidado|peligr|alerta|deuda|cobr|acos", re.I)
+
+
+def _info(mesa: Path, m: dict) -> dict:
+    """Lo que se sabe de la app/tema: nombre, ícono, estrellas, descargas, reseñas citadas y señales (todo real)."""
+    ctx = m.get("ctx") or {}
+    ficha, exp = ctx.get("ficha") or {}, ctx.get("expediente") or {}
+    if isinstance(exp, str):
+        exp = {}
+    if not exp and m.get("datos"):
+        try:
+            exp = __import__("json").loads(m["datos"])
+        except ValueError:
+            exp = {}
+    icono = next((p.relative_to(mesa).as_posix() for p in sorted((mesa / "img").glob("icono*"))), None) if (mesa / "img").exists() else None
+    resenas = [{"usuario": str(r.get("usuario") or r.get("fuente") or "Usuario")[:28], "estrellas": r.get("estrellas"),
+                "texto": _recorta(str(r.get("texto") or ""))} for r in exp.get("resenas_citadas") or [] if isinstance(r, dict) and r.get("texto")]
+    senales = [str(x.get("senal") or "") for x in exp.get("senales") or [] if isinstance(x, dict) and x.get("senal")]
+    try:
+        estrellas = round(float(ficha.get("score")), 1) if ficha.get("score") else None
+    except (TypeError, ValueError):
+        estrellas = None
+    return {"nombre": (ficha.get("title") or "")[:40] or "App", "icono": icono, "estrellas": estrellas,
+            "descargas": str(ficha.get("installs") or "")[:20], "resenas": resenas, "senales": senales,
+            "tema": exp.get("tipo") == "tema", "n_resena": 0}
+
+
+def _recorta(t: str, n: int = 170) -> str:
+    """Las reseñas van copiadas tal cual; si son larguísimas, se corta en una palabra y se marca con «…»."""
+    t = " ".join(t.split())
+    if len(t) <= n:
+        return t
+    return t[:n].rsplit(" ", 1)[0] + "…"
+
+
+def _cuando(palabras: list[dict], regex) -> float:
+    return next((round(p["t"], 2) for p in palabras if regex.search(p["w"])), 0.3)
+
+
+def _pantallas(e: dict, narr: str, palabras: list[dict], info: dict, img: str | None, k: int) -> list[dict]:
+    """Qué puede mostrar el cel en esta escena, de lo más pegado a lo que se dice a lo más general."""
+    ops, rotulo = [], _rotulo(e)
+    if info["resenas"] and (e.get("visual") == "resena" or RESENA_RE.search(narr)):
+        i = e.get("indice") if e.get("visual") == "resena" and isinstance(e.get("indice"), int) else info["n_resena"]
+        lista = [info["resenas"][(i + d) % len(info["resenas"])] for d in range(min(2, len(info["resenas"])))]
+        info["n_resena"] = (i + len(lista)) % len(info["resenas"])
+        clave = next((w for w in RESALTAR + ("fraude", "estafa", "amenaz", "contactos") if w in _sin_acentos(lista[0]["texto"])), None)
+        if clave:  # la palabra completa, tal cual está escrita en la reseña
+            pos = _sin_acentos(lista[0]["texto"]).find(clave)
+            m_ = re.match(r"[\wáéíóúüñÁÉÍÓÚÜÑ]+", lista[0]["texto"][pos:]) if pos >= 0 else None
+            ini = len(re.findall(r"[\wáéíóúüñÁÉÍÓÚÜÑ]*$", lista[0]["texto"][:pos])[0])
+            clave = (lista[0]["texto"][pos - ini:pos] + m_.group(0)) if m_ else None
+        ops.append({"tipo": "pantalla", "estilo": "resenas", "resenas": lista, "resaltar": clave,
+                    "_desde": _cuando(palabras, RESENA_RE) if RESENA_RE.search(narr) else 0.3})
+    if img:
+        ops.append({"tipo": "celular", "archivo": img, "tamano": 0.95, "_desde": 0.1})
+    cifras = [x.group(1).strip().rstrip(".,") for x in CIFRA_RE.finditer(narr)]
+    cifra = CIFRA_RE.search(narr)
+    if len(cifras) >= 2 and cifras[1] != cifras[0]:  # dos cifras: se ven las dos, cada una cuando se dice
+        for n_, c_ in enumerate(cifras[:2]):
+            ops.append({"tipo": "pantalla", "estilo": "dato", "texto": c_[:22], "titulo": rotulo if n_ and rotulo and not re.search(r"\d", rotulo) else "",
+                        "_desde": _cuando(palabras, re.compile(re.escape(c_.split()[0].strip("$")))), "_cifra": True})
+    elif e.get("visual") == "dato" or cifra:
+        texto = cifra.group(1).strip().rstrip(".,") if cifra else rotulo
+        if texto:
+            ops.append({"tipo": "pantalla", "estilo": "dato", "texto": texto[:22],
+                        "titulo": rotulo if rotulo and rotulo != texto and not re.search(r"\d", rotulo) else "",
+                        "_desde": _cuando(palabras, re.compile(re.escape(texto.split()[0]))) if cifra else 0.3})
+    if not info["tema"] and (APP_RE.search(narr) or e.get("momento") == "gancho") and (info["estrellas"] or info["descargas"]):
+        ops.append({"tipo": "pantalla", "estilo": "app", "estrellas": info["estrellas"],
+                    "texto": f"{info['descargas']} descargas" if info["descargas"] else "", "_desde": _cuando(palabras, APP_RE)})
+    if ALERTA_RE.search(narr):
+        pal = set(_sin_acentos(narr).split())
+        senal = max(info["senales"], key=lambda x: len(pal & set(_sin_acentos(x).split())), default="")
+        texto = senal if senal and len(pal & set(_sin_acentos(senal).split())) >= 2 else rotulo
+        if texto:
+            ops.append({"tipo": "pantalla", "estilo": "alerta", "titulo": "Señal de alerta", "texto": texto[:110],
+                        "_desde": _cuando(palabras, ALERTA_RE)})
+    if not ops:  # nada concreto: la app (o el tema) con el rótulo de la escena
+        if info["tema"]:
+            ops.append({"tipo": "pantalla", "estilo": "dato", "texto": (rotulo or info["nombre"])[:22], "titulo": "", "_desde": 0})
+        else:
+            ops.append({"tipo": "pantalla", "estilo": "app", "estrellas": info["estrellas"],
+                        "texto": rotulo or (f"{info['descargas']} descargas" if info["descargas"] else ""), "_desde": 0})
+    return ops
+
+
 def armar(mesa: Path, m: dict, borrador: dict) -> dict:
     """Llena fondo, capas, transición y sonidos de cada escena del borrador (las voces y duraciones no se tocan)."""
     whoosh, golpe, pop = _sonido(mesa, "whoosh"), _sonido(mesa, "golpe", "impact", "boom"), _sonido(mesa, "pop", "click")
     escenas_guion = m.get("escenas") or []
+    info = _info(mesa, m)
+    prev_pantalla = False
     sellos = 0
     lado_masc = "derecha"
     for k, esc in enumerate(borrador["escenas"]):
@@ -104,13 +196,14 @@ def armar(mesa: Path, m: dict, borrador: dict) -> dict:
         capas, sfx = [], []
         centro = None  # lo que ocupa el centro de la pantalla
 
-        # 1) el centro: grabación en el cel, captura en el cel o el chat oscuro con el mensaje citado
+        # 1) el centro: SIEMPRE el cel, y lo que muestra va con lo que se dice (reseñas, ficha, dato, alerta, chat…)
         citas = [c.strip() for c in CITA.findall(narr)]
         clip = _clip(mesa, e) if visual == "grabacion" else None
-        img = _imagen(mesa, e, k) if visual in ("captura", "imagen", "resena", "dato") else None
+        img = _imagen(mesa, e, k) if visual in ("captura", "imagen") else None
+        centro = "cel"
         if clip:
             capas.append({"tipo": "celular", "desde": 0, "archivo": clip, "numero": float(e.get("desde") or 0), "x": 0.5, "tamano": 0.95})
-            centro = "cel"
+            prev_pantalla = False
         elif citas:
             texto_cita = " ".join(citas)
             resaltar = next((w for w in RESALTAR if w in _sin_acentos(texto_cita)), None)
@@ -119,17 +212,42 @@ def armar(mesa: Path, m: dict, borrador: dict) -> dict:
                 resaltar = texto_cita[pos:pos + len(resaltar)]
             capas.append({"tipo": "chat", "estilo": "oscuro", "desde": 0.15, "nombre": "Número desconocido",
                           "mensajes": [{"de": "ellos", "texto": c} for c in citas[:4]], "resaltar": resaltar, "x": 0.5})
-            centro = "chat"
-        elif img:
-            capas.append({"tipo": "celular", "desde": 0.1, "archivo": img, "x": 0.5, "tamano": 0.95})
-            centro = "cel"
+            prev_pantalla = False
+        else:
+            opciones = _pantallas(e, narr, palabras, info, img, k)
+            cortes = [t for t in _inicios_de_frase(palabras) if dur * 0.35 < t < dur * 0.75]
+            dos = [o for o in opciones if o.pop("_cifra", False)]
+            if len(dos) == 2 and 0.5 < dos[1]["_desde"] < dur - 1:  # cada cifra entra justo cuando se dice
+                partes = [(dos[0], 0.0, dos[1]["_desde"]), (dos[1], dos[1]["_desde"], None)]
+            elif len(opciones) > 1 and dur > 9 and cortes:  # escena larga: el cel cambia a la mitad (algo nuevo que ver)
+                partes = [(opciones[0], 0.0, cortes[0]), (opciones[1], cortes[0], None)]
+            else:
+                partes = [(opciones[0], 0.0, None)]
+            for n, (op, desde, hasta) in enumerate(partes):
+                capa = {**op, "x": 0.5, "desde": round(max(desde, op.pop("_desde", 0) if n == 0 else desde), 2)}
+                capa.pop("_desde", None)
+                if hasta:
+                    capa["hasta"] = round(hasta, 2)
+                if capa["tipo"] == "pantalla":
+                    capa["fijo"] = prev_pantalla or n > 0  # el cel ya estaba: solo cambia la pantalla
+                    capa.update(nombre=info["nombre"], icono=info["icono"])
+                capas.append(capa)
+                prev_pantalla = capa["tipo"] == "pantalla"
+            primero = capas[0]
+            if primero["desde"] > 1.0 and not info["tema"] and primero.get("estilo") != "app":  # mientras llega lo que se va a decir, el cel muestra la app
+                capas.insert(0, {"tipo": "pantalla", "estilo": "app", "estrellas": info["estrellas"], "x": 0.5, "desde": 0,
+                                 "hasta": primero["desde"], "texto": "", "nombre": info["nombre"], "icono": info["icono"],
+                                 "fijo": primero.get("fijo", False)})
+                primero["fijo"] = True
+            else:  # que el cel nunca se quede vacío al empezar la escena
+                primero["desde"] = 0.0
 
         # 2) el título recortado (rótulo del guion): arriba si no hay nada al centro; a un lado si lo hay
         rotulo = _rotulo(e)
         lado_titulo = 0.21 if k % 2 == 0 else 0.79
-        if rotulo and visual == "dato" and centro:  # el dato va en notita amarilla junto al cel
-            capas.append({"tipo": "nota", "desde": 0.4, "texto": rotulo, "x": lado_titulo, "y": 0.32, "tamano": 0.9,
-                          "angulo": 4 if lado_titulo > 0.5 else -4})
+        if rotulo and momento == "cierre":  # el cierre: la idea en una notita amarilla junto al cel
+            capas.append({"tipo": "nota", "desde": 0.4, "texto": rotulo, "x": round(1 - lado_titulo, 2), "y": 0.28, "tamano": 0.8,
+                          "angulo": 4 if lado_titulo < 0.5 else -4})
         elif rotulo:
             if centro:
                 capas.append({"tipo": "texto", "estilo": "recorte", "desde": 0.2, "texto": rotulo, "x": lado_titulo, "y": 0.3, "tamano": 0.85})

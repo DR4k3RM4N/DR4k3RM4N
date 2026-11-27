@@ -126,7 +126,7 @@ def _preparar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -
     except (OSError, ValueError):
         pass
     manifiesto = {"escenas": escenas_r, "clips": clips_r, "mapa": mapa,
-                  "ctx": {"ficha": {"title": (ctx.get("ficha") or {}).get("title", "")},
+                  "ctx": {"ficha": {k: (ctx.get("ficha") or {}).get(k) for k in ("title", "score", "installs", "developer")},
                           "expediente": exp, "imagenes": imagenes_r},
                   # 🎬 para el editor IA (Claude en tu compu)
                   "canal_nombre": info_canal.get("nombre"), "acento": acento, "direccion": _direccion(),
