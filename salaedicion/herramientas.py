@@ -144,6 +144,14 @@ def motion(props: str, salida: str) -> None:
     print(f"Listo: {salida} con motion graphics.")
 
 
+def _concurrencia() -> int:
+    """Cuántas pestañas de Chrome usa Remotion: ~la mitad de los núcleos, repartida entre los videos que la compu
+    edita a la vez (antes cada video agarraba el 75 % y con varios a la vez se saturaba el procesador)."""
+    nucleos = os.cpu_count() or 4
+    a_la_vez = max(1, int(os.environ.get("SALA_CAPACIDAD") or 1))
+    return max(1, min(8, nucleos // (2 * a_la_vez)))
+
+
 def edu(guion_edicion: str, salida: str, desde: str = "", hasta: str = "") -> None:
     """🎬 Renderiza el video de YouTube con el kit Edu (src/Edu.tsx). DESDE/HASTA (segundos) = solo un tramo, para
     revisar rápido una parte antes de hacer el video completo."""
@@ -163,7 +171,7 @@ def edu(guion_edicion: str, salida: str, desde: str = "", hasta: str = "") -> No
         raise SystemExit("Faltan archivos (revisa las rutas):\n" + "\n".join(faltan[:20]))
     npx = shutil.which("npx") or shutil.which("npx.cmd") or "npx"
     cmd = [npx, "remotion", "render", "src/index.ts", "Edu", str((TRABAJO / salida).resolve()), f"--props={ruta}",
-           f"--public-dir={ruta.parent}", "--log=error", "--concurrency=75%"]
+           f"--public-dir={ruta.parent}", "--log=error", f"--concurrency={_concurrencia()}"]
     if desde or hasta:
         fps = int(datos.get("fps") or 30)
         total = sum(max(0.5, float(e.get("duracion") or 0)) for e in datos.get("escenas") or [])
@@ -172,8 +180,12 @@ def edu(guion_edicion: str, salida: str, desde: str = "", hasta: str = "") -> No
         cmd.append(f"--frames={a}-{b}")
     if os.environ.get("SALA_CHROME"):
         cmd.append(f"--browser-executable={os.environ['SALA_CHROME']}")
-    r = subprocess.run(cmd, cwd=motion_dir, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       shell=compu.WINDOWS)
+    gpu = os.environ.get("SALA_GPU") == "1" and compu.WINDOWS
+    r = subprocess.run(cmd + (["--gl=angle"] if gpu else []), cwd=motion_dir, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", shell=compu.WINDOWS)
+    if r.returncode and gpu:  # 🎮 si la tarjeta no jaló con Chrome, se hace como antes (con el procesador)
+        r = subprocess.run(cmd, cwd=motion_dir, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           shell=compu.WINDOWS)
     if r.returncode:
         raise SystemExit("Remotion falló:\n" + (r.stderr or r.stdout)[-2000:])
     print(f"Listo: {salida}")

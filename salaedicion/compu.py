@@ -35,7 +35,8 @@ if WINDOWS:
 
     class _SinVentana(_PopenOriginal):
         def __init__(self, *args, **kwargs):
-            kwargs["creationflags"] = kwargs.get("creationflags", 0) | 0x08000000  # CREATE_NO_WINDOW
+            # CREATE_NO_WINDOW + prioridad «debajo de normal»: tu compu sigue fluida mientras edita (los hijos la heredan)
+            kwargs["creationflags"] = kwargs.get("creationflags", 0) | 0x08000000 | 0x00004000
             info = kwargs.get("startupinfo") or subprocess.STARTUPINFO()
             info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             info.wShowWindow = 0  # SW_HIDE: por si el programa abre otra ventana por su cuenta
@@ -1150,6 +1151,11 @@ def trabajar() -> None:
     tarjeta = gpu()
     con_nvenc = bool(tarjeta) and nvenc()
     configurar_editor(con_nvenc)
+    # 🎮 que todo lo que edita (motor de Expedientes, plantilla, Remotion) use la tarjeta en vez del procesador
+    if con_nvenc:
+        os.environ["SALA_NVENC"] = "1"
+    if tarjeta:
+        os.environ["SALA_GPU"] = "1"
     cris.CACHE = CARPETA / "oido"
     cris.CACHE.mkdir(parents=True, exist_ok=True)
     datos = {"gpu": tarjeta or platform.processor()[:60], "nvenc": con_nvenc, "oido": "preparando…", "version": version(),
@@ -1266,6 +1272,7 @@ def trabajar() -> None:
     # 🖥️ varios videos a la vez: cuántos aguanta esta compu (SALA_A_LA_VEZ en el .env de la compu manda)
     capacidad = int(os.environ.get("SALA_A_LA_VEZ") or 0) or (3 if con_nvenc else 2 if (os.cpu_count() or 4) >= 12 else 1)
     corriendo: dict = {}  # id del trabajo → hilo
+    os.environ["SALA_CAPACIDAD"] = str(capacidad)  # Remotion reparte los núcleos entre los videos a la vez
     log(f"Esta compu edita hasta {capacidad} video(s) a la vez.")
 
     def libres() -> int:

@@ -18,6 +18,9 @@ FPS = 30
 # Pasadas intermedias en modo rápido y casi sin pérdida; solo la final se comprime con cuidado.
 RAPIDO = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "16", "-pix_fmt", "yuv420p", "-r", str(FPS), "-threads", "2"]
 VIDEO = ["-c:v", "libx264", "-preset", "faster", "-crf", "21", "-pix_fmt", "yuv420p", "-r", str(FPS), "-threads", "2"]
+if __import__("os").environ.get("SALA_NVENC") == "1":  # 🎮 en tu compu con tarjeta NVIDIA: codifica la tarjeta
+    RAPIDO = ["-c:v", "h264_nvenc", "-preset", "p2", "-rc", "vbr", "-cq", "17", "-b:v", "0", "-pix_fmt", "yuv420p", "-r", str(FPS)]
+    VIDEO = ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "21", "-b:v", "0", "-pix_fmt", "yuv420p", "-r", str(FPS)]
 AUDIO = ["-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
 TRANSICION = 0.35  # segundos
 VARIADAS = ["fade", "slideleft", "smoothup", "circleopen", "wipeleft", "smoothright", "fadeblack", "slideup"]

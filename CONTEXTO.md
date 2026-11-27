@@ -259,6 +259,11 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   cambian de pantalla a media escena; 2 cifras → cada una cuando se dice. El manifiesto manda la ficha (score,
   installs). Orden única `2026-11-27-reeditar-lana-v2` (reemplaza a la v1; espera a que terminen si van a medias).
 
+- **🎮 Tarjeta en lugar de procesador (27 nov)**: la compu exporta `SALA_NVENC`/`SALA_GPU`/`SALA_CAPACIDAD`. Con NVENC:
+  motor de Expedientes (`render_video`) y plantilla del edificio (`editor.RAPIDO/VIDEO`) codifican con `h264_nvenc`.
+  Remotion: `--gl=angle` en Windows con tarjeta (si falla, reintenta sin él) y `--concurrency` = núcleos/(2×videos a
+  la vez) (`herramientas._concurrencia`). En Windows todo lo que lanza la compu corre con prioridad «debajo de normal».
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

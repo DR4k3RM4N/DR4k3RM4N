@@ -19,6 +19,7 @@ import json
 import math
 import re
 import shutil
+import os
 import subprocess
 import sys
 import wave
@@ -1335,7 +1336,9 @@ def contact_sheets(ep, scenes, out):
 
 def render_video(ep, segs, total, out, path):
     cmd = [FFMPEG, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS),
-           "-i", "-", "-c:v", "libx264", "-preset", "faster", "-crf", "19", "-pix_fmt", "yuv420p",
+           "-i", "-", *(["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "20", "-b:v", "0"]
+                        if os.environ.get("SALA_NVENC") == "1" else ["-c:v", "libx264", "-preset", "faster", "-crf", "19"]),
+           "-pix_fmt", "yuv420p",
            "-movflags", "+faststart", str(path)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     prev = None
