@@ -307,6 +307,15 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   central tiene pestañas «📊 Tablero» y «💻 El cuarto de edición y tus compus» (iframe a `/sala-oficina`, sin menú ni
   encabezado). Cada página consulta solo su oficina (TikTok cada 2 s y sala cada 3 s solo en sus páginas).
 
+- **🏠 Cuartos dibujados desde cero (27 nov)**: `oficina/cuarto.js` (motor nuevo, vista desde arriba, base fija +
+  10 cuadros/s) con tema «edicion» (cuarto de control: una estación por compu/servidor; el monitor muestra el video
+  que edita y su %, luces CPU/GPU, editor sentado si trabaja) y «tiktok» (estudio claro: 6 escritorios del equipo con
+  su tarea en el monitor y globos, set de grabación). La Sala central lo monta arriba del Tablero; `/tiktok-shop` lo
+  monta con `cuarto_paginas.js` (esconde el edificio viejo; `oficina.js` ya no anima fuera de YouTube). El edificio
+  `/` dibuja solo el cuarto de YouTube + despacho (piso, muebles, patio y paredes filtrados por `CUARTO`). La pestaña
+  «💻 Tus compus» de la Sala central es `/sala-oficina` sin dibujo (solo panel: alta, códigos, proyectos).
+  Bug arreglado: `.ed-cuarto`/`#ed-tablero` con display propio le ganaban a `[hidden]` → las pestañas se encimaban.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

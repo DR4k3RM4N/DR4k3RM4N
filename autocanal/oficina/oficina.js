@@ -170,7 +170,8 @@
 
   // ---------- sala ----------
   function piso(estado, t) {
-    for (let x = 0; x < COLS; x++) for (let y = 0; y < ROWS; y++) {
+    const [X0, X1] = CUARTO;
+    for (let x = X0; x < X1; x++) for (let y = 0; y < ROWS; y++) {
       if (y >= OFI) { // patio: pasto, con un camino de deck desde la puerta
         const deck = ENTRADAS.has(x) || (y === 13 && ((x >= 4 && x <= 8) || (x >= 14 && x <= 16) || (x >= 21 && x <= 25) || (x >= 32 && x <= 35) || (x >= 41 && x <= 45)))
                      || (y === 12 && ((x >= 1 && x <= 4) || (x >= 18 && x <= 21)));
@@ -232,10 +233,9 @@
     poligono([iso(14.5, 5.5), iso(16.5, 5.5), iso(16.5, 8.5), iso(14.5, 8.5)], "#27507f");
     // borde del piso (grosor)
     const grosor = 6 * K;
-    poligono([iso(0, ROWS), iso(COLS, ROWS), [iso(COLS, ROWS)[0], iso(COLS, ROWS)[1] + grosor], [iso(0, ROWS)[0], iso(0, ROWS)[1] + grosor]], "#6b4a2b");
-    poligono([iso(COLS, 0), iso(COLS, OFI), [iso(COLS, OFI)[0], iso(COLS, OFI)[1] + grosor], [iso(COLS, 0)[0], iso(COLS, 0)[1] + grosor]], "#7a5838");
-    poligono([iso(COLS, OFI), iso(COLS, ROWS), [iso(COLS, ROWS)[0], iso(COLS, ROWS)[1] + grosor], [iso(COLS, OFI)[0], iso(COLS, OFI)[1] + grosor]], "#5c3f24");
-    poligono([iso(0, OFI), iso(0, ROWS), [iso(0, ROWS)[0] - 0, iso(0, ROWS)[1] + grosor], [iso(0, OFI)[0], iso(0, OFI)[1] + grosor]], "#5c3f24");
+    poligono([iso(X0, ROWS), iso(X1, ROWS), [iso(X1, ROWS)[0], iso(X1, ROWS)[1] + grosor], [iso(X0, ROWS)[0], iso(X0, ROWS)[1] + grosor]], "#6b4a2b");
+    poligono([iso(X1, 0), iso(X1, OFI), [iso(X1, OFI)[0], iso(X1, OFI)[1] + grosor], [iso(X1, 0)[0], iso(X1, 0)[1] + grosor]], "#7a5838");
+    poligono([iso(X1, OFI), iso(X1, ROWS), [iso(X1, ROWS)[0], iso(X1, ROWS)[1] + grosor], [iso(X1, OFI)[0], iso(X1, OFI)[1] + grosor]], "#5c3f24");
     // brillo de los monitores encendidos sobre el piso
     g.save();
     g.globalCompositeOperation = "lighter";
@@ -260,6 +260,18 @@
 
   const muroD = (x, h) => iso(x, 0, h);
   const muroI = (y, h) => iso(0, y, h);
+
+  // pared izquierda propia de un cuarto que no empieza en la orilla del edificio (TikTok, sala de edición)
+  function paredIzquierda(x0) {
+    const c = x0 >= ALA_SALA ? ["#1d2030", "#141622", "#8b5cf6", "#0d0f18", "#2a2e44"] : ["#eef1f5", "#2b2d3a", "#f97316", "#1f2130", "#3a3d4e"];
+    const m = (y, h) => iso(x0, y, h);
+    poligono([m(0, 0), m(OFI, 0), m(OFI, MURO), m(0, MURO)], c[0]);
+    poligono([m(0, 0), m(OFI, 0), m(OFI, 18), m(0, 18)], c[1]);
+    poligono([m(0, 18), m(OFI, 18), m(OFI, 19), m(0, 19)], c[2]);
+    poligono([m(0, 0), m(OFI, 0), m(OFI, 3), m(0, 3)], c[3]);
+    poligono([m(0, MURO - 3), m(OFI, MURO - 3), m(OFI, MURO), m(0, MURO)], c[4]);
+    poligono([m(OFI, 0), m(OFI, MURO), [m(OFI, MURO)[0] - 6, m(OFI, MURO)[1] + 3], [m(OFI, 0)[0] - 6, m(OFI, 0)[1] + 3]], c[3]); // canto
+  }
 
   function muros(t, estado) {
     poligono([muroI(0, 0), muroI(OFI, 0), muroI(OFI, MURO), muroI(0, MURO)], "#e6d7bd");
@@ -1049,7 +1061,7 @@
   const movil = window.matchMedia?.("(max-width: 900px)").matches;
   let ligera;
   try { const g0 = localStorage.getItem("ligera"); ligera = g0 === null ? !!movil : g0 === "1"; } catch { ligera = !!movil; }
-  const debeCorrer = () => !ligera && !document.hidden && enVista;
+  const debeCorrer = () => !ligera && !document.hidden && enVista && ALA_FIJA === "youtube"; // las otras oficinas dibujan su cuarto aparte
   function arrancar() {
     if (corriendo || !debeCorrer()) return;
     corriendo = true;
@@ -1068,19 +1080,38 @@
     moverCamara(dt);
     g.clearRect(0, 0, ANCHO, ALTO);
     g.save();
+    // 🚪 cuarto separado: solo se pinta el cuarto de esta página (nada de las otras oficinas asomándose)
+    const [x0] = CUARTO;
     g.beginPath(); g.rect(cam.x - 2, cam.y - 2, cam.w + 4, cam.h + 4); g.clip(); // solo se pinta lo que se ve
     piso(estado, t);
+    // las paredes: solo el pedazo del fondo de este cuarto (y la izquierda del edificio, si es el primero)
+    g.save();
+    g.beginPath();
+    for (const [px, py] of [iso(x0, 0, -2), iso(CUARTO[1], 0, -2), iso(CUARTO[1], 0, MURO + 40), iso(x0, 0, MURO + 40)]) g.lineTo(px, py);
+    g.closePath();
+    if (x0 === 0) {
+      g.moveTo(...iso(0, 0, -2));
+      for (const [px, py] of [iso(0, OFI, -2), iso(0, OFI, MURO + 40), iso(0, 0, MURO + 40)]) g.lineTo(px, py);
+      g.closePath();
+    }
+    g.clip();
     muros(t, estado);
+    g.restore();
+    if (x0 > 0) paredIzquierda(x0); // su propia pared, como cuarto cerrado
 
     const dibujos = [];
     const agrega = (prof, fn) => dibujos.push([prof, fn]);
+    const YT = ALA_FIJA === "youtube", TT = ALA_FIJA === "tiktok", ED = ALA_FIJA === "edicion";
+    const tomandoCafe = (c) => Object.values(vivos).some((v) => !v.camino.length && igual(v.meta, c));
     for (const [id, [x, y]] of Object.entries(ESCRITORIOS)) {
+      if (!dentro(x)) continue;
       agrega(x + y + 1, () => escritorio(id, x, y, t, estado));
       const [hx, hy] = CASA[id];
       agrega(hx + hy + 0.9, () => silla(hx, hy));
       agrega(hx + hy + 1.3, () => respaldo(hx, hy, estado.agentes[id]?.color || "#555"));
     }
     // despacho del jefe y sala de juntas (pasillo)
+    if (YT) {
     agrega(15 + 1 + 0.5, sillaJefe);
     agrega(15.5 + 2.5 + 0.2, () => escritorioJefe(t, estado));
     agrega(14.6, () => libreroChico(14, 0)); agrega(17, () => planta(16, 0));
@@ -1092,11 +1123,13 @@
     agrega(1, () => planta(0, 0)); agrega(14, () => planta(13, 0, true)); agrega(10, () => planta(0, 9, true));
     agrega(12.9, () => garrafon(12, 0));
     agrega(4.2, librero);
-    const tomandoCafe = (c) => Object.values(vivos).some((v) => !v.camino.length && igual(v.meta, c));
+
     agrega(19, () => cafetera(t, tomandoCafe(CAFE)));
     agrega(20, () => lampara(t));
     agrega(21.5, () => sillon());
+    }
     // ala TikTok
+    if (TT) {
     agrega(24.6, repisaMuestras);
     agrega(30.7, () => mesaProducto(t));
     agrega(32, () => tripie(t));
@@ -1105,42 +1138,52 @@
     agrega(19 + ALA_TT, () => cafetera(t, tomandoCafe(CAFE_TT), ALA_TT));
     agrega(20 + ALA_TT, () => lampara(t, ALA_TT));
     agrega(21.5 + ALA_TT, () => sillon(ALA_TT, ["#0f766e", "#115e59", "#134e4a", "#14b8a6", "#0d9488"]));
+    }
     // sala de edición
-    for (const slot of Object.keys(PCS)) {
+    if (ED) for (const slot of Object.keys(PCS)) {
       const [x, y] = PCS[slot];
       agrega(x + 1 + y + 0.5, () => pcGamer(slot, t));
       if (compuEn(slot)) { agrega(x + y + 1 + 0.9, () => silla(x, y + 1)); agrega(x + y + 1 + 1.3, () => respaldo(x, y + 1, COLORES_SALA[(slot - 1) % 4])); }
     }
-    // 🌮 Tampiqueando
+    if (ED) { agrega(37.5 + 0.5, () => rack(t)); agrega(37 + 9 + 0.5, () => planta(37, 9, true)); agrega(31 + 9 + 0.5, () => planta(31, 9)); }
+    // 🌮 Tampiqueando (tiene su propia página: aquí ya no se dibuja)
+    if (false) {
     agrega(45 + 2 + 0.6, () => mesaPlatillos(t));
     agrega(46 + 5 + 0.6, () => dron(t, estado.agentes.tp_paco?.estado === "trabajando"));
     agrega(47 + 0 + 0.5, () => palmera(47, 0)); agrega(47 + 9 + 0.5, () => planta(47, 9, true)); agrega(38 + 9 + 0.5, () => planta(38, 9));
     agrega(44 + 9 + 0.5, () => planta(44, 9));
     agrega(39.5 + 11.5 + 0.5, () => palmera(39, 11)); agrega(46.5 + 11.5 + 0.5, () => arbol(46, 11));
     agrega(40.5 + 14.5 + 0.5, () => arbol(40, 14)); agrega(47.5 + 14.5 + 0.5, () => palmera(47, 14));
-    agrega(37.5 + 0.5, () => rack(t)); agrega(37 + 9 + 0.5, () => planta(37, 9, true)); agrega(31 + 9 + 0.5, () => planta(31, 9));
-    // mamparas de vidrio entre zonas, con marcos en las puertas
-    for (const lx of MAMPARAS) {
+    }
+    // mamparas de vidrio entre zonas, con marcos en las puertas (solo las de este cuarto; la orilla derecha es de vidrio)
+    for (const lx of MAMPARAS.filter((m) => m > CUARTO[0] && m <= CUARTO[1])) {
       for (let y = 0; y < OFI; y++) if (!PUERTAS.has(y)) agrega(lx + y + 0.5, () => mampara(lx, y));
       const p0 = Math.min(...PUERTAS), p1 = Math.max(...PUERTAS) + 1;
       agrega(lx + p0 + 0.05, () => marcoPuerta(lx, p0)); agrega(lx + p1 + 0.05, () => marcoPuerta(lx, p1));
     }
-    for (let x = 0; x < COLS; x++) if (!ENTRADAS.has(x)) agrega(x + OFI + 1, () => jardinera(x));
+    for (let x = CUARTO[0]; x < CUARTO[1]; x++) if (!ENTRADAS.has(x)) agrega(x + OFI + 1, () => jardinera(x));
     const enLugar = (idAct) => Object.values(vivos).some((v) => v.actividad === idAct && !v.camino.length);
+    if (YT) {
     agrega(14.5 + 0.2, () => pingpong(t, enLugar("ping_a") && enLugar("ping_b")));
     agrega(11.5 + 0.7, () => arcade(t));
+    }
     for (const a of ACTIVIDADES) {
+      if (!dentro(a.pos[0])) continue;
       if (a.puf) agrega(a.pos[0] + a.pos[1] + 0.6, () => puf(a.pos[0], a.pos[1], a.puf));
       if (a.camastro) agrega(a.pos[0] + a.pos[1] + 0.6, () => camastro(a.pos[0], a.pos[1]));
     }
-    agrega(6.5 + 13.5 + 0.3, () => mesaSombrilla(t));
-    agrega(8.5 + 11.5 + 0.5, () => arbol(8, 11)); agrega(13.5 + 11.5 + 0.5, () => arbol(13, 11)); agrega(0.5 + 14.5 + 0.5, () => arbol(0, 14));
-    agrega(13.5 + 14.5 + 0.5, () => fuente(t));
-    agrega(32.7, () => futbolito(t, enLugar("futbol_a") && enLugar("futbol_b")));
-    agrega(23.5 + 13.5 + 0.3, () => mesaSombrilla(t, ALA_TT, "#f97316"));
-    agrega(25.5 + 11.5 + 0.5, () => arbol(25, 11)); agrega(30.5 + 11.5 + 0.5, () => arbol(30, 11));
-    agrega(17.5 + 14.5 + 0.5, () => arbol(17, 14)); agrega(30.5 + 14.5 + 0.5, () => arbol(30, 14));
-    agrega(36.5 + 11.5 + 0.5, () => arbol(36, 11)); agrega(33.5 + 14.5 + 0.5, () => arbol(33, 14)); agrega(37.5 + 14.5 + 0.5, () => arbol(37, 14));
+    if (YT) {
+      agrega(6.5 + 13.5 + 0.3, () => mesaSombrilla(t));
+      agrega(8.5 + 11.5 + 0.5, () => arbol(8, 11)); agrega(13.5 + 11.5 + 0.5, () => arbol(13, 11)); agrega(0.5 + 14.5 + 0.5, () => arbol(0, 14));
+      agrega(13.5 + 14.5 + 0.5, () => fuente(t));
+    }
+    if (TT) {
+      agrega(32.7, () => futbolito(t, enLugar("futbol_a") && enLugar("futbol_b")));
+      agrega(23.5 + 13.5 + 0.3, () => mesaSombrilla(t, ALA_TT, "#f97316"));
+      agrega(25.5 + 11.5 + 0.5, () => arbol(25, 11)); agrega(30.5 + 11.5 + 0.5, () => arbol(30, 11));
+      agrega(17.5 + 14.5 + 0.5, () => arbol(17, 14)); agrega(30.5 + 14.5 + 0.5, () => arbol(30, 14));
+    }
+    if (ED) { agrega(36.5 + 11.5 + 0.5, () => arbol(36, 11)); agrega(33.5 + 14.5 + 0.5, () => arbol(33, 14)); agrega(37.5 + 14.5 + 0.5, () => arbol(37, 14)); }
     agrega(100, () => foquitos(t));
 
     for (const [id, v] of Object.entries(vivos)) {
@@ -1348,10 +1391,12 @@
     const m = 10 * K;
     return { x: izq - m, y: arriba - m, w: der - izq + m * 2, h: abajo - arriba + m * 2 };
   }
-  const VISTAS = { todo: { x: 0, y: 0, w: ANCHO, h: ALTO }, youtube: marco(0, ALA_TT), tiktok: marco(PASILLO, ALA_SALA + 1),
-                   edicion: marco(ALA_SALA - 2, ALA_TAMP + 1), tampico: marco(ALA_TAMP - 2, COLS) };  // 🕵️ Expedientes tiene su propia página: /expedientes
+  const VISTAS = { todo: { x: 0, y: 0, w: ANCHO, h: ALTO }, youtube: marco(0, ALA_TT), tiktok: marco(ALA_TT, ALA_SALA),
+                   edicion: marco(ALA_SALA, ALA_TAMP), tampico: marco(ALA_TAMP, COLS) };  // 🕵️ Expedientes tiene su propia página: /expedientes
   // 🏢 cada página muestra SOLO su oficina: el edificio = YouTube + tu despacho; /tiktok-shop y /sala-oficina, la suya
   const ALA_FIJA = { tiktok: "tiktok", sala: "edicion" }[document.body.dataset.oficina] || "youtube";
+  const CUARTO = { youtube: [0, ALA_TT], tiktok: [ALA_TT, ALA_SALA], edicion: [ALA_SALA, ALA_TAMP] }[ALA_FIJA];
+  const dentro = (x) => x >= CUARTO[0] && x < CUARTO[1];
   let ala = ALA_FIJA;
   const cam = { ...VISTAS[ala] };
   let offX = 0, offY = 0, lienzoW = 0, lienzoH = 0;

@@ -46,13 +46,16 @@
 
   <div class="ed-vistas" role="tablist" aria-label="Qué ver">
     <button class="ed-vista activa" type="button" data-vista="tablero" role="tab">📊 Tablero</button>
-    <button class="ed-vista" type="button" data-vista="cuarto" role="tab">💻 El cuarto de edición y tus compus</button>
+    <button class="ed-vista" type="button" data-vista="cuarto" role="tab">💻 Tus compus: alta, códigos y proyectos</button>
   </div>
   <section id="ed-cuarto" class="ed-cuarto" hidden>
-    <p class="ed-vacio">Aquí ves a los editores trabajando, das de alta compus (código de 6 números), y abres tus proyectos de clips.</p>
+    <p class="ed-vacio">Aquí das de alta compus (código de 6 números), las quitas y abres tus proyectos de clips.</p>
     <iframe id="ed-cuarto-marco" title="El cuarto de edición" loading="lazy"></iframe>
   </section>
   <div id="ed-tablero">
+  <section class="ed-cuarto-vivo" aria-label="El cuarto de control: cada compu y el servidor con lo que está editando">
+    <div id="ed-cuarto-vivo"></div>
+  </section>
   <section class="ed-resumen" id="ed-resumen" aria-live="polite"></section>
 
   <section>
@@ -73,6 +76,7 @@
   </div>
 </main>
 <script src="/static/nav.js"></script>
+<script src="/static/cuarto.js"></script>
 <script src="/static/edicion.js"></script>
 </body>
 </html>

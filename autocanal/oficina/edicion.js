@@ -66,7 +66,7 @@
       [s.cola || 0, "videos en fila"], [hoy, "terminados en 24 h"]].map(([n, t]) => `<div class="ed-cifra"><b>${esc(n)}</b><span>${esc(t)}</span></div>`).join("");
     $("#ed-maquinas").innerHTML = s.error ? `<p class="ed-err">${esc(s.error)}</p>`
       : compus.length ? [...compus].sort((a, b) => (b.viva - a.viva) || (a.interno - b.interno)).map(maquina).join("")
-      : `<p class="ed-vacio">No hay compus dadas de alta. Agrégalas desde la pestaña Sala del edificio.</p>`;
+      : `<p class="ed-vacio">No hay compus dadas de alta. Agrégalas en «💻 Tus compus».</p>`;
 
     const ex = datos.expedientes || {};
     const casos = (ex.casos || []).map((c) => `<li><span>#${esc(c.numero)} ${esc(c.marca)} — ${esc(c.error ? `⚠️ ${c.error}` : c.render_paso || c.paso)}</span>
@@ -129,6 +129,33 @@
     accion(e.currentTarget, "/api/edicion/ajustes", { cerebro: e.target.value }, () => e.target.value !== "auto"
       ? "🧠 Híbrido: Claude pule cada video mientras haya plan; cuando se acaba, el director automático sigue solo y Claude regresa cuando vuelve el plan."
       : "🎬 Director automático Pro: edita con el estilo de cada canal en tus compus, sin gastar tu plan."));
+  // 🎬 el cuarto de control: cada compu (y el servidor) es una estación; su monitor muestra lo que edita, en vivo
+  if (window.Cuarto) {
+    const COLORES = ["#4da3ff", "#3ddc84", "#ffb020", "#b388ff", "#ff6b9a", "#22d3ee"];
+    window.Cuarto.montar($("#ed-cuarto-vivo"), {
+      tema: "edicion", cada: 3000, descripcion: "Cuarto de control de la sala de edición",
+      cargar: () => api("/api/edicion"),
+      plano: (d) => {
+        const compus = [...((d.sala || {}).compus || [])].sort((a, b) => (a.interno - b.interno) || (b.viva - a.viva));
+        const cols = 3, xs = [190, 500, 810];
+        const estaciones = compus.map((c, i) => {
+          const act = c.activos || [], u = c.uso || {}, j = act[0];
+          return { id: c.id, x: xs[i % cols], y: 110 + Math.floor(i / cols) * 200, nombre: `${c.interno ? "🖥️" : "💻"} ${c.nombre}`,
+            viva: !!c.viva, trabajando: act.length > 0,
+            sub: !c.viva ? "Apagada" : act.length ? `${act.length} de ${c.capacidad || 1} · ${j.paso || "editando"}` : "Libre: esperando video",
+            pantalla: j ? { titulo: j.etiqueta, avance: j.avance || 0, color: COLORES[i % COLORES.length] }
+              : { encendida: !!c.viva, titulo: c.viva ? "Lista" : "", linea: c.viva ? "Sin video ahorita" : "" },
+            persona: act.length ? { color: COLORES[i % COLORES.length], pelo: "audifonos" } : null,
+            luz: act.length ? "rgba(77,163,255,.22)" : null, medidores: c.viva ? { cpu: u.cpu, gpu: u.gpu } : null };
+        });
+        const filas = Math.max(1, Math.ceil(estaciones.length / cols));
+        return { estaciones, alto: Math.max(360, 90 + filas * 200 + 30),
+                 adornos: [["planta", 40, 60], ["planta", 960, 60], ["cables", 0, 0, estaciones.slice(1).map((e) => [[estaciones[0].x, estaciones[0].y + 20], [e.x, e.y + 20]])]],
+                 encima: estaciones.length ? null : (g, t, { texto }) => texto(g, "Todavía no hay compus dadas de alta: agrégalas en «💻 Tus compus».", 500, 200, { tam: 15, col: "#8b97a6" }) };
+      },
+    });
+  }
+
   // 📊 tablero / 💻 el cuarto animado (la app del edificio mostrando solo la sala de edición: compus, códigos, proyectos)
   function verVista(v) {
     document.querySelectorAll(".ed-vista").forEach((b) => b.classList.toggle("activa", b.dataset.vista === v));

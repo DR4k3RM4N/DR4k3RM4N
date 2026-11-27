@@ -98,3 +98,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: v
 .ed-cuarto { display: flex; flex-direction: column; gap: 8px; }
 .ed-cuarto iframe { width: 100%; height: min(1100px, calc(100vh - 160px)); min-height: 640px; border: 1px solid var(--borde);
   border-radius: 12px; background: #0b0d12; }
+
+/* 🎬 el cuarto de control, dibujado desde cero (cuarto.js) */
+.ed-cuarto-vivo { border: 1px solid var(--borde); border-radius: 14px; overflow: hidden; background: #0c0f15; }
+.ed-cuarto-vivo canvas { display: block; max-width: 100%; }
+.ed-cuarto iframe { min-height: 760px; }
+
+/* lo escondido se esconde de verdad (antes .ed-cuarto y #ed-tablero le ganaban a [hidden]) */
+[hidden] { display: none !important; }
