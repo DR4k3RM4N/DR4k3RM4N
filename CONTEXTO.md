@@ -539,6 +539,16 @@ afiliado/creador**. Lo que ya se sabe y lo que conviene:
   un video en fila mientras haya una compu prendida para ese tipo (`compus_libres(tipo)`); solo si no hay ninguna
   por 3 min. Chip «⚡ N a la vez» en Sala.
 
+- **🐑 Estilo «Cuida Tu Lana» (C + D, 27 nov)**: Miguel eligió de 4 muestras la mezcla «chat en pantalla» +
+  «recortes y plumón». `salaedicion/estilo_lana.py` arma el `edu.json` SIN Claude (cero plan): fondo `papel`, cel al
+  centro (grabación/captura) o chat `oscuro` con los mensajes citados entre «» en la narración y círculo rojo en la
+  palabra clave (`resaltar`), rótulo de la escena en texto `recorte` + `raya` de plumón, `nota` amarilla en escenas
+  "dato", zoom_golpe en la palabra fuerte, sello FRAUDE/ESTAFA (máx. 2), algo cambia en cada frase (~3 s), Lanudo
+  `mascota` estilo `estampa` (gancho/regancho/cierre). Kit Edu nuevo: fondos `papel`/`aurora`, texto `impacto`/`recorte`,
+  capas `nota`/`raya`, fuentes Anton y Permanent Marker. Canal nicho fraudes → `manifiesto.estilo_edicion="lana"` y
+  trabajo `edu_estilo` (cualquier compu con Remotion, no necesita Claude Code); `editor_youtube.editar_auto`. Si falla,
+  plantilla. Probado aquí con render real (Chromium completo; el headless-shell no confía en el proxy).
+
 ## 3m. 🌮 Tampiqueando (foodie de Tampico, nov 2026)
 - Miguel quiere hacer crecer «Tampiqueando» (comida en Tampico/Madero/Altamira) en Facebook, Instagram y TikTok;
   eligió **envío automático** a negocios y **publicación automática**. Vive dentro de la oficina principal:

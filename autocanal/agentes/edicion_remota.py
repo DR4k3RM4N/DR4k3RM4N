@@ -134,6 +134,8 @@ def _preparar(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[str]) -
                                       ensure_ascii=False, default=str)[:8000],
                   "prueba": {"momentos": prueba.get("momentos") or []},
                   "solo_grabacion": bool(ctx.get("solo_grabacion"))}
+    if canales.get(canales.actual()).get("nicho") == "fraudes":
+        manifiesto["estilo_edicion"] = "lana"
     if manifiesto["solo_grabacion"]:
         manifiesto["direccion"] = SOLO_GRABACION_EDICION + "\n\n" + manifiesto["direccion"]
     return entradas, manifiesto
@@ -148,6 +150,10 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
     from . import estilo as estilo_mod
     # 🎬 si tu compu puede (Claude Code + Remotion) y está prendido en Estilo, la edición la dirige Claude
     tipo = "edu_ia" if (estilo_mod.cargar()["ajustes"].get("editor_claude", True) and compus_libres("edu_ia")) else "edu"
+    from . import canales as canales_mod
+    estilo_fijo = "lana" if canales_mod.get(canales_mod.actual()).get("nicho") == "fraudes" else ""
+    if estilo_fijo and compus_libres("edu_estilo"):  # 🐑 Cuida Tu Lana: estilo chat + recortes, sin gastar plan
+        tipo = "edu_estilo"
     if tipo == "edu" and not compus_libres():
         return None
     efectos.planear(escenas, carpeta)  # el plan de efectos se hace aquí (la compu no tiene tus claves)
@@ -158,7 +164,7 @@ def editar_en_sala(escenas: list[dict], ctx: dict, carpeta: Path, clips: list[st
     try:
         r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=15, json={
             "tipo": tipo, "origen": "youtube",
-            "etiqueta": f"{'🎬 Claude' if tipo == 'edu_ia' else 'Edu'}: {manifiesto['ctx']['ficha']['title']}"[:80],
+            "etiqueta": f"{'🎬 Claude' if tipo == 'edu_ia' else '🐑 Estilo' if tipo == 'edu_estilo' else 'Edu'}: {manifiesto['ctx']['ficha']['title']}"[:80],
             "parametros": {"manifiesto": manifiesto}, "entradas": entradas, "salida": str(salida)}).json()
         tid = r.get("id")
     except (requests.RequestException, ValueError):

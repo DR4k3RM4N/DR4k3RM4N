@@ -194,6 +194,37 @@ def editar(mesa: Path, m: dict, claude: str, avance, log) -> Path | None:
     return final
 
 
+def editar_auto(mesa: Path, m: dict, avance, log) -> Path | None:
+    """🐑 Edición con estilo fijo (Cuida Tu Lana: chat + recortes) SIN Claude: el edu.json se arma con código y se
+    renderiza con el kit Edu. No gasta nada del plan. None si algo falla (y se usa la plantilla)."""
+    import estilo_lana
+
+    _, borrador = preparar(mesa, m)
+    total = sum(e["duracion"] for e in borrador["escenas"])
+    edu = estilo_lana.armar(mesa, m, borrador)
+    (mesa / "edu.json").write_text(json.dumps(edu, ensure_ascii=False, indent=1), encoding="utf-8")
+    avance("🐑 Armando la edición (chat + recortes)", 0.1)
+    entorno = {**__import__("os").environ, "SALA_EDITOR_DIR": str(mesa)}
+    proceso = subprocess.Popen([sys.executable, str(AQUI / "herramientas.py"), "edu", "edu.json", "video_final.mp4"],
+                               cwd=str(mesa), env=entorno, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                               encoding="utf-8", errors="replace")
+    inicio = time.time()
+    salida = []
+    for linea in proceso.stdout:
+        salida = (salida + [linea.strip()])[-20:]
+        avance("🎬 Renderizando el video", 0.12 + 0.8 * min(1, (time.time() - inicio) / max(120, total * 4)))
+    proceso.wait()
+    final = mesa / "video_final.mp4"
+    if proceso.returncode or not final.exists():
+        log("El render del estilo falló: " + " | ".join(x for x in salida if x)[-400:])
+        return None
+    dur = _segundos(final)
+    if dur < total * 0.9 or dur > total + 5:
+        log(f"El video dura {dur:.0f} s y la narración {total:.0f} s: uso la plantilla.")
+        return None
+    return final
+
+
 if __name__ == "__main__":  # prueba: python editor_youtube.py CARPETA (con manifiesto.json ya bajado)
     carpeta = Path(sys.argv[1])
     print(preparar(carpeta, json.loads((carpeta / "manifiesto.json").read_text(encoding="utf-8")))[0][:2000])

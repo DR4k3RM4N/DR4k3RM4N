@@ -108,7 +108,7 @@ class Sala(Aprendizaje, Proyectos):
                         for t in sorted(self.trabajos.values(), key=lambda t: -t["creado"])[:15]]
             tareas = [{"id": t["id"], "agente": self.editor_id(t["compu"]), "etapa": "edicion",
                        "accion": {"pensar": "Pensar", "claude_libre": "Editor IA", "probar_app": "📱 Probar app",
-                                "edu": "🎬 Video de YouTube", "edu_ia": "🎬 Claude edita video", "probar_ssh": "🔑 Probar SSH",
+                                "edu": "🎬 Video de YouTube", "edu_ia": "🎬 Claude edita video", "edu_estilo": "🐑 Video con estilo", "probar_ssh": "🔑 Probar SSH",
                                 "expediente": "🕵️ Video de Expedientes"}.get(t["tipo"], "Editar"),
                        "titulo": t["etiqueta"], "estado": {"listo": "hecha", "error": "fallo", "cancelado": "cancelada"}.get(t["estado"], "trabajando"),
                        "inicio": t.get("inicio"), "fin": t.get("fin"), "error": t.get("error"), "paso": t.get("paso"),
@@ -291,7 +291,7 @@ class Sala(Aprendizaje, Proyectos):
             def sirve(t: dict) -> bool:
                 return (t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])
                         and not (dos_carriles and t["tipo"] == "probar_app")
-                        and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia", "probar_ssh", "expediente")))
+                        and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia", "edu_estilo", "probar_ssh", "expediente")))
 
             if "capacidad" in d:  # 🖥️ compus nuevas: editan VARIOS videos a la vez (según lo que aguantan)
                 cap = max(1, min(6, int(d.get("capacidad") or 1)))
@@ -316,7 +316,7 @@ class Sala(Aprendizaje, Proyectos):
             pendiente = next((t for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])
                               if t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])
                               and not (dos_carriles and t["tipo"] == "probar_app")
-                              and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia", "probar_ssh", "expediente"))),
+                              and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia", "edu_estilo", "probar_ssh", "expediente"))),
                              None) if libre else None
             if pendiente:
                 pendiente.update(estado="asignado", compu=c["id"], slot=c["slot"], inicio=time.time(), paso="Bajando tus clips")

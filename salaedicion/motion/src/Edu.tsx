@@ -8,14 +8,18 @@ import {
 } from "remotion";
 import { loadFont as cargarMontserrat } from "@remotion/google-fonts/Montserrat";
 import { loadFont as cargarLuckiest } from "@remotion/google-fonts/LuckiestGuy";
+import { loadFont as cargarAnton } from "@remotion/google-fonts/Anton";
+import { loadFont as cargarMarker } from "@remotion/google-fonts/PermanentMarker";
 
 const { fontFamily: MONT } = cargarMontserrat("normal", { weights: ["600", "800", "900"], subsets: ["latin", "latin-ext"] });
 const { fontFamily: LUCK } = cargarLuckiest("normal", { weights: ["400"], subsets: ["latin", "latin-ext"] });
+const { fontFamily: ANTON } = cargarAnton("normal", { weights: ["400"], subsets: ["latin", "latin-ext"] });
+const { fontFamily: MARKER } = cargarMarker("normal", { weights: ["400"], subsets: ["latin"] });
 
 // ---------- lo que recibe (edu.json) ----------
 export type Palabra = { w: string; t: number; d: number }; // t relativo al inicio de SU escena
 export type Fondo = {
-  tipo: "imagen" | "video" | "color" | "degradado";
+  tipo: "imagen" | "video" | "color" | "degradado" | "aurora" | "papel"; // papel: hoja de cuaderno café con textura // aurora: fondo oscuro con manchas de color que se mueven
   archivo?: string; // imagen o video (ruta dentro de la mesa)
   desde?: number; // video: segundo donde empieza
   movimiento?: "acercar" | "alejar" | "izquierda" | "derecha" | "fijo";
@@ -27,7 +31,8 @@ export type Fondo = {
 export type Mensaje = { de: "ellos" | "yo"; texto: string };
 export type Capa = {
   tipo: "texto" | "titulo_seccion" | "dato" | "celular" | "chat" | "resena" | "lista" | "comparativa" | "alerta" |
-    "sello" | "flecha" | "circulo" | "imagen" | "mascota" | "emoji" | "zoom_golpe" | "sacudida" | "destello" | "cintillo";
+    "sello" | "flecha" | "circulo" | "imagen" | "mascota" | "emoji" | "zoom_golpe" | "sacudida" | "destello" | "cintillo" |
+    "nota" | "raya";
   desde: number; // segundos desde el inicio de la escena
   hasta?: number; // segundos desde el inicio de la escena (por defecto: fin de la escena)
   texto?: string; textos?: string[]; titulo?: string;
@@ -36,6 +41,7 @@ export type Capa = {
   izquierda?: { titulo: string; puntos: string[] }; derecha?: { titulo: string; puntos: string[] };
   estrellas?: number; usuario?: string;
   x?: number; y?: number; tamano?: number; color?: string; estilo?: string; lado?: "izquierda" | "derecha"; angulo?: number;
+  resaltar?: string; // chat: palabra que se encierra con un círculo rojo
 };
 export type Escena = {
   audio?: string; duracion: number; palabras?: Palabra[]; fondo?: Fondo; capas?: Capa[];
@@ -90,6 +96,27 @@ const FondoEscena: React.FC<{ fondo?: Fondo; dur: number; acento: string }> = ({
   const dx = mov === "izquierda" ? 40 - 80 * p : mov === "derecha" ? -40 + 80 * p : 0;
   const capaOscura = fo.oscurecer ? <AbsoluteFill style={{ background: `rgba(0,0,0,${Math.min(0.85, fo.oscurecer)})` }} /> : null;
   if (fo.tipo === "color") return <AbsoluteFill style={{ background: fo.color || "#111" }} />;
+  if (fo.tipo === "papel") {  // 📝 papel café con grano y una luz suave (estilo «recortes y plumón»)
+    return (
+      <AbsoluteFill style={{ background: fo.color || "#d9c7a3" }}>
+        <AbsoluteFill style={{ background: "radial-gradient(circle at 22% 28%, rgba(255,255,255,.28), transparent 45%)," +
+          " repeating-radial-gradient(circle at 50% 50%, rgba(0,0,0,.03) 0 1px, transparent 1px 4px)" }} />
+        <AbsoluteFill style={{ boxShadow: "inset 0 0 220px rgba(80,50,10,.35)" }} />
+        {capaOscura}
+      </AbsoluteFill>
+    );
+  }
+  if (fo.tipo === "aurora") {
+    const a = f / fps;
+    return (
+      <AbsoluteFill style={{ background: "#0d0d10", overflow: "hidden" }}>
+        <AbsoluteFill style={{ filter: "blur(70px)", transform: `translate(${-60 * Math.sin(a / 4)}px, ${30 * Math.cos(a / 5)}px) scale(1.2)`,
+          background: `radial-gradient(38% 48% at ${30 + 6 * Math.sin(a / 3)}% 30%, ${fo.color || "#3a1d6e"} 0%, transparent 70%),` +
+            ` radial-gradient(38% 48% at ${74 + 5 * Math.cos(a / 3.5)}% 72%, ${fo.color2 || "#0f5c4a"} 0%, transparent 70%)` }} />
+        {capaOscura}
+      </AbsoluteFill>
+    );
+  }
   if (fo.tipo === "degradado" || !fo.archivo) {
     const ang = 120 + 30 * Math.sin(f / (fps * 3));
     return (
@@ -148,6 +175,41 @@ const Texto: React.FC<P> = ({ c, dur, acento }) => {
   const palabras = (c.texto || "").split(/\s+/).filter(Boolean);
   const estilo = c.estilo || "pop";
   const t = (c.tamano || 1) * (palabras.length > 6 ? 92 : 120);
+  if (estilo === "impacto") {  // texto enorme a un lado que entra de golpe (estilo «chat en pantalla»)
+    const s = spring({ frame: f, fps, config: { damping: 9, stiffness: 230, mass: 0.6 } });
+    const der = (c.x ?? 0.5) > 0.5;
+    return (
+      <En x={c.x ?? 0.2} y={c.y ?? 0.32}>
+        <div style={{ width: 560 * (c.tamano || 1), textAlign: der ? "right" : "left", fontFamily: ANTON, fontSize: 150 * (c.tamano || 1),
+          lineHeight: 0.92, textTransform: "uppercase", color: "#fff", textShadow: "0 10px 30px rgba(0,0,0,.6)", opacity: Math.min(1, s * 1.5) * sale,
+          transform: `scale(${1.8 - 0.8 * s}) rotate(${(1 - s) * -6}deg)`, transformOrigin: der ? "right center" : "left center" }}>
+          {palabras.map((p, i) => (
+            <span key={i} style={{ color: /[$%!¡?¿0-9]/.test(p) || i === palabras.length - 1 ? c.color || acento : "#fff" }}>{p} </span>
+          ))}
+        </div>
+      </En>
+    );
+  }
+  if (estilo === "recorte") {  // ✂️ letras recortadas de revista que caen a saltitos (stop motion)
+    const colores = [["#fff", "#111"], ["#111", "#FFD60A"], ["#E63946", "#fff"]];
+    return (
+      <En x={c.x ?? 0.5} y={c.y ?? 0.2}>
+        <div style={{ width: lado(c) ? 600 : 1600, display: "flex", flexWrap: "wrap", gap: 18, justifyContent: lado(c) ? ((c.x ?? 0.5) > 0.5 ? "flex-end" : "flex-start") : "center", opacity: sale }}>
+          {palabras.map((p, i) => {
+            const paso = Math.floor(Math.max(0, f - i * 5) / 3);  // de 3 en 3 cuadros: se siente hecho a mano
+            const v = Math.min(1, paso / 3);
+            const [fondo, letra] = /[$%0-9]/.test(p) ? colores[2] : colores[i % 3];
+            const giro = [-3, 2.5, -1.5, 3.5][i % 4] + (paso % 2 ? 0.6 : -0.6);
+            return (
+              <span key={i} style={{ display: "inline-block", background: fondo, color: letra, fontFamily: ANTON, fontSize: 110 * (c.tamano || 1),
+                lineHeight: 1.05, padding: "4px 22px", textTransform: "uppercase", boxShadow: "8px 8px 0 rgba(0,0,0,.25)",
+                opacity: v > 0 ? 1 : 0, transform: `translateY(${(1 - v) * 40}px) rotate(${giro}deg)` }}>{p}</span>
+            );
+          })}
+        </div>
+      </En>
+    );
+  }
   if (estilo === "maquina") {
     const n = Math.floor(interpolate(f, [0, Math.min(dur - 6, (c.texto || "").length * 1.4)], [0, (c.texto || "").length], clamp));
     return (
@@ -236,11 +298,66 @@ const Celular: React.FC<P> = ({ c, dur }) => {
   );
 };
 
+// palabra encerrada con un círculo rojo que se dibuja (chat «oscuro»)
+const Encierra: React.FC<{ texto: string; palabra?: string; desde: number; f: number }> = ({ texto, palabra, desde, f }) => {
+  const k = palabra ? texto.toLowerCase().indexOf(palabra.toLowerCase()) : -1;
+  if (k < 0 || !palabra) return <>{texto}</>;
+  const traza = interpolate(f, [desde, desde + 12], [1, 0], { ...clamp, easing: Easing.out(Easing.cubic) });
+  return (
+    <>
+      {texto.slice(0, k)}
+      <span style={{ position: "relative", display: "inline-block" }}>
+        {texto.slice(k, k + palabra.length)}
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ position: "absolute", left: "-14%", top: "-40%", width: "128%", height: "180%", overflow: "visible" }}>
+          <ellipse cx="50" cy="20" rx="48" ry="17" fill="none" stroke="#E63946" strokeWidth="6" strokeLinecap="round" pathLength={1}
+            strokeDasharray="1" strokeDashoffset={traza} />
+        </svg>
+      </span>
+      {texto.slice(k + palabra.length)}
+    </>
+  );
+};
+
 const Chat: React.FC<P> = ({ c, dur }) => {
   const { f, fps, entra, sale } = useCapa(dur);
   const msgs = c.mensajes || [];
   const cada = Math.max(10, Math.min(45, (dur - 12) / Math.max(1, msgs.length)));
   const visibles = msgs.filter((_, i) => f >= 6 + i * cada);
+  const { height } = useVideoConfig();
+  if (c.estilo === "oscuro") {  // 📱 el cel al centro, modo oscuro, mensajes uno por uno (estilo «chat en pantalla»)
+    const alto = height * 0.9 * (c.tamano || 1);
+    const ultimo = msgs.length - 1;
+    return (
+      <En x={c.x ?? 0.5} y={0.5} style={{ opacity: sale }}>
+        <div style={{ width: alto * 0.5, height: alto, borderRadius: 60, background: "#0b141a", border: "18px solid #1f1f24",
+          boxShadow: "0 40px 90px rgba(0,0,0,.7)", overflow: "hidden", display: "flex", flexDirection: "column",
+          transform: `translateY(${(1 - entra) * 300}px)` }}>
+          <div style={{ background: "#202c33", color: "#e9edef", fontFamily: MONT, fontWeight: 800, fontSize: 30, padding: "28px 30px",
+            display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ width: 52, height: 52, borderRadius: 99, background: "#3b4a54", display: "grid", placeItems: "center", fontSize: 28 }}>👤</div>
+            {c.nombre || c.titulo || "Número desconocido"}
+          </div>
+          <div style={{ flex: 1, padding: 26, display: "flex", flexDirection: "column", justifyContent: "flex-start", gap: 20 }}>
+            {visibles.slice(-5).map((m) => {
+              const k = msgs.indexOf(m);
+              const s = spring({ frame: f - 6 - k * cada, fps, config: { damping: 11, stiffness: 240, mass: 0.6 } });
+              const yo = m.de === "yo";
+              // el círculo va en el último mensaje de ellos que trae la palabra
+              const marca = c.resaltar && !yo && m.texto.toLowerCase().includes(c.resaltar.toLowerCase())
+                && !msgs.slice(k + 1).some((x) => x.de !== "yo" && x.texto.toLowerCase().includes((c.resaltar || "").toLowerCase()));
+              return (
+                <div key={k} style={{ alignSelf: yo ? "flex-end" : "flex-start", maxWidth: "88%", background: yo ? "#005c4b" : "#202c33",
+                  borderRadius: 22, padding: "16px 22px", fontFamily: MONT, fontWeight: 600, fontSize: 36, color: "#e9edef", lineHeight: 1.3,
+                  transform: `scale(${s})`, transformOrigin: yo ? "right top" : "left top", opacity: k < ultimo - 4 ? 0.6 : 1 }}>
+                  {marca ? <Encierra texto={m.texto} palabra={c.resaltar} desde={6 + k * cada + 10} f={f} /> : m.texto}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </En>
+    );
+  }
   return (
     <En x={c.x ?? 0.5} y={0.5} style={{ opacity: sale }}>
       <div style={{ width: 900, minHeight: 420, borderRadius: 40, overflow: "hidden", background: "#efeae2", boxShadow: SOMBRA,
@@ -397,7 +514,9 @@ const Mascota: React.FC<P> = ({ c, dur }) => {
   return (
     <div style={{ position: "absolute", bottom: -10, [der ? "right" : "left"]: 30, opacity: sale,
       transform: `translateY(${(1 - entra) * 500 - brinco}px) rotate(${Math.sin(f / 6) * 3}deg)` } as React.CSSProperties}>
-      <Img src={src(c.archivo)} style={{ height: height * 0.5 * (c.tamano || 1), filter: "drop-shadow(0 12px 18px rgba(0,0,0,.5))",
+      <Img src={src(c.archivo)} style={{ height: height * 0.5 * (c.tamano || 1), filter: c.estilo === "estampa"  // 🏷️ calcomanía: borde blanco
+        ? "drop-shadow(7px 0 0 #fff) drop-shadow(-7px 0 0 #fff) drop-shadow(0 7px 0 #fff) drop-shadow(0 -7px 0 #fff) drop-shadow(10px 12px 0 rgba(0,0,0,.25))"
+        : "drop-shadow(0 12px 18px rgba(0,0,0,.5))",
         transform: der ? "none" : "scaleX(-1)" }} />
       {c.texto ? (
         <div style={{ position: "absolute", top: -40, [der ? "right" : "left"]: "70%", background: "#fff", borderRadius: 30,
@@ -467,10 +586,39 @@ const Cintillo: React.FC<P> = ({ c, dur, acento }) => {
   );
 };
 
+// 📝 notita amarilla pegada, escrita con plumón
+const Nota: React.FC<P> = ({ c, dur }) => {
+  const { f, sale } = useCapa(dur);
+  const v = Math.min(1, Math.floor(f / 3) / 3);
+  return (
+    <En x={c.x ?? 0.8} y={c.y ?? 0.3}>
+      <div style={{ width: 520 * (c.tamano || 1), background: "#fff59d", padding: "40px 38px", fontFamily: MARKER, fontSize: 46 * (c.tamano || 1),
+        lineHeight: 1.25, color: "#222", boxShadow: "0 20px 30px rgba(0,0,0,.25)", opacity: (v > 0 ? 1 : 0) * sale,
+        transform: `rotate(${c.angulo ?? 4}deg) scale(${0.85 + 0.15 * v})` }}>{c.texto}</div>
+    </En>
+  );
+};
+
+// 🖍️ rayón de plumón rojo que se dibuja (subrayar o tachar)
+const Raya: React.FC<P> = ({ c, dur, peligro }) => {
+  const { f, sale } = useCapa(dur);
+  const traza = interpolate(f, [0, 12], [1, 0], { ...clamp, easing: Easing.out(Easing.cubic) });
+  const ancho = 700 * (c.tamano || 1);
+  return (
+    <En x={c.x ?? 0.5} y={c.y ?? 0.6}>
+      <svg width={ancho} height={60} viewBox="0 0 300 30" preserveAspectRatio="none" style={{ overflow: "visible", opacity: sale,
+        transform: `rotate(${c.angulo ?? -3}deg)` }}>
+        <path d="M5 18 C 80 8, 160 26, 295 12" fill="none" stroke={c.color || peligro} strokeWidth={7} strokeLinecap="round"
+          pathLength={1} strokeDasharray="1" strokeDashoffset={traza} />
+      </svg>
+    </En>
+  );
+};
+
 const PIEZAS: Record<string, React.FC<P>> = {
   texto: Texto, titulo_seccion: TituloSeccion, dato: Dato, celular: Celular, chat: Chat, resena: Resena, lista: Lista,
   comparativa: Comparativa, alerta: Alerta, sello: Sello, imagen: Imagen, mascota: Mascota, emoji: Emoji, flecha: Flecha,
-  circulo: Circulo, cintillo: Cintillo,
+  circulo: Circulo, cintillo: Cintillo, nota: Nota, raya: Raya,
 };
 
 // ---------- una escena ----------
