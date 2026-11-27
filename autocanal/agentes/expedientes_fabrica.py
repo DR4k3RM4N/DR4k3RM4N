@@ -211,7 +211,9 @@ def proponer_temas(canal: str = "quien_mato", n: int = 6) -> dict:
             if any(y["id"] == tid for y in lista):
                 continue
             lista.append({"id": tid, "canal": canal, "marca": x["marca"][:80], "gancho": x["gancho"][:300],
-                          "grupo": x["grupo"][:60] or "Propuestos", "estado": "propuesto", "eid": None, "orden": 999})
+                          "grupo": x["grupo"][:60] or "Propuestos", "orden": 999, "eid": None,
+                          # 🤖 en automático entran directo a la fila (tú puedes saltarlos o borrarlos en 🧾 Temas)
+                          "estado": "pendiente" if estado().get("subir_solo", True) else "propuesto"})
             nuevos += 1
         _guardar_temas(lista)
     return {"ok": True, "nuevos": nuevos}
@@ -1629,13 +1631,14 @@ def enviar_render(eid: str) -> dict:
         _poner(eid, error=str(exc)[:300], paso="render")
         return {"error": str(exc)}
     compu = _elegir_compu(f.get("render_evitar") or [])
-    if compu:
+    if compu:  # 🏢 va a la fila de la sala central: la toma la primera compu libre (tus compus primero, luego el servidor)
+        evitar = sorted(set(f.get("render_evitar") or []) | {c["id"] for c in compus_sala() if c["pref"] == "no"})
         salida = ex.carpeta(eid) / "render-salida"
         shutil.rmtree(salida, ignore_errors=True)
         salida.mkdir(parents=True)
         try:
             r = requests.post(f"{SALA_URL}/interno/trabajo", timeout=15, json={
-                "tipo": "expediente", "origen": "expedientes", "compu": compu["id"],
+                "tipo": "expediente", "origen": "expedientes", "evitar": evitar,
                 "etiqueta": f"🕵️ Expediente #{f.get('numero')} · {f.get('marca')}"[:80],
                 "parametros": {"carpeta": f.get("carpeta"), "nombre": f"Expediente-{f.get('numero')}", "azure": azure},
                 "entradas": [str(zipf)], "salida": str(salida)}).json()
@@ -1643,10 +1646,10 @@ def enviar_render(eid: str) -> dict:
             return {"error": f"La sala de edición no contestó ({exc})."}
         if not r.get("id"):
             return {"error": r.get("error") or "La sala no aceptó el trabajo."}
-        _poner(eid, render_estado="en_fila", render_tid=r["id"], render_compu=compu["id"], paso="render",
-               render_paso=f"Mandado a {compu['nombre']}", hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion"}),
+        _poner(eid, render_estado="en_fila", render_tid=r["id"], render_compu=None, paso="render",
+               render_paso="En la fila de la sala de edición", hechos_pasos=sorted(set(f.get("hechos_pasos") or []) | {"verificacion"}),
                render_desde=time.time(), render_mov_t=time.time(), render_avance=0)
-        ex._decir("ex_editor", "trabajando", f"Mandé #{f.get('numero')} a {compu['nombre']} 🎬")
+        ex._decir("ex_editor", "trabajando", f"Mandé #{f.get('numero')} a la sala de edición 🎬")
     elif estado().get("servidor_respaldo"):
         if not _render_srv.acquire(blocking=False):
             _poner(eid, paso="render", render_paso="El servidor está haciendo otro video; este sigue en cuanto termine.")
@@ -1768,6 +1771,9 @@ def _revisar_render(eid: str, paciencia: int = 1500) -> None:
     except (requests.RequestException, ValueError):
         return
     est = e.get("estado")
+    if e.get("compu_id") and e["compu_id"] != f.get("render_compu"):  # ya lo tomó una compu (o el servidor)
+        _poner(eid, render_compu=e["compu_id"], render_mov_t=time.time())
+        f = fab(eid)
     if est == "en_cola":
         compu = next((c for c in compus_sala() if c["id"] == f.get("render_compu")), None)
         if f.get("render_compu") and (not compu or not compu["viva"] or not compu["puede"] or compu["pref"] == "no") \
@@ -1932,13 +1938,35 @@ def _material_por_delante() -> int:
     return n
 
 
-def _caso_sin_terminar() -> str | None:
-    """El caso de la fábrica que todavía no queda subido/programado (los que fallaron 3 veces no detienen todo)."""
+def _casos_en_marcha() -> list[str]:
+    """Los casos que todavía no quedan programados (primero el que se está preparando)."""
+    vivos = []
     for x in ex.lista():
         f = ex.trabajo(x["id"]).get("fabrica")
         if f and f.get("subida") != "listo" and not (f.get("error") and (f.get("reintentos") or 0) >= 2):
-            return x["id"]
-    return None
+            vivos.append((f.get("paso") in ("render", "revision", "programado"), x["id"]))
+    return [i for _, i in sorted(vivos, key=lambda v: v[0])]
+
+
+def _caso_en_marcha() -> str | None:
+    c = _casos_en_marcha()
+    return c[0] if c else None
+
+
+def _caso_sin_terminar() -> str | None:
+    """🏭 Video tras video: mientras un caso se renderiza en las compus, el equipo ya puede preparar el siguiente.
+    Se espera solo si hay un caso todavía en preparación (investigación → storyboard) o si ya hay tantos videos
+    esperando compu como compus (y servidor) prendidas. Los que fallaron 2 veces no detienen todo."""
+    en_render = 0
+    for x in ex.lista():
+        f = ex.trabajo(x["id"]).get("fabrica")
+        if not f or f.get("subida") == "listo" or (f.get("error") and (f.get("reintentos") or 0) >= 2):
+            continue
+        if f.get("paso") not in ("render", "revision", "programado"):
+            return x["id"]  # uno a la vez en preparación (cuida tu plan de Claude)
+        en_render += 1
+    maquinas = max(1, min(3, sum(1 for c in compus_sala() if c["viva"] and c["puede"])))
+    return "renders" if en_render >= maquinas else None
 
 
 def meta_videos() -> int:
@@ -1992,6 +2020,12 @@ def reintentar(eid: str, auto: bool = False) -> dict:
     if f.get("paso") in ("material", "storyboard") or (f and "storyboard" not in (f.get("hechos_pasos") or [])):
         return _retomar(eid)
     if f.get("render_estado") in ("error", "en_fila") or f.get("paso") == "render":
+        if f.get("render_tid"):  # que la compu suelte el trabajo viejo (no se hagan dos al mismo tiempo)
+            try:
+                import requests
+                requests.post(f"{SALA_URL}/interno/cancelar/{f['render_tid']}", json={}, timeout=5)
+            except Exception:  # noqa: BLE001
+                pass
         _poner(eid, render_estado=None, render_tid=None)
         if t["verificacion"].get("estado") in ("aprobada", "lista"):
             return enviar_render(eid)
@@ -2031,6 +2065,53 @@ def continuar() -> dict:
     return {"ok": True, "reintentos": reintentos}
 
 
+def reinicio_forzoso() -> dict:
+    """🔄 Botón de pánico: destraba TODO lo de la fábrica ya mismo. Renders sin moverse 2 min → a otra compu o al
+    servidor; casos con error → otra vez desde donde iban (con reintentos nuevos); producción cortada → se retoma."""
+    hechos = []
+    e = estado()
+    e.update(activa=True, espera_hasta=0, nota="")
+    if e.get("en_curso") and not _produciendo():
+        e["en_curso"] = None
+    _guardar_estado(e)
+    try:
+        claude._suscripcion_pausada_hasta = 0
+    except AttributeError:
+        pass
+    with _candado:
+        lista = temas()
+        for x in lista:
+            if x["estado"] == "produciendo" and not _produciendo():
+                x["estado"] = "pendiente"
+            if x["estado"] == "saltado" and x.get("intentos"):
+                x.update(estado="pendiente", intentos=0, error=None)
+        _guardar_temas(lista)
+    for x in ex.lista():
+        f = fab(x["id"])
+        if not f or f.get("subida") == "listo":
+            continue
+        nombre = f"#{f.get('numero')} {f.get('marca')}"
+        if f.get("error"):
+            _poner(x["id"], reintentos=0)
+            reintentar(x["id"])
+            hechos.append(f"{nombre}: reintento")
+        elif f.get("render_estado") == "en_fila" and f.get("render_tid"):
+            antes = f.get("render_tid")
+            _revisar_render(x["id"], paciencia=120)
+            if fab(x["id"]).get("render_tid") != antes:
+                hechos.append(f"{nombre}: render cambiado de compu")
+        elif f.get("render_estado") == "servidor" and not _render_srv.locked():
+            _poner(x["id"], render_estado=None, render_paso="Reinicio forzoso: lo vuelvo a mandar")
+            hechos.append(f"{nombre}: render reenviado")
+        elif f.get("paso") in ("material", "storyboard") and not _produciendo():
+            hilo = _hilo.get(f"convertir-{x['id']}")
+            if not (hilo and hilo.is_alive()):
+                _retomar(x["id"])
+                hechos.append(f"{nombre}: retomado")
+    threading.Thread(target=vuelta, daemon=True).start()
+    return {"ok": True, "hechos": hechos}
+
+
 def vuelta() -> None:
     """Una pasada: renders que revisar, casos que mandar a tu compu y, si toca, el siguiente tema."""
     _curar()
@@ -2059,7 +2140,7 @@ def vuelta() -> None:
         return
     siguiente = next((x for x in temas() if x["estado"] == "pendiente"), None)
     if not siguiente:
-        if not any(x["estado"] == "propuesto" for x in temas()):
+        if estado().get("subir_solo", True) or not any(x["estado"] == "propuesto" for x in temas()):
             try:
                 proponer_temas()
             except Exception as exc:  # noqa: BLE001
@@ -2101,7 +2182,7 @@ def resumen() -> dict:
                           "verificacion": t["verificacion"].get("estado"), "cuenta": ex._cuenta(t["datos"]),
                           "pasos": pasos(t), "t_mov": f.get("t_mov"), "creado": f.get("creado")})
     return {"estado": e, "temas": lista, "casos": casos, "meta": meta_videos(), "por_delante": _material_por_delante(),
-            "en_marcha": _caso_sin_terminar(), "ahora": time.time(),
+            "en_marcha": _caso_en_marcha(), "en_marcha_todos": _casos_en_marcha(), "ahora": time.time(),
             "chat": historial_chat()[-60:], "produciendo": _produciendo(), "compus": compus_sala(),
             "azure_ok": bool(_azure()) or _demo(), "imagenes": motor_imagenes(),
             "plan": _plan_disponible(), "pexels": (CANAL_DIR / ".pexels_key").exists(), "demo": _demo()}

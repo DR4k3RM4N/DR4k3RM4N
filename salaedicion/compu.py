@@ -60,8 +60,11 @@ if WINDOWS:
                 return
 
     _ffmpeg_real()
-CARPETA = (Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SalaEdicion" if WINDOWS
+CARPETA = (Path(os.environ["SALA_CARPETA"]) if os.environ.get("SALA_CARPETA")
+           else Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SalaEdicion" if WINDOWS
            else Path.home() / ".salaedicion")
+# 🖥️ el servidor también edita: la sala lo prende como una «compu» más (sin oído, sin cel, sin actualizarse solo)
+SERVIDOR = os.environ.get("SALA_SERVIDOR") == "1"
 CONFIG = CARPETA / "config.json"
 TRABAJOS = CARPETA / "trabajos"
 LOG = CARPETA / "compu.log"
@@ -113,6 +116,54 @@ def gpu() -> str:
         return r.stdout.strip().splitlines()[0] if r.returncode == 0 and r.stdout.strip() else ""
     except (OSError, subprocess.SubprocessError):
         return ""
+
+
+_cpu_antes: list = []
+
+
+def uso_equipo() -> dict:
+    """📊 Cuánto está trabajando esta compu: procesador, memoria y tarjeta de video (en %). Sin librerías extra."""
+    uso = {}
+    try:
+        if WINDOWS:
+            import ctypes
+
+            class FT(ctypes.Structure):
+                _fields_ = [("lo", ctypes.c_uint32), ("hi", ctypes.c_uint32)]
+            i, k, u = FT(), FT(), FT()
+            ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(i), ctypes.byref(k), ctypes.byref(u))
+            val = lambda x: (x.hi << 32) | x.lo  # noqa: E731
+            idle, total = val(i), val(k) + val(u)  # el tiempo de kernel ya incluye el ocioso
+
+            class MEM(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_uint32), ("dwMemoryLoad", ctypes.c_uint32)] + \
+                           [(n, ctypes.c_uint64) for n in ("t1", "a1", "t2", "a2", "t3", "a3", "a4")]
+            m = MEM()
+            m.dwLength = ctypes.sizeof(MEM)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+            uso["ram"] = int(m.dwMemoryLoad)
+        else:
+            campos = [int(x) for x in open("/proc/stat").readline().split()[1:]]
+            idle, total = campos[3] + (campos[4] if len(campos) > 4 else 0), sum(campos)
+            info = dict(ln.split(":", 1) for ln in open("/proc/meminfo") if ":" in ln)
+            tot, disp = int(info["MemTotal"].split()[0]), int(info.get("MemAvailable", info["MemFree"]).split()[0])
+            uso["ram"] = round(100 * (tot - disp) / max(1, tot))
+        if _cpu_antes:
+            d_total, d_idle = total - _cpu_antes[1], idle - _cpu_antes[0]
+            uso["cpu"] = max(0, min(100, round(100 * (d_total - d_idle) / max(1, d_total))))
+        _cpu_antes[:] = [idle, total]
+    except Exception:  # noqa: BLE001 — medir es un extra
+        pass
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            g, mu, mt = (float(x) for x in r.stdout.strip().splitlines()[0].split(","))
+            uso.update(gpu=round(g), vram=round(100 * mu / max(1, mt)))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    uso["hilos"] = os.cpu_count() or 0
+    return uso
 
 
 def nvenc() -> bool:
@@ -1051,6 +1102,8 @@ def _render_expediente(of, t, temporal, avance, nombre_dir, py) -> None:
 
 def actualizarme() -> None:
     """Cada rato revisa si hay versión nueva en GitHub; si la hay (y no está editando), se actualiza y se reinicia."""
+    if SERVIDOR:  # en el servidor el código lo actualiza su propio servicio
+        return
     try:
         rama = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True,
                               timeout=20).stdout.strip()
@@ -1097,6 +1150,9 @@ def trabajar() -> None:
                           *(["probar_app"] if cel.get("serie") and (os.environ.get("ROBOT_MODO") != "claude_code"
                                                                     or datos["claude_code"] == "listo") else [])]
         datos["motion"] = ESTADO_MOTION["texto"]
+        if SERVIDOR:  # el servidor solo hace videos (nada de Claude Code, oído ni cel: eso es de tus compus)
+            datos["tipos"] = [x for x in datos["tipos"] if x in ("edu", "edu_estilo", "expediente")]
+            datos["claude_code"], datos["celular"] = "", ""
     cerebro()
     listo = threading.Event()
     # 📱 carril del cel: la prueba del robot corre aparte, así la compu sigue editando mientras graba
@@ -1131,7 +1187,7 @@ def trabajar() -> None:
                 except Exception:  # noqa: BLE001
                     pass
             try:
-                atender_cel(of2.post("latido", {**datos, "libre": False, "pulso": True, "libre_cel": cel_libre(),
+                atender_cel(of2.post("latido", {**datos, "libre": False, "pulso": True, "libre_cel": cel_libre(), "uso": uso_equipo(),
                                                 "estado": ESTADO_COMPU["texto"]}, timeout=20))
             except (requests.RequestException, ValueError):
                 pass
@@ -1178,7 +1234,14 @@ def trabajar() -> None:
         except Exception as exc:  # noqa: BLE001
             log(f"No pude preparar adb para el celular: {exc}")
 
-    for f in (pulso, preparar, carpetas, motion, adb):
+    if SERVIDOR:  # sin oído ni cel; motion solo si ya está instalado
+        listo.set()
+        datos["oido"] = "no aplica"
+        ESTADO_COMPU["texto"] = "Lista"
+        if (AQUI / "motion" / "node_modules").exists():
+            ESTADO_MOTION["texto"] = "listo"
+            cerebro()
+    for f in ((pulso,) if SERVIDOR else (pulso, preparar, carpetas, motion, adb)):
         threading.Thread(target=f, daemon=True).start()
     # 🖥️ varios videos a la vez: cuántos aguanta esta compu (SALA_A_LA_VEZ en el .env de la compu manda)
     capacidad = int(os.environ.get("SALA_A_LA_VEZ") or 0) or (3 if con_nvenc else 2 if (os.cpu_count() or 4) >= 12 else 1)
@@ -1204,7 +1267,7 @@ def trabajar() -> None:
             actualizarme()
         try:
             n_libres = libres()
-            r = of.post("latido", {**datos, "libre": n_libres > 0, "capacidad": capacidad, "libres": n_libres,
+            r = of.post("latido", {**datos, "libre": n_libres > 0, "capacidad": capacidad, "libres": n_libres, "uso": uso_equipo(),
                                    "oido_listo": listo.is_set(), "libre_cel": cel_libre(),
                                    "estado": ESTADO_COMPU["texto"]}, timeout=20)
             espera = 5

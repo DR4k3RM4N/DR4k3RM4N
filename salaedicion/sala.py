@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import os
+import subprocess
 import hashlib
 import hmac
 import json
@@ -42,6 +44,9 @@ RAICES = [REPO / "tiktokshop" / "salida", REPO / "autocanal" / "salida", AQUI / 
 EXT_RESULTADO = {".mp4", ".jpg", ".json"}
 TIENDA_URL = "http://127.0.0.1:8766"  # oficina de TikTok (para saber a qué productos hacerles carpeta en tus compus)
 MAX_RESULTADO = 2 * 1024 ** 3
+SERVIDOR_ID = "servidor"  # 🖥️ el propio servidor, como una compu más de la sala (se prende desde la oficina central)
+SERVIDOR_CARPETA = Path.home() / ".salaedicion-servidor"
+ESPERA_SERVIDOR = 30  # segundos que un video espera a tus compus antes de que lo tome el servidor
 
 
 def _hash(token: str) -> str:
@@ -60,6 +65,8 @@ class Sala(Aprendizaje, Proyectos):
         self.chat: list = datos.get("chat", [])
         self.gasto: dict = datos.get("gasto", {})
         self.ignoradas: list = datos.get("ignoradas", [])  # carpetas de tus compus que borraste: no vuelven a ser proyecto
+        # ⚙️ oficina central: ¿el servidor también edita? y cuántos videos a la vez
+        self.ajustes: dict = {"usar_servidor": False, "servidor_a_la_vez": 1, **(datos.get("ajustes") or {})}
         self.cargar_estilo(datos)  # el cuaderno de estilo que comparten los editores
         for pr in self.proyectos.values():
             if pr.get("estado") == "editando":
@@ -84,7 +91,7 @@ class Sala(Aprendizaje, Proyectos):
             self.trabajos.pop(t["id"], None)
         ESTADO.write_text(json.dumps({"compus": self.compus, "trabajos": self.trabajos, "proyectos": self.proyectos,
                                       "chat": self.chat[-200:], "gasto": dict(sorted(self.gasto.items())[-90:]),
-                                      "estilo": self.estilo, "ignoradas": self.ignoradas[-300:]},
+                                      "estilo": self.estilo, "ignoradas": self.ignoradas[-300:], "ajustes": self.ajustes},
                                      ensure_ascii=False, indent=1), encoding="utf-8")
 
     # ---------- lo que se ve en el edificio ----------
@@ -97,15 +104,19 @@ class Sala(Aprendizaje, Proyectos):
             for c in sorted(self.compus.values(), key=lambda c: c["slot"]):
                 t = self.trabajos.get(c.get("trabajo") or "") or self.trabajos.get(c.get("trabajo_cel") or "")
                 varios = len(c.get("activos") or []) + (1 if c.get("trabajo_cel") else 0)
+                activos = [self.trabajos[x] for x in (c.get("activos") or []) if x in self.trabajos]
                 compus.append({k: c.get(k) for k in ("id", "nombre", "slot", "gpu", "sistema", "version", "ultimo",
                                                      "nvenc", "oido", "editados", "estado_texto", "claude_code", "motion",
-                                                     "celular", "expedientes", "tipos")}
+                                                     "celular", "expedientes", "tipos", "uso", "capacidad", "interno")}
                               | {"viva": self.viva(c),
                                  "trabajo": {k: t.get(k) for k in ("id", "etiqueta", "origen", "paso", "avance")} if t else None,
+                                 "activos": [{k: x.get(k) for k in ("id", "tipo", "etiqueta", "origen", "paso", "avance", "inicio", "mov")}
+                                             for x in activos if x["estado"] in ("asignado", "trabajando")],
                                  "a_la_vez": varios})
             trabajos = [{k: t.get(k) for k in ("id", "tipo", "origen", "etiqueta", "estado", "compu", "creado", "inicio",
-                                                "fin", "error", "paso", "avance")}
-                        for t in sorted(self.trabajos.values(), key=lambda t: -t["creado"])[:15]]
+                                                "fin", "error", "paso", "avance", "mov")}
+                        | {"compu_nombre": (self.compus.get(t.get("compu") or "") or {}).get("nombre")}
+                        for t in sorted(self.trabajos.values(), key=lambda t: -t["creado"])[:30]]
             tareas = [{"id": t["id"], "agente": self.editor_id(t["compu"]), "etapa": "edicion",
                        "accion": {"pensar": "Pensar", "claude_libre": "Editor IA", "probar_app": "📱 Probar app",
                                 "edu": "🎬 Video de YouTube", "edu_ia": "🎬 Claude edita video", "edu_estilo": "🐑 Video con estilo", "probar_ssh": "🔑 Probar SSH",
@@ -115,6 +126,8 @@ class Sala(Aprendizaje, Proyectos):
                        "avance": t.get("avance")} for t in sorted(self.trabajos.values(), key=lambda t: t["creado"])[-40:] if t.get("compu")]
             hoy = time.strftime("%Y-%m-%d")
             return {"version": self.version, "demo": self.demo, "ahora": time.time(), "compus": compus, "trabajos": trabajos,
+                    "ajustes": self.ajustes,
+                    "cola": sum(1 for t in self.trabajos.values() if t["estado"] == "en_cola"),
                     "locales": self.resumen_locales(), "editores": self.editores(), "proyectos": self.resumen_proyectos(),
                     "chat": self.chat[-60:], "tareas": tareas,
                     "gasto": {"hoy": round(self.gasto.get(hoy, 0), 4),
@@ -144,6 +157,76 @@ class Sala(Aprendizaje, Proyectos):
             self.codigos = {k: v for k, v in self.codigos.items() if v > ahora}
             self.codigos[codigo] = ahora + CODIGO_DURA
         return {"codigo": codigo, "vence": ahora + CODIGO_DURA}
+
+    # ---------- ⚙️ oficina central ----------
+    def ajustar(self, d: dict) -> dict:
+        with self.lock:
+            if "usar_servidor" in d:
+                self.ajustes["usar_servidor"] = bool(d["usar_servidor"])
+            if "servidor_a_la_vez" in d:
+                self.ajustes["servidor_a_la_vez"] = max(1, min(4, int(d.get("servidor_a_la_vez") or 1)))
+            self._tocar()
+        return {"ok": True, "ajustes": self.ajustes}
+
+    def reinicio(self, minutos: float = 10) -> dict:
+        """🔄 Reinicio forzoso: lo que se quedó trabado (compu apagada o sin avanzar `minutos`) se cancela para que su
+        oficina lo vuelva a mandar a otra compu."""
+        cancelados = []
+        with self.lock:
+            for t in self.trabajos.values():
+                if t["estado"] not in ("asignado", "trabajando"):
+                    continue
+                c = self.compus.get(t.get("compu") or "")
+                quieto = time.time() - (t.get("mov") or t.get("inicio") or time.time())
+                if not c or not self.viva(c) or quieto > minutos * 60:
+                    t.update(estado="cancelado", error="Reinicio forzoso: se había trabado.", fin=time.time())
+                    if c:
+                        self._soltar(c, t["id"])
+                    cancelados.append(t["etiqueta"])
+            self._tocar()
+        return {"ok": True, "cancelados": cancelados}
+
+    def servidor_compu(self) -> str | None:
+        """Da de alta (una vez) al servidor como compu de la sala y deja su llave en su carpeta. Regresa la carpeta."""
+        with self.lock:
+            cfg = SERVIDOR_CARPETA / "config.json"
+            c = self.compus.get(SERVIDOR_ID)
+            if c and cfg.exists():
+                return str(SERVIDOR_CARPETA)
+            token = secrets.token_urlsafe(32)
+            libres = sorted(set(range(1, 9)) - {x["slot"] for x in self.compus.values() if x["id"] != SERVIDOR_ID})
+            self.compus[SERVIDOR_ID] = {"id": SERVIDOR_ID, "nombre": "Servidor", "token": _hash(token), "interno": True,
+                                        "slot": libres[0] if libres else 9, "gpu": "", "sistema": "Linux (servidor)",
+                                        "creado": time.time(), "ultimo": 0, "trabajo": None, "editados": 0}
+            SERVIDOR_CARPETA.mkdir(parents=True, exist_ok=True)
+            cfg.write_text(json.dumps({"servidor": f"http://127.0.0.1:{PUERTO}", "token": token, "nombre": "Servidor",
+                                       "id": SERVIDOR_ID}), encoding="utf-8")
+            os.chmod(cfg, 0o600)
+            self._tocar()
+        return str(SERVIDOR_CARPETA)
+
+    def vigilar_servidor(self) -> None:
+        """🖥️ Si prendiste «usar también el servidor», corre aquí mismo el programa de las compus (en modo servidor)."""
+        proceso = None
+        while True:
+            try:
+                quiere = self.ajustes.get("usar_servidor") and not self.demo
+                n = str(self.ajustes.get("servidor_a_la_vez") or 1)
+                if quiere and (proceso is None or proceso.poll() is not None or getattr(proceso, "n", n) != n):
+                    if proceso and proceso.poll() is None:
+                        proceso.terminate()
+                    carpeta = self.servidor_compu()
+                    proceso = subprocess.Popen([sys.executable, str(AQUI / "compu.py")], cwd=str(AQUI),
+                                               env={**os.environ, "SALA_SERVIDOR": "1", "SALA_CARPETA": carpeta,
+                                                    "SALA_A_LA_VEZ": n, "PYTHONUNBUFFERED": "1"},
+                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    proceso.n = n
+                elif not quiere and proceso and proceso.poll() is None:
+                    proceso.terminate()
+                    proceso = None
+            except Exception as exc:  # noqa: BLE001
+                print(f"  · no pude prender al servidor como compu: {exc}", flush=True)
+            time.sleep(10)
 
     def vincular(self, d: dict) -> dict:
         codigo = str(d.get("codigo", "")).replace(" ", "").strip()
@@ -219,6 +302,7 @@ class Sala(Aprendizaje, Proyectos):
             return {"error": "Esa compu ya no está en la sala."}
         t = {"id": uuid.uuid4().hex[:10], "tipo": str(d.get("tipo", "cris")), "origen": str(d.get("origen", "")),
              "fija": fija or None, "local": d.get("local") or None,
+             "evitar": [str(x) for x in (d.get("evitar") or [])][:10],  # compus donde ya se trabó
              "etiqueta": str(d.get("etiqueta", ""))[:80], "parametros": d.get("parametros") or {}, "entradas": entradas,
              "salida": str(salida), "clasificar": str(d.get("clasificar", "")), "estado": "en_cola", "compu": None,
              "slot": None, "creado": time.time(), "inicio": None, "fin": None, "error": None, "paso": "", "avance": 0,
@@ -239,8 +323,8 @@ class Sala(Aprendizaje, Proyectos):
                 if c:
                     self._soltar(c, tid)
                 self._tocar()
-            return {k: t.get(k) for k in ("id", "estado", "paso", "avance", "error", "resultado", "slot")} | {
-                "compu": c["nombre"] if c else None}
+            return {k: t.get(k) for k in ("id", "estado", "paso", "avance", "error", "resultado", "slot", "mov")} | {
+                "compu": c["nombre"] if c else None, "compu_id": c["id"] if c else None}
 
     def cancelar(self, tid: str) -> dict:
         with self.lock:
@@ -264,7 +348,8 @@ class Sala(Aprendizaje, Proyectos):
                      tipos=[x for x in (d.get("tipos") or ["cris"]) if isinstance(x, str)][:12],
                      claude_code=str(d.get("claude_code") or "")[:20], motion=str(d.get("motion") or "")[:20],
                      celular=str(d.get("celular") or "")[:40],
-                     expedientes=str(d.get("expedientes") or "sin actualizar")[:120])  # 🕵️ ¿puede hacer videos de Expedientes?
+                     expedientes=str(d.get("expedientes") or "sin actualizar")[:120],  # 🕵️ ¿puede hacer videos de Expedientes?
+                     uso={k: v for k, v in (d.get("uso") or {}).items() if isinstance(v, (int, float))} or c.get("uso"))
             extra = {}
             if not d.get("pulso"):  # «📂 Elegir carpeta…»: se entrega en el latido normal (no en el pulso)
                 pedir = next((pid for pid, x in self.pedidos_carpeta.items() if x["compu"] == c["id"] and x["estado"] == "nuevo"), None)
@@ -289,6 +374,11 @@ class Sala(Aprendizaje, Proyectos):
                             self._tocar()
                 extra["trabajo_cel"] = self._para_compu(cel_t) if cel_t else None
             def sirve(t: dict) -> bool:
+                if c["id"] in (t.get("evitar") or []):
+                    return False
+                if c.get("interno") and not t.get("fija") and time.time() - t["creado"] < ESPERA_SERVIDOR and any(
+                        self.viva(o) and not o.get("interno") and t["tipo"] in (o.get("tipos") or []) for o in self.compus.values()):
+                    return False  # primero tus compus; si en 30 s ninguna lo toma, lo hace el servidor
                 return (t["estado"] == "en_cola" and t["tipo"] in c["tipos"] and t.get("fija") in (None, c["id"])
                         and not (dos_carriles and t["tipo"] == "probar_app")
                         and (d.get("oido_listo", True) or t["tipo"] in ("pensar", "claude_libre", "probar_app", "edu", "edu_ia", "edu_estilo", "probar_ssh", "expediente")))
@@ -441,7 +531,10 @@ class Sala(Aprendizaje, Proyectos):
             t = self.del_compu(c, tid)
             if not t:
                 return {"error": "Ese trabajo ya no es tuyo (se canceló).", "cancelado": True}
-            t.update(estado="trabajando", paso=str(d.get("paso", ""))[:120], avance=max(0.0, min(1.0, float(d.get("avance") or 0))))
+            paso, av = str(d.get("paso", ""))[:120], max(0.0, min(1.0, float(d.get("avance") or 0)))
+            if paso != t.get("paso") or abs(av - (t.get("avance") or 0)) > 0.0005:
+                t["mov"] = time.time()  # último momento en que se movió (para saber si se trabó)
+            t.update(estado="trabajando", paso=paso, avance=av)
             c["ultimo"] = time.time()
             self._tocar()
         return {"ok": True}
@@ -543,6 +636,8 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
         def do_GET(self):
             url = urlparse(self.path)
             ruta = unquote(url.path)
+            if ruta.startswith("/sala/api/maquina/"):  # el servidor-compu entra directo (sin pasar por el edificio)
+                ruta = ruta[len("/sala"):]
             if ruta == "/api/estilo":
                 return self._json(sala.ver_estilo())
             if ruta == "/api/estado":
@@ -630,6 +725,8 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
         def do_POST(self):
             url = urlparse(self.path)
             ruta = unquote(url.path)
+            if ruta.startswith("/sala/api/maquina/"):
+                ruta = ruta[len("/sala"):]
             if ruta == "/api/subir":  # tus clips para un proyecto (desde la oficina, con tu contraseña)
                 if "application/octet-stream" not in self.headers.get("Content-Type", ""):
                     return self._json({"error": "tipo no permitido"}, 403)
@@ -682,6 +779,10 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
             if ruta == "/api/chat":
                 r = sala.mensaje(str(d.get("proyecto") or "") or None, str(d.get("texto", "")))
                 return self._json(r, 400 if "error" in r else 200)
+            if ruta == "/api/ajustes":  # ⚙️ oficina central: usar también el servidor
+                return self._json(sala.ajustar(d))
+            if ruta == "/api/reinicio":  # 🔄 reinicio forzoso de lo trabado
+                return self._json(sala.reinicio(float(d.get("minutos") or 10)))
             if ruta.startswith("/api/quitar/"):
                 r = sala.quitar(ruta.rsplit("/", 1)[-1])
                 return self._json(r, 400 if "error" in r else 200)
@@ -724,6 +825,9 @@ def crear_servidor(sala: Sala, puerto: int) -> ThreadingHTTPServer:
     return ThreadingHTTPServer(("127.0.0.1", puerto), Manejador)
 
 
+PUERTO = 8767
+
+
 def main() -> None:
     global ESTADO, TIENDA_URL
     a = argparse.ArgumentParser(description="Sala de edición (tus compus editan en lugar del servidor)")
@@ -734,8 +838,11 @@ def main() -> None:
     TIENDA_URL = args.tienda.rstrip("/")
     if args.demo:
         ESTADO = AQUI / "sala_estado_demo.json"
+    global PUERTO
+    PUERTO = args.puerto
     sala = Sala(args.demo)
     threading.Thread(target=sala.vigilar, daemon=True).start()
+    threading.Thread(target=sala.vigilar_servidor, daemon=True).start()
     if not args.demo:  # Claude: el gasto de la sala va en su propio contador, con el mismo tope diario
         from agentes import claude as ia
         from agentes import config

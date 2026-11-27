@@ -229,6 +229,22 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
 - **📌 Órdenes de una vez** (`Oficina.ORDENES`, se guardan en `ordenes_hechas`): al arrancar (90 s) cumple las que
   falten. Primera: reeditar los últimos 3 publicados de Cuida Tu Lana con el estilo nuevo (sin borrar los viejos).
 
+- **🎬 Sala de edición central (27 nov)**: página `/edicion` (`oficina/edicion.html|css|js`, API `/api/edicion`,
+  `/api/edicion/ajustes`, `/api/edicion/reinicio` en `Oficina.edicion_*`). Muestra cada máquina (CPU/RAM/tarjeta que
+  manda `compu.uso_equipo()` en el latido, sin librerías), lo que edita cada una con avance y «se movió hace…», la
+  fila, lo último y lo de cada oficina. **⚡ Usar todas las compus + servidor** → sala `ajustes.usar_servidor`:
+  `Sala.vigilar_servidor` corre `compu.py` en el servidor con `SALA_SERVIDOR=1` (sin oído/cel/autoactualizar; tipos
+  edu, edu_estilo si hay Remotion, expediente), dado de alta como compu `servidor` (`interno`, llave en
+  `~/.salaedicion-servidor`, entra directo a 127.0.0.1 por `/sala/api/maquina/`). El servidor solo toma un video si
+  lleva 30 s en fila y ninguna compu lo tomó (`ESPERA_SERVIDOR`); `servidor_a_la_vez` 1–4. Trabajos con `evitar`
+  (compus donde se trabó) y `mov` (último avance). **🔄 Reinicio forzoso**: sala suelta lo trabado (>10 min sin moverse
+  o compu apagada), `expedientes_fabrica.reinicio_forzoso()` y reintento de proyectos del edificio con error.
+  Selector «cerebro de edición» = ajuste `editor_claude`.
+- **Expedientes automático**: los renders ya NO van amarrados a una compu: van a la fila de la sala (la primera libre;
+  tus compus primero). Video tras video: `_caso_sin_terminar` solo espera si hay un caso en preparación o si hay
+  tantos renders pendientes como máquinas (máx. 3). Temas propuestos entran directo a la fila (con subir_solo).
+  Bandeja muestra todos los casos en marcha (`en_marcha_todos`). Botón 🔄 Reinicio forzoso también en la Bandeja.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

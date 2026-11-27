@@ -1691,6 +1691,76 @@ class Oficina:
                 return {"error": "Esa acción no se puede hacer ahora."}
         return {"ok": True}
 
+    # ---------- 🎬 sala de edición central ----------
+    def edicion_central(self) -> dict:
+        """Todo lo que se edita, en todas las oficinas: compus (y servidor) con su uso, y lo que va de cada video."""
+        from agentes import expedientes_fabrica as fb
+        try:
+            sala = requests.get(f"{SALA_URL}/api/estado", timeout=5).json()
+        except (requests.RequestException, ValueError):
+            sala = {"compus": [], "trabajos": [], "ajustes": {}, "cola": 0, "error": "La sala de edición no contesta."}
+        with self.lock:
+            edificio = [{"id": p["id"], "titulo": p["titulo"], "canal": p.get("canal") or "principal", "estado": p["estado"],
+                         "etapa": p.get("etapa"), "error": p.get("error"), "etapas": p.get("etapas") or {}}
+                        for p in sorted(self.proyectos.values(), key=lambda p: -p["creado"])
+                        if p["estado"] in ("produccion", "publicando") or (p["estado"] == "error" and p.get("etapa") == "video")][:20]
+        try:
+            r = fb.resumen()
+            exp = [c for c in r.get("casos") or [] if c["id"] in (r.get("en_marcha_todos") or [])]
+            exp_info = {"casos": [{k: c.get(k) for k in ("id", "numero", "marca", "paso", "render_paso", "render_avance", "error",
+                                                          "t_mov", "pasos")} for c in exp],
+                        "tema": (r.get("estado") or {}).get("en_curso"), "activa": (r.get("estado") or {}).get("activa")}
+        except Exception as exc:  # noqa: BLE001
+            exp_info = {"casos": [], "error": str(exc)[:200]}
+        return {"sala": sala, "edificio": edificio, "expedientes": exp_info, "ahora": time.time(),
+                "cerebro": "claude" if estilo.cargar()["ajustes"].get("editor_claude", True) else "auto"}
+
+    def edicion_ajustes(self, d: dict) -> dict:
+        from agentes import expedientes_fabrica as fb
+        r = {}
+        if "usar_todas" in d or "servidor_a_la_vez" in d:
+            cuerpo = {}
+            if "usar_todas" in d:
+                cuerpo["usar_servidor"] = bool(d["usar_todas"])
+            if "servidor_a_la_vez" in d:
+                cuerpo["servidor_a_la_vez"] = int(d.get("servidor_a_la_vez") or 1)
+            try:
+                r["sala"] = requests.post(f"{SALA_URL}/api/ajustes", json=cuerpo, timeout=5).json()
+            except (requests.RequestException, ValueError) as exc:
+                return {"error": f"La sala de edición no contestó ({exc})."}
+            if d.get("usar_todas"):  # todas cuentan: ninguna compu queda fuera para Expedientes, y el servidor de respaldo
+                e = fb.estado()
+                e["compus"] = {k: "respaldo" for k, v in (e.get("compus") or {}).items() if v == "no"} | \
+                              {k: v for k, v in (e.get("compus") or {}).items() if v != "no"}
+                e["servidor_respaldo"] = True
+                fb._guardar_estado(e)
+        if d.get("cerebro") in ("auto", "claude"):
+            estilo.ajustar({"editor_claude": d["cerebro"] == "claude"})
+        return {"ok": True, **r}
+
+    def edicion_reinicio(self) -> dict:
+        """🔄 Reinicio forzoso: la sala suelta lo trabado, Expedientes destraba sus casos y los videos del edificio que
+        fallaron en la edición se reintentan."""
+        from agentes import expedientes_fabrica as fb
+        hechos = []
+        try:
+            r = requests.post(f"{SALA_URL}/api/reinicio", json={"minutos": 10}, timeout=10).json()
+            hechos += [f"Sala: solté «{x}»" for x in r.get("cancelados") or []]
+        except (requests.RequestException, ValueError) as exc:
+            hechos.append(f"La sala no contestó ({exc})")
+        try:
+            hechos += [f"Expedientes: {x}" for x in fb.reinicio_forzoso().get("hechos") or []]
+        except Exception as exc:  # noqa: BLE001
+            hechos.append(f"Expedientes falló: {str(exc)[:120]}")
+        for p in list(self.proyectos.values()):
+            if p["estado"] == "error":
+                if "error" not in self.accion_proyecto(p["id"], "reintentar"):
+                    hechos.append(f"Edificio: reintento «{p['titulo']}»")
+        with self.lock:
+            self.log.append({"t": time.time(), "quien": "jefe", "texto": "🔄 Reinicio forzoso de la sala de edición"})
+            self._tocar()
+        return {"ok": True, "hechos": hechos or ["No había nada trabado. Todo sigue su curso."]}
+
     def _rehacer_publicado(self, app_id: str, accion: str, texto: str, reemplazar: bool) -> dict:
         """🔁 Reeditar (solo la edición) o rehacer (desde el guion) un video, aunque ya esté en YouTube: el nuevo se sube
         con la misma fecha. 🗑️ Borrar de YouTube solo cuando el jefe lo pide."""
@@ -2768,6 +2838,10 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     return self._json({"error": str(exc)}, 404)
             if ruta in ("/expedientes", "/expedientes/"):  # 🕵️ la agencia de Expedientes, en su propia página
                 return self._archivo(WEB / "expedientes.html", WEB)
+            if ruta in ("/edicion", "/edicion/"):  # 🎬 la sala de edición central (todas las compus y el servidor)
+                return self._archivo(WEB / "edicion.html", WEB)
+            if ruta == "/api/edicion":
+                return self._json(oficina.edicion_central())
             if ruta.startswith("/expedientes/"):  # el PDF de la narración y las partes del paquete
                 partes = ruta.split("/")
                 try:
@@ -2904,6 +2978,10 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"ok": True})
             if ruta == "/api/estilo/ajustes":
                 return self._json({"ajustes": estilo.ajustar(datos)})
+            if ruta == "/api/edicion/ajustes":  # ⚡ usar todas las compus + servidor, cerebro de edición
+                return self._json(oficina.edicion_ajustes(datos))
+            if ruta == "/api/edicion/reinicio":  # 🔄 reinicio forzoso de todo lo trabado
+                return self._json(oficina.edicion_reinicio())
             if ruta == "/api/manual":  # lo corriges a mano en la pestaña Estilo
                 texto = str(datos.get("texto", ""))
                 if len(texto.strip()) < 200:
@@ -2967,6 +3045,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                         r = fb.producir(str(datos.get("id") or ""))
                     elif a == "continuar":
                         r = fb.continuar()
+                    elif a == "reinicio":  # 🔄 reinicio forzoso (también suelta lo trabado en la sala)
+                        r = oficina.edicion_reinicio()
                     elif a == "reintentar":
                         r = fb.reintentar(str(datos.get("eid") or ""))
                     elif a == "hacer_video":

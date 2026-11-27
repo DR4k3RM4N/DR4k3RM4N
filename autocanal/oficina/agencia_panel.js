@@ -49,7 +49,8 @@
     $("#exp-cuenta").textContent = total;
     const ag = (agendaDatos?.canales || [])[0];
     if (document.activeElement?.closest?.("#exp-bandeja") || [...document.querySelectorAll("#exp-bandeja video")].some((v) => !v.paused)) return;
-    $("#exp-bandeja").innerHTML = tarjetaEnMarcha() + tarjetaFabrica() + revisar.map(tarjetaVideo).join("") + `
+    const marcha = fabrica?.en_marcha_todos || (fabrica?.en_marcha ? [fabrica.en_marcha] : []);
+    $("#exp-bandeja").innerHTML = tarjetaEnMarcha(null, 0) + marcha.map((id) => tarjetaEnMarcha(id, 1)).join("") + tarjetaFabrica() + revisar.map(tarjetaVideo).join("") + `
       <section class="tarjeta">
         <h4>📥 Lo que te toca</h4>
         ${pendientes.length ? pendientes.map((x) => `<article class="exp-pendiente">
@@ -96,6 +97,8 @@
       <p>📦 Material por delante: <b>${fabrica.por_delante}</b> de ${fabrica.meta} videos
         <label class="pista">· juntar para <select data-fab-meta>${[30, 60, 90, 180, 365].map((n) => `<option value="${n}" ${+e.meta_dias === n ? "selected" : ""}>${n} días</option>`).join("")}</select></label></p>
       <div class="fila"><button class="btn btn-mini btn-primario" data-fab-continuar title="Quita esperas, destraba lo atorado y reintenta lo que falló">▶ Continuar ahora</button>
+        <button class="btn btn-mini" data-fab-reinicio title="Destraba todo a la fuerza: los videos trabados se cambian de compu o van al servidor">🔄 Reinicio forzoso</button>
+        <a class="btn btn-mini" href="/edicion" target="_blank" rel="noopener">🎬 Sala de edición ↗</a>
         ${sig && !e.en_curso ? `<button class="btn btn-mini" data-producir="${esc(sig.id)}">⚙️ Producir ya: ${esc(sig.marca)}</button>` : ""}
         <button class="btn btn-mini" data-ir="temas">🧾 Temas (${fabrica.temas.filter((x) => x.estado === "pendiente").length} en fila)</button></div>
       <details class="fab-compus" ${fabrica.compus.some((c) => c.viva) ? "" : "open"}><summary>🖥️ Quién hace los videos (${fabrica.compus.filter((c) => c.viva && c.puede && c.pref !== "no").length} compu(s) lista(s))</summary>
@@ -116,15 +119,15 @@
     const s = Math.max(0, Math.round((fabrica.ahora || Date.now() / 1000) - t));
     return s < 60 ? `hace ${s} s` : s < 3600 ? `hace ${Math.round(s / 60)} min` : `hace ${Math.round(s / 3600)} h`;
   }
-  function tarjetaEnMarcha() {
-    const c = (fabrica?.casos || []).find((x) => x.id === fabrica.en_marcha);
-    const tema = !c && fabrica?.estado?.en_curso ? fabrica.temas.find((x) => x.id === fabrica.estado.en_curso) : null;
+  function tarjetaEnMarcha(id, k) {
+    const c = (fabrica?.casos || []).find((x) => x.id === id);
+    const tema = !c && !k && fabrica?.estado?.en_curso ? fabrica.temas.find((x) => x.id === fabrica.estado.en_curso) : null;
     if (!c && !tema) return "";
     if (!c) {
       const quien = (resumen?.equipo || []).find((a) => a.id === "ex_guion");
       return `<section class="tarjeta fab-marcha"><h4>🎬 Ahorita: ¿Quién MATÓ a ${esc(tema.marca)}?</h4>
         <p>⏳ ${esc(quien?.dice || "Vera está investigando y escribiendo el guion…")}</p>
-        <div class="fab-barra"><b style="width:8%"></b></div><p class="pista">Primero se termina este video (hasta el calendario) y luego sigue otro.</p></section>`;
+        <div class="fab-barra"><b style="width:8%"></b></div><p class="pista">Mientras las compus hacen un video, el equipo ya prepara el siguiente.</p></section>`;
     }
     const pasos = c.pasos || [];
     const hechos = pasos.filter((p) => p.estado === "listo").length;
@@ -356,6 +359,8 @@
       if (boton) boton.disabled = false;
       await cargar(true);
     };
+    const rf = e.target.closest("[data-fab-reinicio]");
+    if (rf) return fab({ accion: "reinicio" }, rf, (r) => "🔄 Reinicio forzoso: " + (r.hechos || []).join(" · "));
     const co = e.target.closest("[data-fab-continuar]");
     if (co) return fab({ accion: "continuar" }, co, (r) => `▶ Seguimos. ${r.reintentos ? `Reintenté ${r.reintentos} caso(s) atorado(s).` : "No había nada atorado."}`);
     const hv = e.target.closest("[data-fab-video]");
