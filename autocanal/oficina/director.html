@@ -54,6 +54,14 @@
   .notas li { display: flex; justify-content: space-between; gap: 10px; background: var(--panel2); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
   .notas li span { min-width: 0; overflow-wrap: anywhere; }
   .aviso { margin: 0; color: #ffd98a; }
+  .chat { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; padding: 4px 2px; }
+  .msg { max-width: 82%; padding: 8px 12px; border-radius: 12px; white-space: pre-line; overflow-wrap: anywhere; font-size: 13.5px; }
+  .msg.jefe { align-self: flex-end; background: #2a2410; border: 1px solid #5c4a14; }
+  .msg.director { align-self: flex-start; background: var(--panel2); border: 1px solid var(--borde); }
+  .msg small { display: block; color: var(--suave); font-size: 11px; margin-top: 3px; }
+  .pensando { color: var(--oro); font-size: 13px; margin: 0; }
+  .falla pre { white-space: pre-wrap; margin: 4px 0 0; font: 500 12px/1.45 var(--mono); color: #cfd8e3; }
+  #form-chat textarea { flex: 1; min-width: 0; width: auto; }
   @media (max-width: 860px) { .dos { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
@@ -63,6 +71,21 @@
   <p>Decide qué va primero en todas tus oficinas: las compus y el servidor editan en este orden, y el piloto arranca primero el canal de más arriba.</p>
 </header>
 <main>
+  <section class="tarjeta" aria-labelledby="t-chat">
+    <div class="fila" style="justify-content: space-between"><h2 id="t-chat">💬 Habla con tu director</h2>
+      <label class="pista fila">Tus WhatsApp y Telegram van a:
+        <select id="con-quien" style="width:auto"><option value="director">🎯 el director</option><option value="paola">Paola (productora)</option></select></label></div>
+    <p class="pista">Pídele lo que sea o cuéntale cualquier falla: revisa los registros y los archivos del servidor, lo arregla con sus órdenes (o con Paola) y te contesta. Por WhatsApp, empieza con «Paola,» para hablar directo con ella.</p>
+    <div class="chat" id="chat" aria-live="polite"></div>
+    <p class="pensando" id="pensando" hidden>🎯 Revisando… (puede tardar unos minutos si investiga a fondo)</p>
+    <form class="fila" id="form-chat"><textarea id="msg" rows="2" maxlength="2000" placeholder="Ej. ¿por qué no ha salido el video de Kodak? / sube Apps que sí pagan a la prioridad 1"></textarea>
+      <button class="principal" type="submit">Enviar</button></form>
+  </section>
+  <section class="tarjeta" aria-labelledby="t-fallas" id="caja-fallas" hidden>
+    <h2 id="t-fallas">🛠️ Fallas del programa (pásaselas a Claude Code)</h2>
+    <p class="pista">Lo que el director no puede arreglar con órdenes porque es del código. Copia el texto y pégaselo a Claude Code.</p>
+    <ul class="notas" id="fallas"></ul>
+  </section>
   <div class="dos">
     <section class="tarjeta" aria-labelledby="t-prio">
       <h2 id="t-prio">Prioridades</h2>
@@ -137,6 +160,16 @@
     $("#ordenes").innerHTML = (d.ordenes || []).length ? [...d.ordenes].reverse().map((o) => `<li><span>${esc(new Date(o.t * 1000).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))} · ${o.quien === "reglas" ? "⚙️" : "🧠"} ${esc(o.texto)}</span></li>`).join("")
       : `<li><span class="pista">Todavía no ha tenido que dar órdenes.</span></li>`;
     $("#notas").innerHTML = (d.notas || []).map((n, i) => `<li><span>${esc(n.texto)}</span><button type="button" data-quitar="${i}" aria-label="Quitar nota">✕</button></li>`).join("");
+    const hora = (t) => new Date(t * 1000).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const caja = $("#chat"), abajo = caja.scrollHeight - caja.scrollTop - caja.clientHeight < 40;
+    caja.innerHTML = (d.chat || []).length ? d.chat.map((m) => `<div class="msg ${m.quien === "jefe" ? "jefe" : "director"}">${esc(m.texto)}<small>${hora(m.t)}${m.canal && m.canal !== "pagina" ? " · " + esc(m.canal) : ""}</small></div>`).join("")
+      : `<p class="pista">Todavía no platican. Escríbele aquí o por WhatsApp.</p>`;
+    if (abajo) caja.scrollTop = caja.scrollHeight;
+    $("#pensando").hidden = !(d.pensando && d.ahora - d.pensando < 1200);
+    if (document.activeElement?.id !== "con-quien") $("#con-quien").value = d.con_quien || "director";
+    $("#caja-fallas").hidden = !(d.fallas || []).length;
+    $("#fallas").innerHTML = (d.fallas || []).map((f, i) => `<li class="falla"><span>${hora(f.t)} · cuando pediste: «${esc(f.pedido)}»<pre>${esc(f.texto)}</pre></span>
+      <span class="fila" style="align-items:flex-start"><button type="button" data-copiar="${i}">Copiar</button><button type="button" data-quitar-falla="${i}" aria-label="Quitar">✕</button></span></li>`).join("");
     const g = d.guias || {};
     $("#guias").innerHTML = d.orden.map((c) => `<article class="pcaja"><b>${esc(cat[c])}</b>${g[c] ? `<p style="white-space:pre-line">${esc(g[c])}</p>` : `<p class="pista">Todavía sin guía: la escribe en su próxima revisión.</p>`}</article>`).join("");
     const u = d.uso_ia || {};
@@ -160,6 +193,12 @@
     try {
       if (b.dataset.subir) { await api({ subir: b.dataset.subir }); return cargar(); }
       if (b.dataset.quitar !== undefined) { await api({ quitar_nota: Number(b.dataset.quitar) }); return cargar(); }
+      if (b.dataset.quitarFalla !== undefined) { await api({ quitar_falla: Number(b.dataset.quitarFalla) }); return cargar(); }
+      if (b.dataset.copiar !== undefined) {
+        const f = d.fallas[Number(b.dataset.copiar)];
+        await navigator.clipboard.writeText(`Falla que encontró el director de producción (cuando Miguel pidió: «${f.pedido}»):\n\n${f.texto}`);
+        b.textContent = "¡Copiado!"; setTimeout(() => { b.textContent = "Copiar"; }, 1500); return;
+      }
       if (b.id === "pedir") {
         b.disabled = true; b.textContent = "Revisando… (1 min)";
         await api({ informe: true }); avisar(""); await cargar();
@@ -179,8 +218,23 @@
     if (!t) return;
     try { await api({ nota: t }); $("#nota").value = ""; await cargar(); } catch (err) { avisar(err.message); }
   });
+  $("#form-chat").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const t = $("#msg").value.trim();
+    if (!t) return;
+    try {
+      await api({ mensaje: t }); $("#msg").value = "";
+      d.chat = [...(d.chat || []), { t: Date.now() / 1000, quien: "jefe", texto: t }]; d.pensando = d.ahora = Date.now() / 1000; pintar();
+      $("#chat").scrollTop = $("#chat").scrollHeight;
+    } catch (err) { avisar(err.message); }
+  });
+  $("#msg").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form-chat").requestSubmit(); } });
+  $("#con-quien").addEventListener("change", async (e) => {
+    try { await api({ con_quien: e.target.value }); await cargar(); } catch (err) { avisar(err.message); }
+  });
   cargar();
   setInterval(() => { if (!document.hidden) cargar(); }, 15000);
+  setInterval(() => { if (!document.hidden && d && d.pensando) cargar(); }, 3000);
 })();
 </script>
 </body>

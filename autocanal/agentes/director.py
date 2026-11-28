@@ -40,6 +40,10 @@ def estado() -> dict:
     e.setdefault("guias", {})        # 📘 instrucciones por canal que él escribe y mejora (las recibe el guionista)
     e.setdefault("revisiones", [])   # 🔍 lo que encontró al revisar cada video (de aquí aprende)
     e.setdefault("uso_ia", {})       # 💳 cuántas llamadas propias lleva hoy (cuida tu plan)
+    e.setdefault("chat", [])         # 💬 la plática con Miguel (WhatsApp, Telegram o su página)
+    e.setdefault("memoria", [])      # 🧠 lo que aprendió de Miguel platicando
+    e.setdefault("fallas", [])       # 🛠️ errores del programa diagnosticados, para pasárselos a Claude Code
+    e.setdefault("con_quien", "director")  # 📱 tus mensajes de WhatsApp/Telegram van al director (o a «paola»)
     e.setdefault("ordenes", [])      # bitácora de lo que ordenó y ejecutó
     return e
 
@@ -63,6 +67,12 @@ def ajustar(d: dict) -> dict:
         e["notas"] = (e["notas"] + [{"t": time.time(), "texto": str(d["nota"])[:400]}])[-30:]
     if "autonomo" in d:
         e["autonomo"] = bool(d["autonomo"])
+    if d.get("con_quien") in ("director", "paola"):
+        e["con_quien"] = d["con_quien"]
+    if d.get("quitar_falla") is not None:
+        e["fallas"] = [f for i, f in enumerate(e["fallas"]) if i != int(d["quitar_falla"])]
+    if d.get("borrar_chat"):
+        e["chat"] = []
     if d.get("quitar_nota") is not None:
         e["notas"] = [n for i, n in enumerate(e["notas"]) if i != int(d["quitar_nota"])]
     _guardar(e)
@@ -149,6 +159,12 @@ ORDENES = {
     "prender_quienmato": "▶ Prender la oficina de ¿Quién MATÓ a…?",
     "piloto_on": "🚀 Prender el piloto automático del edificio",
     "pedir_ideas": "💡 Pedir ideas nuevas para un canal (canal: fraudes o apps; texto: tema opcional)",
+    "paola": "🗣️ Pasarle una instrucción a Paola, la productora del edificio de YouTube (texto: la instrucción tal cual, "
+             "p. ej. «aprueba la idea 2», «publica el video 3», «reintenta los videos con error», «reedita el video 5»)",
+    "enfocar": "🎯 Enfocar todo en una categoría (canal: fraudes, expedientes, apps, personal, tiktok, tampico; vacío = quitar enfoque)",
+    "prioridades": "🔢 Cambiar el orden de prioridades (texto: las categorías separadas por coma, de la más a la menos importante)",
+    "rehacer_video_quienmato": "🎬 Volver a editar el video del caso actual de ¿Quién MATÓ a…?",
+    "apagar_quienmato": "⏸️ Pausar ¿Quién MATÓ a…? (solo si Miguel lo pide)",
     "proponer_temas_quienmato": "🧾 Proponer temas nuevos para ¿Quién MATÓ a…? (cuando quedan pocos)",
     "leccion": "📚 Dejar una lección a un equipo del edificio (canal: id o vacío; texto: «agente: la lección»; agentes: productora, investigador, guionista, locutor, disenadora, editor, redactora, community, todos)",
 }
@@ -259,6 +275,25 @@ def ejecutar(oficina, orden: str, motivo: str = "", canal: str = "", texto: str 
                 oficina.piloto = True
                 oficina._tocar()
             hecho = "prendí el piloto automático"
+        elif orden == "paola":
+            if not texto.strip():
+                return "instrucción vacía"
+            hecho = "Paola: " + (oficina.delegar_paola(texto) or "recibido")[:400]
+        elif orden == "enfocar":
+            ajustar({"enfoque": canal or None})
+            hecho = f"enfoque en {CATEGORIAS[canal]}" if canal in CATEGORIAS else "quité el enfoque"
+        elif orden == "prioridades":
+            nuevo = [c.strip() for c in texto.split(",") if c.strip() in CATEGORIAS]
+            if not nuevo:
+                return "no entendí las prioridades"
+            e2 = ajustar({"orden": nuevo})
+            hecho = "prioridades: " + " → ".join(CATEGORIAS[c] for c in e2["orden"])
+        elif orden == "rehacer_video_quienmato":
+            quienmato.accion({"accion": "rehacer_video"})
+            hecho = "mandé a volver a editar el video del caso actual"
+        elif orden == "apagar_quienmato":
+            quienmato.accion({"accion": "pausar"})
+            hecho = "pausé ¿Quién MATÓ a…?"
         elif orden == "proponer_temas_quienmato":
             from . import expedientes_fabrica as fb
             r = fb.proponer_temas()

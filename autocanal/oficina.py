@@ -154,6 +154,7 @@ class Oficina:
         self.chat_cola: list[tuple[float, str, bool, bool]] = []  # (cuándo, línea, importante, con botones)
         self.chat_lock = threading.Lock()
         self.tg_vistos: list[str] = []
+        self._buzones: list[list[str]] = []  # 🎯 respuestas de Paola cuando el director le da una instrucción
         if wa.activo() or tg.activo():
             threading.Thread(target=self._chat_despachar, daemon=True).start()
         if tg.activo():
@@ -334,7 +335,38 @@ class Oficina:
                 self.log.append({"t": time.time(), "quien": "productora", "texto": f"⚠️ No pude mandarte Telegram: {exc}"})
                 self._tocar()
 
-    def _responder(self, canal: str, texto: str, botones=None, teclado: bool = False) -> None:
+    def delegar_paola(self, texto: str) -> str:
+        """🎯→🗣️ El director le pasa una instrucción a Paola (su cerebro de acciones). Regresa lo que contestó."""
+        buzon: list[str] = []
+        self._buzones.append(buzon)
+        try:
+            self._atender("director", {"id": uuid.uuid4().hex, "texto": texto, "tipo": "text"})
+        finally:
+            self._buzones.remove(buzon)
+        return " · ".join(buzon)
+
+    def _al_director(self, canal: str, mensaje: dict) -> None:
+        """📱 Tu mensaje va al director: avisa que ya lo está viendo, investiga y contesta por el mismo lado."""
+        from agentes import director_chat
+        with self.lock:
+            self.log.append({"t": time.time(), "quien": "jefe", "texto": f"🎯 {mensaje['texto']}"})
+            self._tocar()
+        self._responder(canal, "Va, jefe, déjame revisar…", director=True)
+        r = director_chat.contestar(self, mensaje["texto"], canal)
+        self._responder(canal, r["respuesta"], director=True)
+
+    def _responder(self, canal: str, texto: str, botones=None, teclado: bool = False, director: bool = False) -> None:
+        if canal == "director":  # 🎯 Paola le contesta al director (no a ti)
+            for b in self._buzones:
+                b.append(texto.replace("*", "")[:300])
+            with self.lock:
+                self.log.append({"t": time.time(), "quien": "productora", "texto": "🎯 " + texto.replace("*", "")})
+                self._tocar()
+            return
+        if director and canal not in ("whatsapp", "telegram"):
+            return  # la página del director ya lo ve en su propio chat
+        if director:
+            texto = "🎯 *Director:* " + texto
         if canal == "oficina":  # 💻 el chat de la oficina: Paola contesta ahí mismo
             with self.lock:
                 self.log.append({"t": time.time(), "quien": "productora", "texto": texto.replace("*", "")})
@@ -418,12 +450,23 @@ class Oficina:
 
     def _atender(self, canal: str, mensaje: dict) -> None:
         """Lo que escribes por chat: se entiende (comandos o Haiku) y se ejecuta."""
-        icono = {"telegram": "✈️", "oficina": "💻"}.get(canal, "📱")
+        icono = {"telegram": "✈️", "oficina": "💻", "director": "🎯"}.get(canal, "📱")
         with self.lock:
             self.log.append({"t": time.time(), "quien": "jefe", "texto": f"{icono} {mensaje['texto'] or '(' + str(mensaje['tipo']) + ')'}"})
             self._tocar()
         if not mensaje["texto"]:
             return self._responder(canal, "Por ahora solo entiendo mensajes de texto 🙂")
+        if canal in ("whatsapp", "telegram"):  # 📱 ¿con quién quieres hablar? (por defecto, con el director)
+            from agentes import director
+            crudo = mensaje["texto"].strip()
+            if crudo.lower().startswith("paola"):
+                mensaje = {**mensaje, "texto": crudo[5:].lstrip(" :,") or "ayuda"}  # «Paola, …» → con Paola
+            elif director.estado().get("con_quien", "director") == "director" or crudo.lower().startswith("director"):
+                with self.lock:
+                    if self.log and self.log[-1].get("quien") == "jefe":
+                        self.log.pop()  # el director lo anota con su icono
+                threading.Thread(target=self._al_director, args=(canal, mensaje), daemon=True).start()
+                return
         texto_jefe = self.BOTONES_FIJOS.get(mensaje["texto"].strip().lower(), mensaje["texto"])
         if texto_jefe == "ayuda":
             return self._responder(canal, chat_jefe.AYUDA, teclado=True)
@@ -2917,6 +2960,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"orden": e["orden"], "enfoque": e["enfoque"], "notas": e["notas"],
                                    "autonomo": e["autonomo"], "ordenes": e["ordenes"][-20:],
                                    "guias": e["guias"], "revisiones": e["revisiones"][-12:],
+                                   "chat": e["chat"][-40:], "pensando": e.get("pensando", 0), "memoria": e["memoria"][-20:],
+                                   "fallas": e["fallas"], "con_quien": e["con_quien"],
                                    "uso_ia": {**director._uso(), "tope": director.TOPE_DIA, "tope_rev": director.TOPE_REVISIONES, "puede": director.puede_gastar()},
                                    "informe": (e["informes"] or [None])[-1], "categorias": director.CATEGORIAS,
                                    "pendientes": director.pendientes(oficina), "ahora": time.time()})
@@ -3070,6 +3115,11 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json(r, 400 if "error" in r else 200)
             if ruta == "/api/director":  # 🎯 prioridades, enfoque, notas o pedir el informe ya
                 from agentes import director
+                if datos.get("mensaje"):  # 💬 el chat de su página: piensa en segundo plano, la página pregunta
+                    from agentes import director_chat
+                    threading.Thread(target=director_chat.contestar, args=(oficina, str(datos["mensaje"])[:2000], "pagina"),
+                                     daemon=True).start()
+                    return self._json({"ok": True})
                 if datos.get("informe"):
                     r = director.informe(oficina, forzar=True)
                     return self._json(r, 400 if r.get("error") and not r.get("resumen") else 200)

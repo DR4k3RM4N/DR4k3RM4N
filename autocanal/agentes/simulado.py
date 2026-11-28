@@ -126,6 +126,10 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
     props = schema["properties"]
     texto = contenido if isinstance(contenido, str) else json.dumps(contenido[-1], ensure_ascii=False)
     nombre = next((t for _, t, _ in APPS if t in texto), "esta app")
+    if "falla_codigo" in props and "recordar" in props:  # chat con el director
+        return {"respuesta": "Va, jefe. Revisé todo: ¿Quién MATÓ a… va en el paso de video y la sala está libre (demo).",
+                "ordenes": [{"orden": "paola", "motivo": "el jefe preguntó cómo van", "canal": "", "texto": "¿cómo van?"}],
+                "recordar": ["A Miguel le gusta que le conteste corto (demo)"], "falla_codigo": ""}
     if "atorado" in props and "guias" in props:  # informe del director
         return {"resumen": "Todo avanza; Quién MATÓ a… lleva buen ritmo (demo).", "atorado": [], "acciones": ["Seguir así"],
                 "ordenes": [{"orden": "leccion", "motivo": "los ganchos van largos", "canal": "",

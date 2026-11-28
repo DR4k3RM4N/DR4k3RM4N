@@ -361,6 +361,19 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   → `proponer_temas_quienmato` (1/12 h); canal fraudes/apps sin ideas ni videos → pedir_ideas (1/6 h); ideas
   esperando y piloto apagado → piloto_on (1/día). Plan: `uso_ia` por día, tope `DIRECTOR_LLAMADAS_DIA` (12) informes y
   `DIRECTOR_REVISIONES_DIA` (20) revisiones; si el plan está en pausa, modo ahorro (solo reglas gratis).
+- **💬 Chat con el director (28 nov)**: `agentes/director_chat.py`. `contestar(oficina, texto, canal)`: con el plan
+  conectado corre **Claude Code como agente** (Opus, effort high, `--max-turns 40`, cwd = repo) con herramientas de
+  SOLO LECTURA: Read/Grep/Glob + Bash limitado (journalctl, systemctl status, df, free, ps aux, ffprobe, git log…);
+  prohibido Edit/Write/Web y leer .env/tokens/llaves. Recibe una foto del estado (`_foto`: pendientes, caso actual
+  de Quién mató con bitácora, sala, log del edificio, errores, sus órdenes y revisiones) y la plática reciente.
+  Devuelve `ESQ_CHAT`: respuesta, ordenes (se ejecutan con `director.ejecutar`, quien="chat"), recordar (→
+  `director.json["memoria"]`, va en su prompt siempre) y falla_codigo (→ `fallas`, en la página con «Copiar» para
+  pasárselo a Claude Code). Sin plan: `json_estructurado` tarea director sin herramientas. Órdenes nuevas: `paola`
+  (→ `Oficina.delegar_paola`: corre `_atender("director")` y junta lo que contesta en `_buzones`), enfocar,
+  prioridades, rehacer_video_quienmato, apagar_quienmato. **WhatsApp/Telegram**: `director.json["con_quien"]`
+  ("director" por defecto | "paola", selector en /director); empezar con «Paola,» va directo con ella, con
+  «director» siempre al director. `_al_director` corre en hilo: manda «Va, jefe, déjame revisar…» y luego la respuesta
+  con prefijo «🎯 Director:». Página /director: chat (POST `{mensaje}` en segundo plano, `pensando`, sondeo cada 3 s).
 
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
