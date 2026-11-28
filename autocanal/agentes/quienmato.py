@@ -565,8 +565,54 @@ def paso_youtube(cid: str, c: dict) -> None:
         if fecha:
             e["fechas"].append(f"{fecha['fecha']} {fecha['hora']}")
         _guardar_estado(e)
-    _poner(cid, url=f"https://youtu.be/{vid}", programado=f"{fecha['fecha']} {fecha['hora']}" if fecha else "", hecho=time.time())
+    _poner(cid, url=_url(vid), programado=f"{fecha['fecha']} {fecha['hora']}" if fecha else "", hecho=time.time())
     _bitacora(cid, f"✔ Subido en PRIVADO" + (f", se publica solo el {fecha['fecha']} a las {fecha['hora']}" if fecha else ""))
+    _poner_miniatura(cid)
+
+
+def _url(vid: str) -> str:
+    """youtube.subir ya regresa el enlace completo; antes se guardaba doble (https://youtu.be/https://youtu.be/…)."""
+    vid = str(vid or "")
+    return vid[vid.rfind("https://"):] if vid.startswith("http") else f"https://youtu.be/{vid}"
+
+
+def _poner_miniatura(cid: str) -> bool:
+    """🖼️ Sube miniatura.jpg al video ya subido. Si falla, queda anotado y se reintenta después (no frena nada)."""
+    c = caso(cid)
+    mini = carpeta(cid) / "miniatura.jpg"
+    if not c or not c.get("url") or c.get("miniatura_puesta") or not mini.exists():
+        return bool(c and c.get("miniatura_puesta"))
+    if DEMO or "demo-" in c["url"]:
+        _poner(cid, miniatura_puesta=True, miniatura_error=None)
+        return True
+    from . import youtube
+    try:
+        youtube.poner_miniatura(c["url"], mini, canal=_canal().get("canal_youtube"))
+    except Exception as exc:  # noqa: BLE001
+        _poner(cid, miniatura_error=str(exc)[:300], miniatura_intento=time.time())
+        _bitacora(cid, f"⚠️ No se pudo poner la miniatura en YouTube: {str(exc)[:160]}")
+        return False
+    _poner(cid, miniatura_puesta=True, miniatura_error=None)
+    _bitacora(cid, "🖼️ Miniatura puesta en YouTube")
+    return True
+
+
+def poner_miniaturas_faltantes(forzar: bool = False) -> dict:
+    """Todos los casos ya subidos sin miniatura: se la pone (y arregla los enlaces que quedaron dobles).
+    Sin `forzar`, a los que fallaron solo los reintenta cada 6 h."""
+    bien, mal = [], {}
+    for cid in estado()["casos"]:
+        c = caso(cid)
+        if not c or not c.get("url"):
+            continue
+        if c["url"] != _url(c["url"]):
+            c = _poner(cid, url=_url(c["url"]))
+        if c.get("miniatura_puesta"):
+            continue
+        if not forzar and time.time() - (c.get("miniatura_intento") or 0) < 6 * 3600:
+            continue
+        (bien.append(c["marca"]) if _poner_miniatura(cid) else mal.__setitem__(c["marca"], (caso(cid).get("miniatura_error") or "")[:160]))
+    return {"puestas": bien, "fallaron": mal}
 
 
 def paso_revision(cid: str, c: dict) -> None:
@@ -665,6 +711,10 @@ def iniciar() -> None:
         time.sleep(15)
         _migrar_viejos()
         while True:
+            try:  # 🖼️ las miniaturas que no se subieron (se revisan cada vuelta; reintenta c/6 h las que fallan)
+                poner_miniaturas_faltantes()
+            except Exception as exc:  # noqa: BLE001
+                print(f"  · quién mató (miniaturas): {exc}", flush=True)
             try:
                 vuelta()
             except Exception as exc:  # noqa: BLE001

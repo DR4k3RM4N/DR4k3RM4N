@@ -51,6 +51,9 @@ if ! sudo -u "$USR" git -C "$REPO" fetch -q 2>>"$LOG"; then anota "No pude revis
 ACTUAL="$(sudo -u "$USR" git -C "$REPO" rev-parse HEAD)"
 NUEVA="$(sudo -u "$USR" git -C "$REPO" rev-parse '@{u}' 2>/dev/null || echo "$ACTUAL")"
 [ "$ACTUAL" = "$NUEVA" ] && exit 0
+# 🛡️ Una versión que ya no arrancó no se vuelve a instalar (espera a que llegue otra más nueva)
+MALA="$REPO/.version_mala"
+[ -f "$MALA" ] && [ "$(cat "$MALA")" = "$NUEVA" ] && exit 0
 
 # ¿Alguien está trabajando? Entonces espero a la siguiente vuelta (para no cortar un video a la mitad).
 ESPERA="$REPO/.autoactualizar_esperando"
@@ -75,6 +78,25 @@ rm -f "$ESPERA"
 
 anota "Versión nueva ($(sudo -u "$USR" git -C "$REPO" log -1 --format=%s '@{u}' | cut -c1-90)): actualizando…"
 if bash "$APP/despliegue/actualizar.sh" >> "$LOG" 2>&1; then
+  # 🛡️ ¿arrancó la oficina? Si en 90 s no contesta, regreso a la versión anterior (p. ej. un arreglo del director que salió mal)
+  vivo=""
+  if systemctl is-enabled --quiet oficina 2>/dev/null; then
+    for _ in $(seq 1 18); do
+      sleep 5
+      codigo="$(curl -s -o /dev/null -m 4 -w '%{http_code}' http://127.0.0.1:8765/ 2>/dev/null || true)"
+      if [ -n "$codigo" ] && [ "$codigo" != "000" ]; then vivo=1; break; fi
+    done
+  else
+    vivo=1
+  fi
+  if [ -z "$vivo" ]; then
+    anota "✖ La versión nueva no arrancó: regreso a la anterior ($(echo "$ACTUAL" | cut -c1-7))."
+    echo "$NUEVA" > "$MALA"; chown "$USR" "$MALA"
+    sudo -u "$USR" git -C "$REPO" reset -q --hard "$ACTUAL"
+    systemctl restart oficina 2>/dev/null
+    systemctl is-enabled --quiet sala 2>/dev/null && systemctl restart sala 2>/dev/null
+    exit 0
+  fi
   anota "✔ Actualizado a $(sudo -u "$USR" git -C "$REPO" rev-parse --short HEAD)."
   date '+%Y-%m-%d %H:%M' > "$REPO/.ultima_actualizacion"
   chown "$USR" "$REPO/.ultima_actualizacion"

@@ -374,6 +374,22 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   ("director" por defecto | "paola", selector en /director); empezar con «Paola,» va directo con ella, con
   «director» siempre al director. `_al_director` corre en hilo: manda «Va, jefe, déjame revisar…» y luego la respuesta
   con prefijo «🎯 Director:». Página /director: chat (POST `{mensaje}` en segundo plano, `pensando`, sondeo cada 3 s).
+- **🖼️ Miniaturas de Quién mató (28 nov)**: `youtube.subir` IGNORA su parámetro `miniatura` (canal.py la pone aparte).
+  `quienmato.paso_youtube` ahora llama `_poner_miniatura` (campos `miniatura_puesta`/`miniatura_error`/`miniatura_intento`)
+  y `poner_miniaturas_faltantes()` corre en cada vuelta del ciclo (reintenta c/6 h; orden del director
+  `miniaturas_quienmato` fuerza). `_url()` arregla los enlaces viejos guardados dobles (`https://youtu.be/https://…`).
+- **🛠️ Taller del director (28 nov)**: `agentes/director_taller.py`. Si el chat devuelve `falla_codigo` (u orden
+  `programar`) y `listo()` (GITHUB_TOKEN_DIRECTOR en .env vía `oficina.py --configurar-github` + plan): clona la rama en
+  `REPO/.taller` (gitignored), corre Claude Code Opus ahí con Edit/Write (Bash solo py_compile/node --check/git diff;
+  sin .env ni tokens; entorno sin claves `_env_ia`), esquema `ESQ_ARREGLO` (hecho, resumen, mensaje_commit, riesgo).
+  Luego el PROGRAMA revisa: archivos prohibidos (despliegue/, .github, .gitignore, .env, tokens), ≤12 archivos y ≤700
+  líneas, sin claves/correos (`SECRETO`), compila .py/.js, y arranca la copia en demo (`DEMO_SIN_EXTRAS=1`, SALA/TIENDA a
+  puerto muerto, env limpio) pidiendo `/`, `/api/director`, `/api/quienmato`. Commit como «Director de producción»,
+  rebase y push con el token por GIT_CONFIG_* (nunca en argv ni para la IA). Riesgo alto → `esperando_ok` (botón
+  «Aplicar» o orden `aplicar_arreglo`). `director.json["taller"]` guarda el estado. Al arrancar,
+  `revisar_instalacion()` avisa «instalado» o «regresado». `autoactualizar.sh`: tras actualizar, si 127.0.0.1:8765 no
+  contesta en 90 s → `git reset --hard` a la anterior, reinicia y anota `REPO/.version_mala` (esa versión no se
+  reinstala). `director_chat.avisar()` le escribe al jefe por el último canal que usó.
 
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".

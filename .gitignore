@@ -1,3 +1,5 @@
 .cola_video.lock
 # Local secrets written by `elevenlabs onboard`
 /.env
+.taller/
+.version_mala

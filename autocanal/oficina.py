@@ -2961,7 +2961,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                                    "autonomo": e["autonomo"], "ordenes": e["ordenes"][-20:],
                                    "guias": e["guias"], "revisiones": e["revisiones"][-12:],
                                    "chat": e["chat"][-40:], "pensando": e.get("pensando", 0), "memoria": e["memoria"][-20:],
-                                   "fallas": e["fallas"], "con_quien": e["con_quien"],
+                                   "fallas": e["fallas"], "con_quien": e["con_quien"], "taller": e.get("taller"),
+                                   "puede_programar": __import__("agentes.director_taller", fromlist=["x"]).listo(),
                                    "uso_ia": {**director._uso(), "tope": director.TOPE_DIA, "tope_rev": director.TOPE_REVISIONES, "puede": director.puede_gastar()},
                                    "informe": (e["informes"] or [None])[-1], "categorias": director.CATEGORIAS,
                                    "pendientes": director.pendientes(oficina), "ahora": time.time()})
@@ -3120,6 +3121,11 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                     threading.Thread(target=director_chat.contestar, args=(oficina, str(datos["mensaje"])[:2000], "pagina"),
                                      daemon=True).start()
                     return self._json({"ok": True})
+                if datos.get("aplicar_arreglo"):  # ✅ OK del jefe a un arreglo delicado
+                    from agentes import director_chat, director_taller
+                    threading.Thread(target=director_taller.aplicar_pendiente,
+                                     args=(oficina, lambda t: director_chat.avisar(oficina, t)), daemon=True).start()
+                    return self._json({"ok": True})
                 if datos.get("informe"):
                     r = director.informe(oficina, forzar=True)
                     return self._json(r, 400 if r.get("error") and not r.get("resumen") else 200)
@@ -3276,6 +3282,8 @@ def prender_tienda_demo() -> None:
     import subprocess
     import sys
 
+    if config.env("DEMO_SIN_EXTRAS"):  # 🛠️ la prueba del taller del director: solo la oficina
+        return
     for script, url, defecto in ((config.BASE.parent / "tiktokshop" / "tienda.py", TIENDA_URL, 8766),
                                  (config.BASE.parent / "salaedicion" / "sala.py", SALA_URL, 8767)):
         if not script.exists():
@@ -3368,6 +3376,7 @@ def main() -> None:
     p.add_argument("--probar-whatsapp", action="store_true", help="te manda un WhatsApp de prueba y sale")
     p.add_argument("--probar-wordpress", action="store_true", help="revisa la conexión con tu blog y sale")
     p.add_argument("--configurar-whatsapp", action="store_true", help="asistente para poner los datos de WhatsApp")
+    p.add_argument("--configurar-github", action="store_true", help="token de GitHub para que el director suba sus arreglos")
     p.add_argument("--configurar-tampico", action="store_true", help="conecta Facebook, Instagram y WhatsApp de Tampiqueando")
     p.add_argument("--configurar-suscripcion", action="store_true",
                    help="conecta tu plan de Claude (Pro/Max) para no gastar créditos de la API")
@@ -3383,6 +3392,9 @@ def main() -> None:
         return configurar_tampico()
     if a.configurar_telegram:
         return configurar_telegram()
+    if a.configurar_github:
+        from agentes import director_taller
+        return director_taller.configurar()
     if a.probar_whatsapp:
         return probar_whatsapp()
     if a.probar_wordpress:

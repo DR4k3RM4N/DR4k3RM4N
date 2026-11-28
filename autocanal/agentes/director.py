@@ -164,6 +164,10 @@ ORDENES = {
     "enfocar": "🎯 Enfocar todo en una categoría (canal: fraudes, expedientes, apps, personal, tiktok, tampico; vacío = quitar enfoque)",
     "prioridades": "🔢 Cambiar el orden de prioridades (texto: las categorías separadas por coma, de la más a la menos importante)",
     "rehacer_video_quienmato": "🎬 Volver a editar el video del caso actual de ¿Quién MATÓ a…?",
+    "miniaturas_quienmato": "🖼️ Poner en YouTube las miniaturas que falten de ¿Quién MATÓ a…? (y reintentar las que fallaron)",
+    "programar": "🛠️ Arreglar tú mismo un error del PROGRAMA (texto: el diagnóstico técnico completo: archivo, función, "
+                 "causa y arreglo). Lo programas en una copia, se prueba solo y se sube; se instala en 1-2 min",
+    "aplicar_arreglo": "✅ Subir el arreglo que esperaba el OK de Miguel (solo si Miguel dijo que sí)",
     "apagar_quienmato": "⏸️ Pausar ¿Quién MATÓ a…? (solo si Miguel lo pide)",
     "proponer_temas_quienmato": "🧾 Proponer temas nuevos para ¿Quién MATÓ a…? (cuando quedan pocos)",
     "leccion": "📚 Dejar una lección a un equipo del edificio (canal: id o vacío; texto: «agente: la lección»; agentes: productora, investigador, guionista, locutor, disenadora, editor, redactora, community, todos)",
@@ -291,6 +295,22 @@ def ejecutar(oficina, orden: str, motivo: str = "", canal: str = "", texto: str 
         elif orden == "rehacer_video_quienmato":
             quienmato.accion({"accion": "rehacer_video"})
             hecho = "mandé a volver a editar el video del caso actual"
+        elif orden == "miniaturas_quienmato":
+            r = quienmato.poner_miniaturas_faltantes(forzar=True)
+            hecho = (f"puse {len(r['puestas'])} miniatura(s)" + (f": {', '.join(r['puestas'])[:200]}" if r["puestas"] else "")
+                     + (f"; fallaron {len(r['fallaron'])}: {'; '.join(set(r['fallaron'].values()))[:200]}" if r["fallaron"] else ""))
+        elif orden == "programar":
+            from . import director_chat, director_taller
+            if not director_taller.listo():
+                return "no puedo programar: falta el token de GitHub (oficina.py --configurar-github) o el plan de Claude"
+            if director_taller.ocupado():
+                return "ya estoy programando otro arreglo"
+            threading.Thread(target=director_taller.programar, args=(oficina, texto, motivo,
+                             lambda t: director_chat.avisar(oficina, t)), daemon=True).start()
+            hecho = "me puse a programar el arreglo (te aviso cuando quede)"
+        elif orden == "aplicar_arreglo":
+            from . import director_chat, director_taller
+            hecho = director_taller.aplicar_pendiente(oficina, lambda t: director_chat.avisar(oficina, t))
         elif orden == "apagar_quienmato":
             quienmato.accion({"accion": "pausar"})
             hecho = "pausé ¿Quién MATÓ a…?"
@@ -425,7 +445,15 @@ def reglas(oficina) -> list[str]:
 def iniciar(oficina) -> None:
     """Un informe cada 4 horas (si hay plan); lo demás (prioridades y enfoque) actúa al momento."""
     def ciclo():
-        time.sleep(120)
+        time.sleep(60)
+        try:  # 🛠️ ¿ya quedó instalado el arreglo que programé? (o el servidor regresó a la versión anterior)
+            from . import director_chat, director_taller
+            aviso = director_taller.revisar_instalacion()
+            if aviso:
+                director_chat.avisar(oficina, aviso)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  · director (taller): {exc}", flush=True)
+        time.sleep(60)
         vueltas = 0
         while True:
             try:

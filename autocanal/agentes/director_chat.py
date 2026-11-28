@@ -101,19 +101,44 @@ def _sistema() -> str:
         "2. Arréglalo con tus ÓRDENES (se ejecutan al final, en orden). La orden «paola» le pasa una instrucción a Paola, "
         "la productora del edificio de YouTube, que puede aprobar/rechazar ideas, publicar, reintentar, reeditar o rehacer "
         "videos, borrar de YouTube (solo si Miguel lo pidió explícito), prender el piloto, corregir a un agente, etc.\n"
-        "3. Si es un error del PROGRAMA que no se arregla con órdenes, no prometas lo que no puedes: dile a Miguel en una "
-        "línea qué falla y llena «falla_codigo» con el diagnóstico técnico (archivo, función, causa, arreglo) para que se lo "
-        "pase a Claude Code. Tú no editas código.\n"
+        "3. Si es un error del PROGRAMA que no se arregla con órdenes: llena «falla_codigo» con el diagnóstico técnico "
+        "completo (archivos, funciones, causa exacta y el arreglo propuesto). Si puedes programar (ver abajo), el arreglo "
+        "lo haces tú en automático en una copia del código, se prueba solo y se instala en 1-2 min: díselo a Miguel así. "
+        "Si no puedes, dile que se lo pase a Claude Code. Aquí no editas archivos: eso pasa en tu taller.\n"
         "4. Nunca reveles claves, tokens ni contraseñas, ni le pidas a Miguel que te las pegue: van en el .env del servidor.\n"
         "5. Nada inventado: si no lo verificaste, dilo. Cuida su plan de Claude y su dinero.\n"
         "6. En «recordar» guarda lo que debas saber para siempre (sus gustos, decisiones, reglas nuevas).\n\n"
         "ÓRDENES DISPONIBLES:\n" + "\n".join(f"- {k}: {v}" for k, v in director.ORDENES.items())
         + f"\n\nLO QUE YA SABES DE MIGUEL (tu memoria):\n{memoria}\n\nSUS NOTAS EN TU PÁGINA:\n{notas}"
+        + "\n\n🛠️ TU TALLER: " + _taller_txt()
     )
+
+
+def _taller_txt() -> str:
+    from . import director_taller
+    t = director.estado().get("taller") or {}
+    base = ("PUEDES programar arreglos (token de GitHub y plan conectados)." if director_taller.listo() else
+            "NO puedes programar todavía: falta conectar GitHub (Miguel corre en el servidor `oficina.py --configurar-github`).")
+    return base + (f" Último arreglo: {t.get('estado')} · {t.get('resumen') or t.get('error') or ''}"[:400] if t else "")
 
 
 def _platica() -> str:
     return "\n".join(f"{'MIGUEL' if m['quien'] == 'jefe' else 'TÚ'}: {m['texto'][:600]}" for m in director.estado().get("chat", [])[-12:])
+
+
+def _env_ia() -> dict:
+    from . import director_taller
+    return director_taller._env_ia()  # sin ninguna clave de la oficina en su entorno
+
+
+def avisar(oficina, texto: str) -> None:
+    """El director te escribe solo (sin que le preguntes): en su chat y por donde platicaron la última vez."""
+    e = director.estado()
+    canal = next((m.get("canal") for m in reversed(e.get("chat", [])) if m.get("quien") == "jefe"), "")
+    e["chat"] = (e.get("chat", []) + [{"t": time.time(), "quien": "director", "texto": texto}])[-80:]
+    director._guardar(e)
+    if canal in ("whatsapp", "telegram"):
+        oficina._responder(canal, texto, director=True)
 
 
 def _agente(sistema: str, mensaje: str) -> dict:
@@ -124,7 +149,7 @@ def _agente(sistema: str, mensaje: str) -> dict:
          "--json-schema", json.dumps(ESQ_CHAT), "--system-prompt", sistema, "--max-turns", "40",
          "--tools", HERRAMIENTAS, "--allowedTools", *PERMITIDAS, "--disallowedTools", *PROHIBIDAS,
          "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence", "--setting-sources", "", "--", mensaje],
-        capture_output=True, text=True, cwd=str(REPO), env=claude._env_suscripcion(), timeout=900)
+        capture_output=True, text=True, cwd=str(REPO), env=_env_ia(), timeout=900)
     try:
         r = json.loads(p.stdout.strip().splitlines()[-1])
     except (json.JSONDecodeError, IndexError) as exc:
@@ -166,9 +191,16 @@ def contestar(oficina, texto: str, canal: str = "pagina") -> dict:
     if hechos:
         respuesta += "\n\n✅ Hice:\n" + "\n".join(f"• {h[:200]}" for h in hechos)
     if r.get("falla_codigo"):
+        from . import director_taller
         e.setdefault("fallas", []).append({"t": time.time(), "texto": r["falla_codigo"][:3000], "pedido": texto[:300]})
         e["fallas"] = e["fallas"][-20:]
-        respuesta += "\n\n🛠️ Es un error del programa: te dejé el diagnóstico en mi página (Director → Fallas para Claude Code)."
+        if director_taller.listo() and not director_taller.ocupado() and not any(o.get("orden") == "programar" for o in r.get("ordenes") or []):
+            threading.Thread(target=director_taller.programar, args=(oficina, r["falla_codigo"], texto, lambda t: avisar(oficina, t)),
+                             daemon=True).start()
+            respuesta += "\n\n🛠️ Es un error del programa: ya me puse a programar el arreglo. Te aviso cuando quede instalado."
+        elif not director_taller.listo():
+            respuesta += ("\n\n🛠️ Es un error del programa. Te dejé el diagnóstico en mi página. Si conectas GitHub "
+                          "(oficina.py --configurar-github), la próxima vez lo arreglo yo solo.")
     e["chat"] = (e.get("chat", []) + [{"t": time.time(), "quien": "director", "texto": respuesta}])[-80:]
     e["pensando"] = 0
     director._guardar(e)

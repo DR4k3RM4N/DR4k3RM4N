@@ -82,8 +82,10 @@
       <button class="principal" type="submit">Enviar</button></form>
   </section>
   <section class="tarjeta" aria-labelledby="t-fallas" id="caja-fallas" hidden>
-    <h2 id="t-fallas">🛠️ Fallas del programa (pásaselas a Claude Code)</h2>
-    <p class="pista">Lo que el director no puede arreglar con órdenes porque es del código. Copia el texto y pégaselo a Claude Code.</p>
+    <h2 id="t-fallas">🛠️ Su taller: errores del programa</h2>
+    <p class="pista" id="taller-txt"></p>
+    <div id="taller"></div>
+    <p class="pista">Diagnósticos que hizo. Si algo no lo pudo arreglar solo, «Copiar» y pégaselo a Claude Code.</p>
     <ul class="notas" id="fallas"></ul>
   </section>
   <div class="dos">
@@ -167,7 +169,15 @@
     if (abajo) caja.scrollTop = caja.scrollHeight;
     $("#pensando").hidden = !(d.pensando && d.ahora - d.pensando < 1200);
     if (document.activeElement?.id !== "con-quien") $("#con-quien").value = d.con_quien || "director";
-    $("#caja-fallas").hidden = !(d.fallas || []).length;
+    const t = d.taller || {};
+    $("#caja-fallas").hidden = !(d.fallas || []).length && !d.taller;
+    $("#taller-txt").textContent = d.puede_programar ? "Cuando encuentra un error del código, lo arregla él solo: lo programa en una copia, lo prueba y lo sube (se instala en 1-2 min; si algo sale mal, el servidor regresa solo a la versión anterior)."
+      : "Todavía no puede programar sus arreglos: falta conectar GitHub en el servidor (oficina.py --configurar-github). Mientras, solo deja el diagnóstico.";
+    const ESTADOS = { programando: "⏳ Programando el arreglo…", probando: "🧪 Probándolo…", subiendo: "⬆️ Subiéndolo…", subido: "⬆️ Subido: se instala en 1-2 min",
+      instalado: "✅ Instalado", esperando_ok: "✋ Listo y probado: espera tu OK", error: "❌ No salió", no_se_pudo: "🤔 No se atrevió a cambiarlo solo", regresado: "↩️ No arrancó: se regresó a la versión anterior" };
+    $("#taller").innerHTML = d.taller ? `<div class="pcaja"><b>${esc(ESTADOS[t.estado] || t.estado)} <span class="pista">· ${hora(t.mov || t.inicio)}</span></b>
+      ${t.resumen ? `<span>${esc(t.resumen)}</span>` : ""}${t.error ? `<span class="pista">${esc(t.error)}</span>` : ""}
+      ${t.estado === "esperando_ok" ? `<div><button class="principal" type="button" id="aplicar">✅ Aplicar arreglo</button></div>` : ""}</div>` : "";
     $("#fallas").innerHTML = (d.fallas || []).map((f, i) => `<li class="falla"><span>${hora(f.t)} · cuando pediste: «${esc(f.pedido)}»<pre>${esc(f.texto)}</pre></span>
       <span class="fila" style="align-items:flex-start"><button type="button" data-copiar="${i}">Copiar</button><button type="button" data-quitar-falla="${i}" aria-label="Quitar">✕</button></span></li>`).join("");
     const g = d.guias || {};
@@ -199,6 +209,7 @@
         await navigator.clipboard.writeText(`Falla que encontró el director de producción (cuando Miguel pidió: «${f.pedido}»):\n\n${f.texto}`);
         b.textContent = "¡Copiado!"; setTimeout(() => { b.textContent = "Copiar"; }, 1500); return;
       }
+      if (b.id === "aplicar") { b.disabled = true; await api({ aplicar_arreglo: true }); return cargar(); }
       if (b.id === "pedir") {
         b.disabled = true; b.textContent = "Revisando… (1 min)";
         await api({ informe: true }); avisar(""); await cargar();
