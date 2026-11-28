@@ -224,7 +224,8 @@ def editar_auto(mesa: Path, m: dict, avance, log) -> Path | None:
     _, borrador = preparar(mesa, m)
     total = sum(e["duracion"] for e in borrador["escenas"])
     # 🐑 Cuida Tu Lana tiene su estilo (cel + recortes); los demás canales, el director «Pro»
-    edu = (estilo_lana if m.get("estilo_edicion") == "lana" else estilo_pro).armar(mesa, m, borrador)
+    import estilo_noir
+    edu = {"lana": estilo_lana, "noir": estilo_noir}.get(m.get("estilo_edicion"), estilo_pro).armar(mesa, m, borrador)
     (mesa / "edu.json").write_text(json.dumps(edu, ensure_ascii=False, indent=1), encoding="utf-8")
     avance("🎬 Armando la edición con el estilo del canal", 0.1)
     entorno = {**__import__("os").environ, "SALA_EDITOR_DIR": str(mesa)}

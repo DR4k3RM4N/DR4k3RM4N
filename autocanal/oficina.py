@@ -162,8 +162,8 @@ class Oficina:
         self.tamp_agentes: dict[str, dict] = {}  # 🌮 quién del equipo de Tampiqueando trabaja y qué dice
         expedientes.al_cambiar = self._tocar  # 🕵️ Expedientes: la pantalla se actualiza cuando trabaja su equipo
         expedientes.al_avisar = self._aviso_expediente
-        from agentes import expedientes_fabrica
-        expedientes_fabrica.iniciar()  # 🏭 la fábrica de expedientes: una vuelta cada minuto
+        from agentes import quienmato
+        quienmato.iniciar()  # 🕵️ la oficina nueva de ¿Quién MATÓ a…? (la fábrica vieja ya no arranca)
         from agentes import director
         director.iniciar(self)  # 🎯 el director de producción: prioridades, enfoque e informe
         threading.Thread(target=self._ambiente, daemon=True).start()
@@ -1733,12 +1733,15 @@ class Oficina:
                          "etapa": p.get("etapa"), "error": p.get("error"), "etapas": p.get("etapas") or {}}
                         for p in sorted(self.proyectos.values(), key=lambda p: -p["creado"])
                         if p["estado"] in ("produccion", "publicando") or (p["estado"] == "error" and p.get("etapa") == "video")][:20]
-        try:
-            r = fb.resumen()
-            exp = [c for c in r.get("casos") or [] if c["id"] in (r.get("en_marcha_todos") or [])]
-            exp_info = {"casos": [{k: c.get(k) for k in ("id", "numero", "marca", "paso", "render_paso", "render_avance", "error",
-                                                          "t_mov", "pasos")} for c in exp],
-                        "tema": (r.get("estado") or {}).get("en_curso"), "activa": (r.get("estado") or {}).get("activa")}
+        try:  # 🕵️ la oficina nueva de ¿Quién MATÓ a…?
+            from agentes import quienmato
+            r = quienmato.resumen()
+            exp = [c for c in r["casos"] if c["id"] == r.get("actual")]
+            exp_info = {"casos": [{"id": c["id"], "numero": c["numero"], "marca": c["marca"], "paso": c["paso"],
+                                   "render_paso": next((p.get("detalle") or p.get("error") for p in c["pasos"] if p["clave"] == c["paso"]), ""),
+                                   "render_avance": next((p.get("avance") for p in c["pasos"] if p["clave"] == "video" and c["paso"] == "video"), None),
+                                   "error": next((p.get("error") for p in c["pasos"] if p["estado"] == "error"), None), "t_mov": c.get("mov")}
+                                  for c in exp], "tema": None, "activa": r["activa"]}
         except Exception as exc:  # noqa: BLE001
             exp_info = {"casos": [], "error": str(exc)[:200]}
         return {"sala": sala, "edificio": edificio, "expedientes": exp_info, "ahora": time.time(),
@@ -1773,8 +1776,9 @@ class Oficina:
         from agentes import expedientes_fabrica as fb
         hechos = []
         try:
-            r = fb.continuar()
-            hechos.append(f"Expedientes: reintento {r.get('reintentos', 0)} caso(s) y reviso los que van en video")
+            from agentes import quienmato
+            quienmato.continuar()
+            hechos.append("¿Quién MATÓ a…?: sigo desde el paso que iba")
         except Exception as exc:  # noqa: BLE001
             hechos.append(f"Expedientes falló: {str(exc)[:120]}")
         for p in list(self.proyectos.values()):
@@ -1793,7 +1797,9 @@ class Oficina:
         except (requests.RequestException, ValueError) as exc:
             hechos.append(f"La sala no contestó ({exc})")
         try:
-            hechos += [f"Expedientes: {x}" for x in fb.reinicio_forzoso().get("hechos") or []]
+            from agentes import quienmato
+            quienmato.continuar()
+            hechos.append("¿Quién MATÓ a…?: retomo el caso desde el paso que iba")
         except Exception as exc:  # noqa: BLE001
             hechos.append(f"Expedientes falló: {str(exc)[:120]}")
         for p in list(self.proyectos.values()):
@@ -2893,12 +2899,23 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 self.end_headers()
                 self.wfile.write(cuerpo)
                 return
+            if ruta in ("/quienmato", "/quienmato/"):  # 🕵️ la oficina nueva de ¿Quién MATÓ a…?
+                return self._archivo(WEB / "quienmato.html", WEB)
+            if ruta == "/api/quienmato":
+                from agentes import quienmato
+                return self._json(quienmato.resumen())
+            if ruta.startswith("/quienmato-archivo/"):
+                from agentes import quienmato
+                partes = ruta.split("/")
+                p = quienmato.archivo(partes[2], partes[3]) if len(partes) == 4 else None
+                return self._archivo(p, quienmato.CARPETA) if p else self._json({"error": "no encontrado"}, 404)
             if ruta in ("/director", "/director/"):  # 🎯 el director de producción
                 return self._archivo(WEB / "director.html", WEB)
             if ruta == "/api/director":
                 from agentes import director
                 e = director.estado()
                 return self._json({"orden": e["orden"], "enfoque": e["enfoque"], "notas": e["notas"],
+                                   "autonomo": e["autonomo"], "ordenes": e["ordenes"][-20:],
                                    "informe": (e["informes"] or [None])[-1], "categorias": director.CATEGORIAS,
                                    "pendientes": director.pendientes(oficina), "ahora": time.time()})
             if ruta in ("/tampico", "/tampico/"):  # 🌮 Tampiqueando en su propia página
@@ -3045,6 +3062,10 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 return self._json({"ajustes": estilo.ajustar(datos)})
             if ruta == "/api/edicion/ajustes":  # ⚡ usar todas las compus + servidor, cerebro de edición
                 return self._json(oficina.edicion_ajustes(datos))
+            if ruta == "/api/quienmato":  # 🕵️ prender/pausar, reintentar paso, rehacer video, saltar
+                from agentes import quienmato
+                r = quienmato.accion(datos)
+                return self._json(r, 400 if "error" in r else 200)
             if ruta == "/api/director":  # 🎯 prioridades, enfoque, notas o pedir el informe ya
                 from agentes import director
                 if datos.get("informe"):

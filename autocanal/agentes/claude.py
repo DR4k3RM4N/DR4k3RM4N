@@ -57,7 +57,7 @@ TAREAS = {
     "chat_exp": ("claude-haiku-5-5", "low"),            # el chat del expediente
     "fabrica_guion": ("claude-opus-5-5", "medium"),     # 🏭 escribir el guion (lo único creativo: Opus, sin pensar de más)
     "fabrica_exp": ("claude-sonnet-5-5", "low"),       # 🏭 investigar y el chat (Sonnet ligero)
-    "director": ("claude-sonnet-5-5", "low"),        # 🎯 el informe del director de producción (plan)
+    "director": ("claude-opus-5-5", "medium"),       # 🎯 el director de producción: el mejor cerebro (plan)
 }
 
 # Precios en USD por millón de tokens: (entrada, salida). Haiku cambia de tarifa arriba de 100K de entrada.
@@ -83,7 +83,7 @@ TAREAS_SUSCRIPCION = {
     "estilo": "sonnet", "leer_web": "haiku", "whatsapp": "sonnet", "miniatura": "haiku",
     # oficina de TikTok Shop y sala de edición
     "prueba": "sonnet", "miniatura_ia": "sonnet", "miniatura_dibujo": "sonnet", "ficha_shop": "opus", "guion_shop": "opus", "tomas_shop": "opus", "sala": "sonnet", "sala_aprender": "haiku",
-    "robot": "sonnet", "verificar_exp": "sonnet", "chat_exp": "sonnet", "fabrica_guion": "opus", "fabrica_exp": "sonnet", "director": "sonnet",
+    "robot": "sonnet", "verificar_exp": "sonnet", "chat_exp": "sonnet", "fabrica_guion": "opus", "fabrica_exp": "sonnet", "director": "opus",
 }
 LIMITE_PALABRAS = ("usage limit", "rate limit", "limit reached", "out of extra usage", "5-hour", "weekly limit")
 _suscripcion_pausada_hasta = 0.0  # si se acabó el límite del plan, se usa la API un rato

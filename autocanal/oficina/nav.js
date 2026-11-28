@@ -11,7 +11,7 @@
     { url: "/", ico: "🏢", nombre: "Edificio", sub: "YouTube y tu despacho" },
     { url: "/director", ico: "🎯", nombre: "Director", sub: "Prioridades, enfoque e informe" },
     { url: "/edicion", ico: "🎬", nombre: "Sala central", sub: "Edición: compus y servidor" },
-    { url: "/expedientes", ico: "🕵️", nombre: "Expedientes", sub: "¿Quién MATÓ a…?" },
+    { url: "/quienmato", ico: "🕵️", nombre: "Quién mató", sub: "¿Quién MATÓ a…? (oficina nueva)" },
     { url: "/tiktok-shop", ico: "🛒", nombre: "TikTok Shop", sub: "Guiones y tomas" },
     { url: "/tampico", ico: "🌮", nombre: "Tampiqueando", sub: "Foodie de Tampico" },
   ];

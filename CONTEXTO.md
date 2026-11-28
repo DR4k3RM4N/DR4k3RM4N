@@ -335,6 +335,23 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   enfoque es otro. Informe con IA cada 4 h (tarea "director": Sonnet por el plan, SOLO_PLAN) con resumen, atorado y
   acciones; «Revisar ahora» lo pide ya. Probado: sala toma Lana y Expedientes antes que TikTok; con enfoque, solo ese.
 
+- **🕵️ OFICINA NUEVA de ¿Quién MATÓ a…? (28 nov, reemplaza a la fábrica)**: `agentes/quienmato.py` + `/quienmato`
+  (menú «Quién mató»). La fábrica vieja (`expedientes_fabrica`) ya NO arranca (solo se reusan sus funciones:
+  investigar, escribir_guion, buscar_material, temas, agenda). Datos en `salida/quienmato/<NNN-marca>/` (la sala puede
+  leer). Un caso a la vez, 7 pasos en línea recta con archivo por paso (se retoma desde el último): investigacion.json
+  (Sonnet) → guion.json (Opus) → voz/escena_XX.mp3 + .palabras.json (Azure REST en el servidor, es-MX-JorgeNeural +12 %,
+  tope 480 mil/mes, tiempos estimados) → material.json (fotos) → video.mp4 (trabajo de sala `edu_estilo` con
+  `estilo_edicion="noir"` → `salaedicion/estilo_noir.py` con el kit Remotion; si nadie lo toma en 5 min, se traba 25
+  min o falla → `_render_servidor` con ffmpeg) → miniatura.jpg (PIL) → YouTube privado con fecha libre de la agenda
+  (`estado.fechas`). Error → reintento solo a los 10 min (máx. 3), luego espera «Reintentar paso». Bitácora por caso.
+  Migración única: casos viejos con guion (Kodak, Circuit City) pasan aquí con su investigación y guion; sus renders
+  viejos se cancelan. La sala central, «Continuar» y el director ya usan esta oficina.
+- **🎯 Director con luz verde**: `autonomo` (por defecto sí). Cada 10 min `reglas()` (gratis): reintenta el paso de
+  Quién mató si agotó 3 intentos y «Continuar» si hay videos del edificio con error (máx. 1 vez/h c/u). Cada 3 h el
+  cerebro (tarea "director" = Opus, plan) da informe + `ordenes` de una lista segura (`ORDENES`: continuar_todo,
+  reinicio_forzoso, reintentar/saltar(>6 h)/prender quienmato, piloto_on, pedir_ideas) que `ejecutar()` hace y anota en
+  `ordenes`; avisa al jefe. Página: interruptor 🟢 y bitácora de órdenes.
+
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".
   Causas reales: la contraseña de aplicación vieja ya no era válida y otro plugin del blog revisaba al usuario antes

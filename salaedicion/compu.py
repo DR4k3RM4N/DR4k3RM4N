@@ -846,7 +846,7 @@ def editar_edu(of: "Oficina", t: dict, temporal: Path, avance, con_claude: bool 
     listo_motion = ESTADO_MOTION["texto"] == "listo"
     estilo = m.get("estilo_edicion")
     # 🧠 Claude dirige mientras haya plan (puliendo la base del director); si el plan se acaba, entra el director
-    quiere_claude = (m.get("cerebro") in ("hibrido", "claude") or (con_claude and not m.get("cerebro"))) and estilo != "lana"
+    quiere_claude = (m.get("cerebro") in ("hibrido", "claude") or (con_claude and not m.get("cerebro"))) and estilo not in ("lana", "noir")
     if quiere_claude and claude_code() and listo_motion and not plan_pausado():
         import editor_youtube
         final = editor_youtube.editar(mesa, m, claude_code(), avance, log)
@@ -857,12 +857,16 @@ def editar_edu(of: "Oficina", t: dict, temporal: Path, avance, con_claude: bool 
             avance("Se acabó tu plan de Claude: edita el director automático", 0.5)
         else:
             avance("Claude no terminó: edita el director automático", 0.5)
-    if estilo in ("lana", "pro") and listo_motion:  # 🎬 director automático: no gasta plan
+    if estilo in ("lana", "pro", "noir") and listo_motion:  # 🎬 director automático: no gasta plan
         import editor_youtube
         final = editor_youtube.editar_auto(mesa, m, avance, log)
         if final:
             return entregar(final, "director", f"Edité «{t.get('etiqueta')}» con el director automático.")
+        if estilo == "noir":  # ¿Quién MATÓ a…? no tiene plantilla: se avisa y su oficina lo hace en el servidor
+            raise RuntimeError("El kit de animación no pudo con este video (revisa compu.log)")
         avance("El director no pudo: lo edito con la plantilla", 0.5)
+    elif estilo == "noir":
+        raise RuntimeError("Esta compu no tiene el kit de animación listo")
     entorno = {**os.environ, "AUTOCANAL_ESTILO": str(mesa / "estilo"), "AUTOCANAL_SIN_COLA": "1",
                "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
     proceso = subprocess.Popen([sys.executable, "-m", "agentes.edicion_remota", str(mesa)], cwd=str(REPO / "autocanal"),

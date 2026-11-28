@@ -36,6 +36,8 @@ def estado() -> dict:
     e.setdefault("enfoque", None)
     e.setdefault("notas", [])
     e.setdefault("informes", [])
+    e.setdefault("autonomo", True)   # 🟢 luz verde: el director ejecuta sus órdenes él solo
+    e.setdefault("ordenes", [])      # bitácora de lo que ordenó y ejecutó
     return e
 
 
@@ -56,6 +58,8 @@ def ajustar(d: dict) -> dict:
         e["enfoque"] = d["enfoque"] if d["enfoque"] in CATEGORIAS else None
     if d.get("nota"):
         e["notas"] = (e["notas"] + [{"t": time.time(), "texto": str(d["nota"])[:400]}])[-30:]
+    if "autonomo" in d:
+        e["autonomo"] = bool(d["autonomo"])
     if d.get("quitar_nota") is not None:
         e["notas"] = [n for i, n in enumerate(e["notas"]) if i != int(d["quitar_nota"])]
     _guardar(e)
@@ -82,7 +86,7 @@ def rango(categoria: str) -> int:
 # ---------------------------------------------------------------- lo que hay pendiente en cada oficina
 def pendientes(oficina) -> dict:
     """Conteos por categoría: lo que espera, lo que se está haciendo y lo que tiene problema."""
-    from . import canales, expedientes_fabrica
+    from . import canales  # noqa: F401
     p = {c: {"produccion": 0, "revision": 0, "error": 0, "ideas": 0, "detalle": []} for c in CATEGORIAS}
     with oficina.lock:
         proyectos = list(oficina.proyectos.values())
@@ -97,13 +101,15 @@ def pendientes(oficina) -> dict:
     for i in ideas:
         if i.get("estado") == "pendiente":
             p[categoria_canal(i.get("canal"))]["ideas"] += 1
-    try:
-        r = expedientes_fabrica.resumen()
-        for c in r.get("casos") or []:
-            if c["id"] in (r.get("en_marcha_todos") or []):
-                k = "error" if c.get("error") else "revision" if c.get("paso") == "revision" else "produccion"
-                p["expedientes"][k] += 1
-                p["expedientes"]["detalle"].append(f"#{c.get('numero')} {c.get('marca')}: {c.get('error') or c.get('render_paso') or c.get('paso')}"[:140])
+    try:  # 🕵️ la oficina nueva
+        from . import quienmato
+        r = quienmato.resumen()
+        for c in r["casos"]:
+            if c.get("hecho") or c.get("saltado"):
+                continue
+            err = next((x.get("error") for x in c["pasos"] if x["estado"] == "error"), None)
+            p["expedientes"]["error" if err else "produccion"] += 1
+            p["expedientes"]["detalle"].append(f"#{c.get('numero')} {c.get('marca')}: {err or c.get('paso')}"[:140])
         p["expedientes"]["ideas"] = sum(1 for t in r.get("temas") or [] if t.get("estado") == "pendiente")
     except Exception:  # noqa: BLE001
         pass
@@ -132,16 +138,73 @@ def pendientes(oficina) -> dict:
 
 
 # ---------------------------------------------------------------- 🧠 el informe (cada pocas horas, con tu plan)
-ESQ = {"type": "object", "additionalProperties": False, "required": ["resumen", "atorado", "acciones"],
+ORDENES = {
+    "continuar_todo": "▶ Continuar: reintentar todo lo que falló (sala, Quién mató, edificio)",
+    "reinicio_forzoso": "🔄 Reinicio forzoso de la sala (suelta lo trabado y lo vuelve a mandar)",
+    "reintentar_quienmato": "▶ Reintentar el paso que va en ¿Quién MATÓ a…?",
+    "saltar_quienmato": "⏭ Saltar el caso de ¿Quién MATÓ a…? (solo si lleva más de 6 h atorado)",
+    "prender_quienmato": "▶ Prender la oficina de ¿Quién MATÓ a…?",
+    "piloto_on": "🚀 Prender el piloto automático del edificio",
+    "pedir_ideas": "💡 Pedir ideas nuevas para un canal (canal: fraudes o apps; texto: tema opcional)",
+}
+ESQ = {"type": "object", "additionalProperties": False, "required": ["resumen", "atorado", "acciones", "ordenes"],
        "properties": {"resumen": {"type": "string"},
                       "atorado": {"type": "array", "items": {"type": "string"}},
-                      "acciones": {"type": "array", "items": {"type": "string"}}}}
+                      "acciones": {"type": "array", "items": {"type": "string"}},
+                      "ordenes": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                  "required": ["orden", "motivo", "canal", "texto"],
+                                  "properties": {"orden": {"type": "string", "enum": list(ORDENES)}, "motivo": {"type": "string"},
+                                                 "canal": {"type": "string"}, "texto": {"type": "string"}}}}}}
+
+
+def _anotar(e: dict, texto: str, quien: str = "reglas") -> None:
+    e["ordenes"] = (e["ordenes"] + [{"t": time.time(), "texto": texto[:300], "quien": quien}])[-80:]
+
+
+def ejecutar(oficina, orden: str, motivo: str = "", canal: str = "", texto: str = "", quien: str = "cerebro") -> str:
+    """Hace una orden de la lista segura. Regresa qué pasó (para la bitácora)."""
+    from . import quienmato
+    try:
+        if orden == "continuar_todo":
+            hecho = "; ".join(oficina.edicion_continuar().get("hechos") or [])
+        elif orden == "reinicio_forzoso":
+            hecho = "; ".join(oficina.edicion_reinicio().get("hechos") or [])
+        elif orden == "reintentar_quienmato":
+            quienmato.accion({"accion": "reintentar"})
+            hecho = "reintenté el paso de ¿Quién MATÓ a…?"
+        elif orden == "saltar_quienmato":
+            c = quienmato.caso(quienmato._caso_actual() or "")
+            if not c or time.time() - (c.get("mov") or time.time()) < 6 * 3600:
+                return "no salté el caso: no lleva 6 h atorado"
+            quienmato.accion({"accion": "saltar"})
+            hecho = f"salté #{c.get('numero')} {c.get('marca')}"
+        elif orden == "prender_quienmato":
+            quienmato.accion({"accion": "prender"})
+            hecho = "prendí ¿Quién MATÓ a…?"
+        elif orden == "piloto_on":
+            with oficina.lock:
+                oficina.piloto = True
+                oficina._tocar()
+            hecho = "prendí el piloto automático"
+        elif orden == "pedir_ideas":
+            from . import canales
+            cid = next((c["id"] for c in canales.lista() if c.get("nicho") == "fraudes"), "") if canal == "fraudes" else ""
+            oficina.pedir_ideas(texto[:200], cid)
+            hecho = f"pedí ideas{' para Cuida Tu Lana' if cid else ''}{f': {texto[:60]}' if texto else ''}"
+        else:
+            return "orden desconocida"
+    except Exception as exc:  # noqa: BLE001
+        hecho = f"no se pudo ({str(exc)[:120]})"
+    e = estado()
+    _anotar(e, f"{ORDENES.get(orden, orden).split(':')[0]} → {hecho}" + (f" · porque {motivo[:140]}" if motivo else ""), quien)
+    _guardar(e)
+    return hecho
 
 
 def informe(oficina, forzar: bool = False) -> dict:
     e = estado()
     ultimo = (e["informes"] or [{}])[-1]
-    if not forzar and time.time() - ultimo.get("t", 0) < 4 * 3600:
+    if not forzar and time.time() - ultimo.get("t", 0) < 3 * 3600 - 300:
         return ultimo
     p = pendientes(oficina)
     orden = [f"{i + 1}. {CATEGORIAS[c]}" for i, c in enumerate(e["orden"])]
@@ -149,7 +212,9 @@ def informe(oficina, forzar: bool = False) -> dict:
              f"PENDIENTES (por categoría):\n{json.dumps(p, ensure_ascii=False)[:6000]}\n\n"
              "NOTAS Y CORRECCIONES DEL JEFE (aprende de ellas):\n" + ("\n".join(f"- {n['texto']}" for n in e["notas"][-15:]) or "(ninguna)")
              + "\n\nINFORMES ANTERIORES (no repitas lo mismo si ya se resolvió):\n"
-             + "\n".join(f"- {i.get('resumen', '')[:200]}" for i in e["informes"][-3:]))
+             + "\n".join(f"- {i.get('resumen', '')[:200]}" for i in e["informes"][-3:])
+             + "\n\nÓRDENES RECIENTES (las tuyas y las automáticas):\n"
+             + "\n".join(f"- hace {int((time.time() - o['t']) / 60)} min: {o['texto'][:160]}" for o in e["ordenes"][-10:]))
     try:
         r = claude.json_estructurado(
             "Eres el director de producción de Miguel (México): coordinas sus oficinas de video (canales de YouTube, "
@@ -157,25 +222,64 @@ def informe(oficina, forzar: bool = False) -> dict:
             "México, breve y directo: «resumen» (2-3 frases: cómo va todo, siguiendo SU orden de prioridades), «atorado» "
             "(lo que lleva problema o espera algo de él, lo más importante primero, máx. 5) y «acciones» (máx. 4 cosas "
             "concretas que él puede hacer HOY, con el nombre del botón o la página: «▶ Continuar» en la Sala central, "
-            "«🔄 Reinicio forzoso», revisar un video en Proyectos, etc.). Nada inventado: solo lo que viene en los datos.",
+            "«🔄 Reinicio forzoso», revisar un video en Proyectos, etc.). Nada inventado: solo lo que viene en los datos. "
+            "TIENES LUZ VERDE para dar «ordenes» (de la lista) que se ejecutan solas: úsalas cuando de verdad destraben o "
+            "adelanten trabajo siguiendo SUS prioridades (algo con error o quieto → continuar_todo; la sala trabada → "
+            "reinicio_forzoso; un canal prioritario sin ideas ni videos en marcha → pedir_ideas con su canal). No repitas una "
+            "orden que ya se dio hace menos de 1 h si no cambió nada (mira ÓRDENES RECIENTES). Si todo fluye, «ordenes» vacío.\n"
+            "ÓRDENES DISPONIBLES:\n" + "\n".join(f"- {k}: {v}" for k, v in ORDENES.items()),
             texto, ESQ, tarea="director", que="informe del director de producción")
     except Exception as exc:  # noqa: BLE001 — sin plan ahorita: el informe espera
         return {**ultimo, "error": str(exc)[:200]}
-    nuevo = {"t": time.time(), **r}
+    nuevo = {"t": time.time(), **{k: v for k, v in r.items() if k != "ordenes"}}
     e["informes"] = (e["informes"] + [nuevo])[-20:]
     _guardar(e)
+    hechas = []
+    if e.get("autonomo", True):  # 🟢 luz verde: el director ejecuta lo que ordenó
+        for o in (r.get("ordenes") or [])[:4]:
+            hechas.append(f"{ORDENES[o['orden']].split(':')[0]} → {ejecutar(oficina, o['orden'], o.get('motivo', ''), o.get('canal', ''), o.get('texto', ''))}")
+    if hechas and hasattr(oficina, "avisar_jefe"):
+        oficina.avisar_jefe("🎯 Director: " + " · ".join(hechas)[:600])
+    nuevo["ordenes_hechas"] = hechas
     return nuevo
+
+
+def reglas(oficina) -> list[str]:
+    """Cada 10 min, sin gastar plan: lo obvio se destraba solo (con luz verde)."""
+    from . import quienmato
+    e = estado()
+    if not e.get("autonomo", True):
+        return []
+    hechas = []
+
+    def reciente(clave: str) -> bool:
+        return any(clave in o["texto"] and time.time() - o["t"] < 3600 for o in e["ordenes"])
+    cid = quienmato._caso_actual()  # ¿Quién MATÓ a…?: un paso agotó sus 3 intentos → otra ronda (máx. 1 por hora)
+    if cid:
+        c = quienmato.caso(cid)
+        if any(p.get("estado") == "error" and (p.get("intentos") or 0) >= 3 for p in (c.get("pasos") or {}).values()) \
+                and not reciente("Reintentar el paso"):
+            hechas.append(ejecutar(oficina, "reintentar_quienmato", "un paso agotó sus 3 intentos", quien="reglas"))
+    with oficina.lock:  # edificio: videos con error → continuar (máx. 1 por hora)
+        errores = [p for p in oficina.proyectos.values() if p["estado"] == "error"]
+    if errores and not reciente("Continuar"):
+        hechas.append(ejecutar(oficina, "continuar_todo", f"{len(errores)} video(s) del edificio con error", quien="reglas"))
+    return hechas
 
 
 def iniciar(oficina) -> None:
     """Un informe cada 4 horas (si hay plan); lo demás (prioridades y enfoque) actúa al momento."""
     def ciclo():
         time.sleep(120)
+        vueltas = 0
         while True:
             try:
                 if not oficina.demo:
-                    informe(oficina)
+                    reglas(oficina)          # cada 10 min, gratis
+                    if vueltas % 18 == 0:    # cada 3 h, el cerebro (Opus, tu plan)
+                        informe(oficina)
             except Exception as exc:  # noqa: BLE001
                 print(f"  · director: {exc}", flush=True)
-            time.sleep(1800)
+            vueltas += 1
+            time.sleep(600)
     threading.Thread(target=ciclo, daemon=True).start()

@@ -77,8 +77,11 @@
     </section>
     <section class="tarjeta informe" aria-labelledby="t-inf">
       <div class="fila" style="justify-content: space-between"><h2 id="t-inf">🧠 Lo que ve el director</h2>
-        <button id="pedir" type="button">Revisar ahora</button></div>
-      <div id="informe"><p class="pista">Todavía sin informe. Se hace solo cada 4 horas (con tu plan de Claude), o dale «Revisar ahora».</p></div>
+        <span class="fila"><label class="pista"><input type="checkbox" id="autonomo"> 🟢 Luz verde: ejecuta sus órdenes solo</label>
+        <button id="pedir" type="button">Revisar ahora</button></span></div>
+      <div id="informe"><p class="pista">Todavía sin informe. Revisa todo con Opus cada 3 horas (tu plan de Claude) y cada 10 min destraba lo obvio solo; o dale «Revisar ahora».</p></div>
+      <h2>Órdenes que ha dado</h2>
+      <ul class="notas" id="ordenes"></ul>
       <h2>Enséñale (aprende de esto)</h2>
       <form class="fila" id="form-nota"><textarea id="nota" rows="2" maxlength="400" placeholder="Ej. los lunes primero Cuida Tu Lana; no me sugieras rehacer videos ya publicados"></textarea>
         <button class="principal" type="submit">Guardar</button></form>
@@ -123,6 +126,9 @@
       ${inf.acciones?.length ? `<h3>✅ Hoy conviene</h3><ul>${inf.acciones.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       <p class="pista">Revisado ${esc(new Date(inf.t * 1000).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</p>`
       : `<p class="pista">Todavía sin informe. Se hace solo cada 4 horas (con tu plan de Claude), o dale «Revisar ahora».</p>`;
+    if (document.activeElement?.id !== "autonomo") $("#autonomo").checked = d.autonomo !== false;
+    $("#ordenes").innerHTML = (d.ordenes || []).length ? [...d.ordenes].reverse().map((o) => `<li><span>${esc(new Date(o.t * 1000).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))} · ${o.quien === "reglas" ? "⚙️" : "🧠"} ${esc(o.texto)}</span></li>`).join("")
+      : `<li><span class="pista">Todavía no ha tenido que dar órdenes.</span></li>`;
     $("#notas").innerHTML = (d.notas || []).map((n, i) => `<li><span>${esc(n.texto)}</span><button type="button" data-quitar="${i}" aria-label="Quitar nota">✕</button></li>`).join("");
     const s = p._sala || {};
     $("#sala-txt").textContent = `Sala de edición: ${s.compus ?? "?"} máquina(s) prendida(s) · ${s.cola ?? "?"} video(s) en fila.`;
@@ -147,6 +153,9 @@
       }
     } catch (err) { avisar(`⚠️ ${err.message}`); }
     finally { if (b.id === "pedir") { b.disabled = false; b.textContent = "Revisar ahora"; } }
+  });
+  $("#autonomo").addEventListener("change", async (e) => {
+    try { await api({ autonomo: e.target.checked }); await cargar(); } catch (err) { avisar(err.message); }
   });
   $("#enfoque").addEventListener("change", async (e) => {
     try { await api({ enfoque: e.target.value || null }); await cargar(); } catch (err) { avisar(err.message); }
