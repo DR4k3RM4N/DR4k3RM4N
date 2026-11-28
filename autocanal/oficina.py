@@ -2916,6 +2916,8 @@ def crear_servidor(oficina: Oficina, puerto: int, host: str = "127.0.0.1") -> Th
                 e = director.estado()
                 return self._json({"orden": e["orden"], "enfoque": e["enfoque"], "notas": e["notas"],
                                    "autonomo": e["autonomo"], "ordenes": e["ordenes"][-20:],
+                                   "guias": e["guias"], "revisiones": e["revisiones"][-12:],
+                                   "uso_ia": {**director._uso(), "tope": director.TOPE_DIA, "tope_rev": director.TOPE_REVISIONES, "puede": director.puede_gastar()},
                                    "informe": (e["informes"] or [None])[-1], "categorias": director.CATEGORIAS,
                                    "pendientes": director.pendientes(oficina), "ahora": time.time()})
             if ruta in ("/tampico", "/tampico/"):  # 🌮 Tampiqueando en su propia página

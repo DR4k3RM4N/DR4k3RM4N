@@ -351,6 +351,16 @@ Claude real: se ve muy parecido a sus referencias. Gemini queda como opción (`M
   cerebro (tarea "director" = Opus, plan) da informe + `ordenes` de una lista segura (`ORDENES`: continuar_todo,
   reinicio_forzoso, reintentar/saltar(>6 h)/prender quienmato, piloto_on, pedir_ideas) que `ejecutar()` hace y anota en
   `ordenes`; avisa al jefe. Página: interruptor 🟢 y bitácora de órdenes.
+- **🎯 Director que revisa, instruye y aprende (28 nov)**: Quién mató tiene paso 7 «Revisión del director»
+  (`quienmato.paso_revision` → `director.revisar_video`): técnico gratis (duración ≥ 95 % de la voz, audio, tamaño;
+  si falla se rehace el video 1 vez) + contenido con Sonnet (tarea "director_revision", plan) → nota/aciertos/problemas
+  en `director.json["revisiones"]` (lo creativo no se rehace: se aprende). `guias[categoria]`: instrucciones que
+  `director.guia()` le pasa a la guionista (`fb.escribir_guion(..., instrucciones)`, bloque «INSTRUCCIONES DEL
+  DIRECTOR») junto con las notas del jefe; el informe de Opus las reescribe con las revisiones (`ESQ.guias`) y deja
+  lecciones a los equipos (orden `leccion` → `lecciones.agregar`). Siempre contenido (`reglas`): <4 temas de Quién mató
+  → `proponer_temas_quienmato` (1/12 h); canal fraudes/apps sin ideas ni videos → pedir_ideas (1/6 h); ideas
+  esperando y piloto apagado → piloto_on (1/día). Plan: `uso_ia` por día, tope `DIRECTOR_LLAMADAS_DIA` (12) informes y
+  `DIRECTOR_REVISIONES_DIA` (20) revisiones; si el plan está en pausa, modo ahorro (solo reglas gratis).
 
 ## 4. Pendientes y problemas conocidos
 - **✅ RESUELTO (nov 2026)**: plugin 1.3 activo + contraseña de aplicación nueva; `--probar-wordpress` da "FUNCIONA".

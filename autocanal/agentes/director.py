@@ -37,6 +37,9 @@ def estado() -> dict:
     e.setdefault("notas", [])
     e.setdefault("informes", [])
     e.setdefault("autonomo", True)   # 🟢 luz verde: el director ejecuta sus órdenes él solo
+    e.setdefault("guias", {})        # 📘 instrucciones por canal que él escribe y mejora (las recibe el guionista)
+    e.setdefault("revisiones", [])   # 🔍 lo que encontró al revisar cada video (de aquí aprende)
+    e.setdefault("uso_ia", {})       # 💳 cuántas llamadas propias lleva hoy (cuida tu plan)
     e.setdefault("ordenes", [])      # bitácora de lo que ordenó y ejecutó
     return e
 
@@ -146,15 +149,85 @@ ORDENES = {
     "prender_quienmato": "▶ Prender la oficina de ¿Quién MATÓ a…?",
     "piloto_on": "🚀 Prender el piloto automático del edificio",
     "pedir_ideas": "💡 Pedir ideas nuevas para un canal (canal: fraudes o apps; texto: tema opcional)",
+    "proponer_temas_quienmato": "🧾 Proponer temas nuevos para ¿Quién MATÓ a…? (cuando quedan pocos)",
+    "leccion": "📚 Dejar una lección a un equipo del edificio (canal: id o vacío; texto: «agente: la lección»; agentes: productora, investigador, guionista, locutor, disenadora, editor, redactora, community, todos)",
 }
-ESQ = {"type": "object", "additionalProperties": False, "required": ["resumen", "atorado", "acciones", "ordenes"],
+TOPE_DIA = int(config.env("DIRECTOR_LLAMADAS_DIA", "12") or 12)      # informes y órdenes con Opus al día (tu plan)
+TOPE_REVISIONES = int(config.env("DIRECTOR_REVISIONES_DIA", "20") or 20)  # videos que revisa con Sonnet al día
+
+
+def _uso() -> dict:
+    u = estado()["uso_ia"]
+    return u if u.get("dia") == time.strftime("%Y-%m-%d") else {"dia": time.strftime("%Y-%m-%d"), "n": 0, "rev": 0}
+
+
+def puede_gastar(tipo: str = "n") -> bool:
+    """💳 El director cuida tu plan: tope diario de llamadas propias y nada si el plan está en pausa."""
+    from . import expedientes_fabrica as fb
+    return _uso().get(tipo, 0) < (TOPE_REVISIONES if tipo == "rev" else TOPE_DIA) and fb._plan_disponible()
+
+
+def _gaste(tipo: str = "n") -> None:
+    e = estado()
+    u = _uso()
+    u[tipo] = u.get(tipo, 0) + 1
+    e["uso_ia"] = u
+    _guardar(e)
+
+
+def guia(categoria: str) -> str:
+    """📘 Las instrucciones vigentes del director para ese canal (más las notas del jefe)."""
+    e = estado()
+    notas = "\n".join(f"- {n['texto']}" for n in e["notas"][-8:])
+    return ((e["guias"].get(categoria) or "") + (f"\n\nLO QUE PIDE MIGUEL:\n{notas}" if notas else "")).strip()
+
+
+ESQ_REVISION = {"type": "object", "additionalProperties": False, "required": ["nota", "aciertos", "problemas", "rehacer"],
+                "properties": {"nota": {"type": "integer", "description": "1 a 10"}, "aciertos": {"type": "array", "items": {"type": "string"}},
+                               "problemas": {"type": "array", "items": {"type": "string"}},
+                               "rehacer": {"type": "boolean", "description": "true SOLO si el video no se puede publicar así"}}}
+
+
+def revisar_video(categoria: str, titulo: str, guion: str, tecnico: dict) -> dict:
+    """🔍 Control de calidad antes de publicar: lo técnico (siempre) y el contenido (con el cerebro, si hay plan)."""
+    problemas = []
+    if tecnico.get("duracion", 0) < tecnico.get("voz", 0) * 0.95:
+        problemas.append(f"El video dura {tecnico.get('duracion', 0):.0f} s pero la voz {tecnico.get('voz', 0):.0f} s: se cortó")
+    if not tecnico.get("audio"):
+        problemas.append("El video no tiene audio")
+    if tecnico.get("mb", 0) < 2:
+        problemas.append("El archivo es demasiado chico: casi seguro salió dañado")
+    r = {"nota": 0 if problemas else None, "aciertos": [], "problemas": problemas, "rehacer": bool(problemas)}
+    if not problemas and puede_gastar("rev"):
+        try:
+            ia = claude.json_estructurado(
+                "Eres el director de producción de un canal de YouTube en español (México). Revisa este video ANTES de "
+                "publicarlo como lo haría el mejor editor del mundo: gancho de los primeros 30 s, ritmo, claridad, curiosidad "
+                "hasta el final, que todo esté sustentado, título y llamado a la acción. Califica de 1 a 10 y di aciertos y "
+                "problemas concretos (máx. 4 c/u). «rehacer» = true solo si NO se puede publicar así.\n\nGUÍA VIGENTE DEL CANAL:\n"
+                + (guia(categoria) or "(todavía ninguna)"),
+                f"TÍTULO: {titulo}\nDATOS TÉCNICOS: {json.dumps(tecnico, ensure_ascii=False)}\n\nGUION (lo que se dice):\n{guion[:14000]}",
+                ESQ_REVISION, tarea="director_revision", que=f"revisión de «{titulo[:40]}»")
+            _gaste("rev")
+            r = {**ia, "rehacer": False}  # lo creativo no se rehace solo: se aprende para el siguiente
+        except Exception as exc:  # noqa: BLE001
+            r["nota_error"] = str(exc)[:120]
+    e = estado()
+    e["revisiones"] = (e["revisiones"] + [{"t": time.time(), "categoria": categoria, "titulo": titulo[:100], **r}])[-60:]
+    _guardar(e)
+    return r
+ESQ = {"type": "object", "additionalProperties": False, "required": ["resumen", "atorado", "acciones", "ordenes", "guias"],
        "properties": {"resumen": {"type": "string"},
                       "atorado": {"type": "array", "items": {"type": "string"}},
                       "acciones": {"type": "array", "items": {"type": "string"}},
                       "ordenes": {"type": "array", "items": {"type": "object", "additionalProperties": False,
                                   "required": ["orden", "motivo", "canal", "texto"],
                                   "properties": {"orden": {"type": "string", "enum": list(ORDENES)}, "motivo": {"type": "string"},
-                                                 "canal": {"type": "string"}, "texto": {"type": "string"}}}}}}
+                                                 "canal": {"type": "string"}, "texto": {"type": "string"}}}},
+                      "guias": {"type": "array", "description": "SOLO las guías que cambian (vacío si ninguna)", "items": {
+                          "type": "object", "additionalProperties": False, "required": ["categoria", "texto"],
+                          "properties": {"categoria": {"type": "string", "enum": list(CATEGORIAS)},
+                                         "texto": {"type": "string", "description": "instrucciones completas y concretas para el siguiente video (máx. 1,500 caracteres)"}}}}}}
 
 
 def _anotar(e: dict, texto: str, quien: str = "reglas") -> None:
@@ -186,6 +259,17 @@ def ejecutar(oficina, orden: str, motivo: str = "", canal: str = "", texto: str 
                 oficina.piloto = True
                 oficina._tocar()
             hecho = "prendí el piloto automático"
+        elif orden == "proponer_temas_quienmato":
+            from . import expedientes_fabrica as fb
+            r = fb.proponer_temas()
+            hecho = f"propuse {r.get('nuevos', 0)} tema(s) nuevos para ¿Quién MATÓ a…?"
+        elif orden == "leccion":
+            from . import lecciones
+            agente, _, leccion = texto.partition(":")
+            if not leccion.strip():
+                return "lección vacía"
+            l = lecciones.agregar(agente.strip(), leccion.strip(), canal or "")
+            hecho = f"lección para {lecciones.AGENTES.get(l['agente'], l['agente'])}: {l['texto'][:100]}"
         elif orden == "pedir_ideas":
             from . import canales
             cid = next((c["id"] for c in canales.lista() if c.get("nicho") == "fraudes"), "") if canal == "fraudes" else ""
@@ -206,6 +290,8 @@ def informe(oficina, forzar: bool = False) -> dict:
     ultimo = (e["informes"] or [{}])[-1]
     if not forzar and time.time() - ultimo.get("t", 0) < 3 * 3600 - 300:
         return ultimo
+    if not forzar and not puede_gastar():  # 💳 cuida tu plan: si está en pausa o ya gastó lo del día, espera
+        return ultimo
     p = pendientes(oficina)
     orden = [f"{i + 1}. {CATEGORIAS[c]}" for i, c in enumerate(e["orden"])]
     texto = (f"PRIORIDADES DEL JEFE:\n" + "\n".join(orden) + f"\nENFOQUE: {CATEGORIAS.get(e['enfoque'], 'ninguno (todas)')}\n\n"
@@ -213,6 +299,10 @@ def informe(oficina, forzar: bool = False) -> dict:
              "NOTAS Y CORRECCIONES DEL JEFE (aprende de ellas):\n" + ("\n".join(f"- {n['texto']}" for n in e["notas"][-15:]) or "(ninguna)")
              + "\n\nINFORMES ANTERIORES (no repitas lo mismo si ya se resolvió):\n"
              + "\n".join(f"- {i.get('resumen', '')[:200]}" for i in e["informes"][-3:])
+             + "\n\nGUÍAS VIGENTES:\n" + "\n".join(f"[{c}] {t[:600]}" for c, t in e["guias"].items())
+             + "\n\nREVISIONES DE LOS ÚLTIMOS VIDEOS (aprende de aquí):\n"
+             + "\n".join(f"- [{r['categoria']}] {r['titulo']}: nota {r.get('nota')} · bien: {'; '.join(r.get('aciertos') or [])[:200]} · mal: {'; '.join(r.get('problemas') or [])[:240]}"
+                         for r in e["revisiones"][-8:])
              + "\n\nÓRDENES RECIENTES (las tuyas y las automáticas):\n"
              + "\n".join(f"- hace {int((time.time() - o['t']) / 60)} min: {o['texto'][:160]}" for o in e["ordenes"][-10:]))
     try:
@@ -227,11 +317,22 @@ def informe(oficina, forzar: bool = False) -> dict:
             "adelanten trabajo siguiendo SUS prioridades (algo con error o quieto → continuar_todo; la sala trabada → "
             "reinicio_forzoso; un canal prioritario sin ideas ni videos en marcha → pedir_ideas con su canal). No repitas una "
             "orden que ya se dio hace menos de 1 h si no cambió nada (mira ÓRDENES RECIENTES). Si todo fluye, «ordenes» vacío.\n"
-            "ÓRDENES DISPONIBLES:\n" + "\n".join(f"- {k}: {v}" for k, v in ORDENES.items()),
+            "ÓRDENES DISPONIBLES:\n" + "\n".join(f"- {k}: {v}" for k, v in ORDENES.items()) + "\n"
+            "GUÍAS: tú escribes las instrucciones que recibe el guionista antes de cada video (mejores que las de un "
+            "productor experto). Reescribe en «guias» SOLO las que deban cambiar según las REVISIONES de los últimos videos "
+            "(lo que falló, lo que funcionó) y las notas de Miguel; concretas y accionables (gancho, estructura, ritmo, "
+            "tono, título, miniatura). Para los equipos del edificio, usa la orden «leccion». Cuida el plan: no gastes en "
+            "órdenes que no hagan falta.",
             texto, ESQ, tarea="director", que="informe del director de producción")
     except Exception as exc:  # noqa: BLE001 — sin plan ahorita: el informe espera
         return {**ultimo, "error": str(exc)[:200]}
-    nuevo = {"t": time.time(), **{k: v for k, v in r.items() if k != "ordenes"}}
+    _gaste()
+    nuevo = {"t": time.time(), **{k: v for k, v in r.items() if k not in ("ordenes", "guias")}}
+    e = estado()
+    for gu in r.get("guias") or []:  # 📘 aprende: las instrucciones mejoran con cada revisión
+        e["guias"][gu["categoria"]] = gu["texto"][:2000]
+    if r.get("guias"):
+        nuevo["guias_nuevas"] = [g["categoria"] for g in r["guias"]]
     e["informes"] = (e["informes"] + [nuevo])[-20:]
     _guardar(e)
     hechas = []
@@ -260,6 +361,25 @@ def reglas(oficina) -> list[str]:
         if any(p.get("estado") == "error" and (p.get("intentos") or 0) >= 3 for p in (c.get("pasos") or {}).values()) \
                 and not reciente("Reintentar el paso"):
             hechas.append(ejecutar(oficina, "reintentar_quienmato", "un paso agotó sus 3 intentos", quien="reglas"))
+    # 📦 siempre contenido: ¿Quién MATÓ a…? con pocos temas en fila → proponer más (máx. 1 vez cada 12 h)
+    try:
+        from . import expedientes_fabrica as fb
+        if sum(1 for t in fb.temas() if t["estado"] == "pendiente") < 4 and permitido("expedientes") \
+                and not any("Proponer temas" in o["texto"] and time.time() - o["t"] < 12 * 3600 for o in e["ordenes"]) and puede_gastar():
+            hechas.append(ejecutar(oficina, "proponer_temas_quienmato", "quedan menos de 4 temas en fila", quien="reglas"))
+    except Exception:  # noqa: BLE001
+        pass
+    # 📦 los canales de YouTube: si un canal permitido no tiene ideas ni videos en marcha → pedir ideas (máx. 1 vez cada 6 h)
+    with oficina.lock:
+        ideas = [i for i in oficina.propuestas if i.get("estado") == "pendiente"]
+        marcha = [p for p in oficina.proyectos.values() if p["estado"] in ("produccion", "revision", "publicando")]
+    for cat in ("fraudes", "apps"):
+        if not permitido(cat) or any(categoria_canal(x.get("canal")) == cat for x in ideas + marcha):
+            continue
+        if not any(f"Pedir ideas" in o["texto"] and cat in o["texto"] and time.time() - o["t"] < 6 * 3600 for o in e["ordenes"]):
+            hechas.append(ejecutar(oficina, "pedir_ideas", f"{CATEGORIAS[cat]} sin ideas ni videos en marcha ({cat})", canal=cat, quien="reglas"))
+    if ideas and not oficina.piloto and not any("piloto" in o["texto"] and time.time() - o["t"] < 24 * 3600 for o in e["ordenes"]):
+        hechas.append(ejecutar(oficina, "piloto_on", "hay ideas esperando y el piloto estaba apagado", quien="reglas"))
     with oficina.lock:  # edificio: videos con error → continuar (máx. 1 por hora)
         errores = [p for p in oficina.proyectos.values() if p["estado"] == "error"]
     if errores and not reciente("Continuar"):

@@ -88,6 +88,13 @@
       <ul class="notas" id="notas"></ul>
     </section>
   </div>
+  <section class="tarjeta" aria-labelledby="t-guias">
+    <h2 id="t-guias">📘 Sus instrucciones para cada canal</h2>
+    <p class="pista">Las recibe la guionista antes de cada video. El director las reescribe solo con lo que aprende al revisar los videos (y con tus notas). <span id="uso"></span></p>
+    <div class="pend" id="guias"></div>
+    <h2>🔍 Videos que revisó antes de publicar</h2>
+    <ul class="notas" id="revisiones"></ul>
+  </section>
   <section class="tarjeta" aria-labelledby="t-pend">
     <h2 id="t-pend">Pendientes en cada oficina</h2>
     <p class="pista" id="sala-txt"></p>
@@ -130,6 +137,12 @@
     $("#ordenes").innerHTML = (d.ordenes || []).length ? [...d.ordenes].reverse().map((o) => `<li><span>${esc(new Date(o.t * 1000).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))} · ${o.quien === "reglas" ? "⚙️" : "🧠"} ${esc(o.texto)}</span></li>`).join("")
       : `<li><span class="pista">Todavía no ha tenido que dar órdenes.</span></li>`;
     $("#notas").innerHTML = (d.notas || []).map((n, i) => `<li><span>${esc(n.texto)}</span><button type="button" data-quitar="${i}" aria-label="Quitar nota">✕</button></li>`).join("");
+    const g = d.guias || {};
+    $("#guias").innerHTML = d.orden.map((c) => `<article class="pcaja"><b>${esc(cat[c])}</b>${g[c] ? `<p style="white-space:pre-line">${esc(g[c])}</p>` : `<p class="pista">Todavía sin guía: la escribe en su próxima revisión.</p>`}</article>`).join("");
+    const u = d.uso_ia || {};
+    $("#uso").textContent = `Hoy: ${u.n || 0} de ${u.tope ?? "?"} revisiones generales y ${u.rev || 0} de ${u.tope_rev ?? "?"} videos revisados${u.puede === false ? " · 💤 modo ahorro (plan en pausa o tope del día)" : ""}.`;
+    $("#revisiones").innerHTML = (d.revisiones || []).length ? [...d.revisiones].reverse().map((r) => `<li><span><b>${r.nota != null ? (r.nota ? r.nota + "/10" : "❌") : "✔ técnico"}</b> · ${esc(r.titulo)}${(r.problemas || []).length ? `<br><span class="pista">A mejorar: ${esc(r.problemas.join(" · "))}</span>` : ""}${(r.aciertos || []).length ? `<br><span class="pista">Bien: ${esc(r.aciertos.join(" · "))}</span>` : ""}</span></li>`).join("")
+      : `<li><span class="pista">Todavía no revisa ningún video: lo hace antes de cada subida.</span></li>`;
     const s = p._sala || {};
     $("#sala-txt").textContent = `Sala de edición: ${s.compus ?? "?"} máquina(s) prendida(s) · ${s.cola ?? "?"} video(s) en fila.`;
     $("#pend").innerHTML = d.orden.map((c) => {

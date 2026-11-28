@@ -126,6 +126,15 @@ def json_estructurado(system, contenido, schema, tarea="guion", effort=None, que
     props = schema["properties"]
     texto = contenido if isinstance(contenido, str) else json.dumps(contenido[-1], ensure_ascii=False)
     nombre = next((t for _, t, _ in APPS if t in texto), "esta app")
+    if "atorado" in props and "guias" in props:  # informe del director
+        return {"resumen": "Todo avanza; Quién MATÓ a… lleva buen ritmo (demo).", "atorado": [], "acciones": ["Seguir así"],
+                "ordenes": [{"orden": "leccion", "motivo": "los ganchos van largos", "canal": "",
+                             "texto": "guionista: el gancho en menos de 15 segundos, con la cifra más fuerte (demo)"}],
+                "guias": [{"categoria": "expedientes", "texto": "Gancho en 15 s con la cifra más impactante. Capítulos de máx. 90 s. "
+                           "Cierra cada capítulo con una pregunta. (demo)"}]}
+    if "rehacer" in props and "aciertos" in props:  # el director revisa un video
+        return {"nota": random.randint(6, 9), "aciertos": ["Gancho fuerte en los primeros segundos (demo)"],
+                "problemas": ["El capítulo 3 se alarga: corta 20 s (demo)"], "rehacer": False}
     if "fondo" in props and "lado_icono" in props:
         return {"descripcion": "Fondo degradado morado, texto blanco enorme con borde, icono a la derecha y flecha amarilla (demo).",
                 "fondo": "degradado", "color_fondo": "#1B1035", "color_fondo_2": "#7B2CBF", "color_texto": "#FFFFFF",

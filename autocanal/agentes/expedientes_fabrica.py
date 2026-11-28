@@ -421,14 +421,16 @@ def _sistema_canal() -> str:
             "(tóper, plaza, a meses, quincena).")
 
 
-def escribir_guion(tema: dict, inv: dict, numero: str, siguiente: str) -> dict:
+def escribir_guion(tema: dict, inv: dict, numero: str, siguiente: str, instrucciones: str = "") -> dict:
     hechos = "\n".join(f"{h['id']}: {h['dato']}  (cita: «{h['cita'][:200]}»)" for h in inv["hechos"])
     pedido = (f"EXPEDIENTE #{numero} · MARCA: {tema['marca']}\nGANCHO PROPUESTO: {tema.get('gancho', '')}\n"
               f"SOSPECHOSOS QUE SALEN DE LA INVESTIGACIÓN: {'; '.join(inv['sospechosos'])}\n"
               f"GIRO DE MÉXICO: {inv['giro_mexico'] or '(no hay datos: no lo inventes)'}\n¿FINAL FELIZ?: {inv['final_feliz']}\n"
               f"DUDAS (no las afirmes): {'; '.join(inv['dudas'][:12])}\nPRÓXIMO EXPEDIENTE SUGERIDO: {siguiente}\n\n"
               f"HECHOS COMPROBADOS (lo único que puedes afirmar; cita su H# en cada frase que los use):\n{hechos}\n\n"
-              f"EJEMPLO DE TONO (el gancho de Tupperware):\n{_ejemplo_guion()[:3000]}")
+              f"EJEMPLO DE TONO (el gancho de Tupperware):\n{_ejemplo_guion()[:3000]}"
+              + (f"\n\n🎯 INSTRUCCIONES DEL DIRECTOR DE PRODUCCIÓN (síguelas: salen de revisar los videos anteriores):\n{instrucciones[:2500]}"
+                 if instrucciones else ""))
     if _demo():
         def F(t, h=()):
             return {"texto": t, "hechos": list(h)}

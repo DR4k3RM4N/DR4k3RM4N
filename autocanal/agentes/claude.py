@@ -58,6 +58,7 @@ TAREAS = {
     "fabrica_guion": ("claude-opus-5-5", "medium"),     # 🏭 escribir el guion (lo único creativo: Opus, sin pensar de más)
     "fabrica_exp": ("claude-sonnet-5-5", "low"),       # 🏭 investigar y el chat (Sonnet ligero)
     "director": ("claude-opus-5-5", "medium"),       # 🎯 el director de producción: el mejor cerebro (plan)
+    "director_revision": ("claude-sonnet-5-5", "low"),  # 🔍 revisar cada video antes de publicar (plan)
 }
 
 # Precios en USD por millón de tokens: (entrada, salida). Haiku cambia de tarifa arriba de 100K de entrada.
@@ -83,7 +84,7 @@ TAREAS_SUSCRIPCION = {
     "estilo": "sonnet", "leer_web": "haiku", "whatsapp": "sonnet", "miniatura": "haiku",
     # oficina de TikTok Shop y sala de edición
     "prueba": "sonnet", "miniatura_ia": "sonnet", "miniatura_dibujo": "sonnet", "ficha_shop": "opus", "guion_shop": "opus", "tomas_shop": "opus", "sala": "sonnet", "sala_aprender": "haiku",
-    "robot": "sonnet", "verificar_exp": "sonnet", "chat_exp": "sonnet", "fabrica_guion": "opus", "fabrica_exp": "sonnet", "director": "opus",
+    "robot": "sonnet", "verificar_exp": "sonnet", "chat_exp": "sonnet", "fabrica_guion": "opus", "fabrica_exp": "sonnet", "director": "opus", "director_revision": "sonnet",
 }
 LIMITE_PALABRAS = ("usage limit", "rate limit", "limit reached", "out of extra usage", "5-hour", "weekly limit")
 _suscripcion_pausada_hasta = 0.0  # si se acabó el límite del plan, se usa la API un rato
@@ -237,7 +238,7 @@ def _por_suscripcion(system: str, contenido, schema: dict, tarea: str, que: str,
 # (casilla en la oficina → permitir_api(tarea, True)).
 SOLO_PLAN = {"ficha_shop", "guion_shop", "tomas_shop",  # toda la oficina de TikTok Shop
              "verificar_exp", "chat_exp", "fabrica_exp", "fabrica_guion",  # y la de Expedientes
-             "director"}  # 🎯 y el informe del director
+             "director", "director_revision"}  # 🎯 y el director
 _api_permitida: set[str] = set()
 
 

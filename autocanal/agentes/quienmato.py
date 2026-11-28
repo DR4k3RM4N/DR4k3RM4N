@@ -35,7 +35,7 @@ CARPETA = config.BASE / "salida" / ("quienmato_demo" if DEMO else "quienmato")  
 ESTADO = CARPETA / "oficina.json"
 SALA_URL = config.env("SALA_URL", "http://127.0.0.1:8767").rstrip("/")
 PASOS = [("investigacion", "Investigación"), ("guion", "Guion"), ("voz", "Voz"), ("material", "Fotos"),
-         ("video", "Video"), ("miniatura", "Miniatura"), ("youtube", "YouTube (privado)")]
+         ("video", "Video"), ("miniatura", "Miniatura"), ("revision", "Revisión del director"), ("youtube", "YouTube (privado)")]
 VOZ, VELOCIDAD = "es-MX-JorgeNeural", "+12%"
 AZURE_TOPE = int(config.env("AZURE_LIMITE_MES", "480000") or 480000)
 _candado = threading.RLock()
@@ -200,7 +200,11 @@ def paso_guion(cid: str, c: dict) -> None:
     inv = _leer(carpeta(cid) / "investigacion.json", {})
     siguiente = next((x["marca"] for x in fb.temas() if x["estado"] == "pendiente"), "otra marca")
     _bitacora(cid, "Escribiendo el guion (Claude Opus, tu plan)")
-    g = fb.escribir_guion({"marca": c["marca"], "gancho": c.get("gancho", "")}, inv, c["numero"], siguiente)
+    from . import director
+    instrucciones = director.guia("expedientes")  # 🎯 lo que el director aprendió de los videos anteriores
+    if instrucciones:
+        _bitacora(cid, "El director le pasó sus instrucciones a la guionista")
+    g = fb.escribir_guion({"marca": c["marca"], "gancho": c.get("gancho", "")}, inv, c["numero"], siguiente, instrucciones)
     if len(g.get("escenas") or []) < 3:
         raise RuntimeError("El guion salió demasiado corto.")
     try:
@@ -565,8 +569,36 @@ def paso_youtube(cid: str, c: dict) -> None:
     _bitacora(cid, f"✔ Subido en PRIVADO" + (f", se publica solo el {fecha['fecha']} a las {fecha['hora']}" if fecha else ""))
 
 
+def paso_revision(cid: str, c: dict) -> None:
+    """🔍 El director revisa el video antes de subirlo: lo técnico siempre; el contenido con su cerebro si hay plan.
+    Si lo técnico salió mal, se rehace el video (una vez); lo creativo se anota para que el siguiente salga mejor."""
+    if c.get("revision"):
+        return
+    from . import director
+    g = _leer(carpeta(cid) / "guion.json", {})
+    video = carpeta(cid) / "video.mp4"
+    voz = sum(_duracion(p) for p in sorted((carpeta(cid) / "voz").glob("escena_*.mp3")))
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", str(video)],
+                       capture_output=True, text=True, timeout=60)
+    tecnico = {"duracion": round(_duracion(video), 1), "voz": round(voz, 1), "audio": bool(r.stdout.strip()) or DEMO,
+               "mb": round(video.stat().st_size / 1e6, 1) if video.exists() else 0, "escenas": len(g.get("escenas") or []),
+               "fotos": len(_leer(carpeta(cid) / "material.json", {}).get("fotos") or [])}
+    if DEMO:
+        tecnico["mb"] = max(tecnico["mb"], 2)
+    guion = "\n\n".join(f"## {e.get('capitulo') or e.get('titulo')}\n{_texto_escena(e)}" for e in g.get("escenas") or [])
+    rev = director.revisar_video("expedientes", f"¿Quién MATÓ a {c['marca']}?", guion, tecnico)
+    if rev.get("rehacer") and not c.get("rehecho"):
+        video.unlink(missing_ok=True)
+        _poner(cid, rehecho=True, tid=None, servidor=False)
+        _paso(cid, "video", "pendiente", error=None, intentos=0)
+        raise RuntimeError("El director pidió rehacer el video: " + "; ".join(rev.get("problemas") or [])[:200])
+    _poner(cid, revision={"nota": rev.get("nota"), "problemas": rev.get("problemas"), "aciertos": rev.get("aciertos")})
+    _bitacora(cid, f"🔍 Revisión del director: nota {rev.get('nota') if rev.get('nota') is not None else 'técnica ✔'}"
+                   + (f" · a mejorar: {'; '.join(rev.get('problemas') or [])[:160]}" if rev.get("problemas") else ""))
+
+
 FUNCIONES = {"investigacion": paso_investigacion, "guion": paso_guion, "voz": paso_voz, "material": paso_material,
-             "video": paso_video, "miniatura": paso_miniatura, "youtube": paso_youtube}
+             "video": paso_video, "miniatura": paso_miniatura, "revision": paso_revision, "youtube": paso_youtube}
 NECESITA_PLAN = {"investigacion", "guion"}
 
 
